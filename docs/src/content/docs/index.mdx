@@ -1,0 +1,61 @@
+---
+title: slipp
+description: Build locally, slipp to production. 90% automation for self-hosted app deployments.
+template: splash
+hero:
+  tagline: 90% automation for self-hosted app deployments
+  actions:
+    - text: Get Started
+      link: /getting-started/installation/
+      icon: right-arrow
+    - text: View on GitHub
+      link: https://github.com/angelsen/slipp
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## What is slipp?
+
+slipp generates complete Ansible deployments from your codebase and provides ops tools for debugging.
+
+<CardGrid stagger>
+	<Card title="Generate" icon="rocket">
+		Scan your project, generate Ansible playbooks, Dockerfiles, and inventory files.
+	</Card>
+	<Card title="Deploy" icon="laptop">
+		One command to deploy everything to your VPS with `slipp deploy`.
+	</Card>
+	<Card title="Debug" icon="magnifier">
+		Built-in ops: `slipp ps`, `slipp logs`, `slipp exec`, `slipp ssh`.
+	</Card>
+	<Card title="Local Dev" icon="pencil">
+		Run profiles connect local dev to remote infrastructure via tunnels.
+	</Card>
+</CardGrid>
+
+## Quick Example
+
+```bash
+# Generate Ansible project from your codebase
+slipp launch
+
+# Deploy to your VPS
+slipp deploy
+
+# Check running services
+slipp ps
+
+# Tail logs
+slipp logs backend -f
+```
+
+## Philosophy
+
+**90% automation, not complete infrastructure management.**
+
+- Generate Ansible deployments for custom apps
+- Ops tools (logs/status/exec) for debugging
+- Works alone or alongside existing Ansible projects
+- No lock-in: Standard Ansible, runs anywhere
