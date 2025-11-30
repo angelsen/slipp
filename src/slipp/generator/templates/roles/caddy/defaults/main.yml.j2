@@ -1,0 +1,8 @@
+---
+# Caddy role default variables
+caddy_auto_https: {{ caddy_auto_https | default(true) }}
+caddy_sites_dir: {{ caddy_sites_dir | default('/etc/caddy/sites') }}
+caddy_staging: {{ caddy_staging | default(false) }}
+{% if caddy_email %}
+caddy_email: {{ caddy_email }}
+{% endif %}

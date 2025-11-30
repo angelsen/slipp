@@ -1,0 +1,53 @@
+# Caddy Dev Proxy Configuration
+# Managed by ansictl - do not edit manually
+#
+# Traffic flow:
+#   Internet -> :443 -> iptables -> :8443 (Caddy TLS)
+#                                     |
+#                     +---------------+---------------+
+#                     v                               v
+#            dev domain match              fallback to existing service
+#            (TLS terminate)               (HTTPS proxy to :{{ fallback_port }})
+#                     |
+#            localhost:{tunnel_port}
+
+{
+    admin localhost:2019
+{% if acme_email %}
+    email {{ acme_email }}
+{% endif %}
+
+    # HTTPS traffic arrives on 8443 via iptables redirect from :443
+    https_port 8443
+
+    # Don't bind to :80 - existing reverse proxy owns it
+    auto_https disable_redirects
+
+    # On-demand TLS permission - internal endpoint always allows
+    # (we control which domains get certs via admin API routes)
+    on_demand_tls {
+        ask http://localhost:2020/check
+    }
+}
+
+# Internal permission check - always allow
+:2020 {
+    respond /check 200
+}
+
+# HTTPS catch-all with on-demand TLS
+# Dev routes are added dynamically via admin API with host matchers
+# and take precedence due to specificity
+https://:8443 {
+    tls {
+        on_demand
+    }
+
+    # Fallback: proxy unknown domains to existing service
+    reverse_proxy https://localhost:{{ fallback_port }} {
+        transport http {
+            tls
+            tls_insecure_skip_verify
+        }
+    }
+}

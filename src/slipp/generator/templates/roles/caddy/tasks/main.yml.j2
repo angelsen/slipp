@@ -1,0 +1,38 @@
+---
+# Caddy installation and configuration
+
+- name: Install Caddy
+  ansible.builtin.package:
+    name: caddy
+    state: present
+
+- name: Ensure sites directory exists
+  ansible.builtin.file:
+    path: {{ caddy_sites_dir }}
+    state: directory
+    mode: '0755'
+
+- name: Deploy main Caddyfile
+  ansible.builtin.template:
+    src: Caddyfile.j2
+    dest: /etc/caddy/Caddyfile
+    mode: '0644'
+  notify: reload caddy
+
+- name: Deploy site configuration
+  ansible.builtin.template:
+    src: site.caddy.j2
+    dest: "{{ caddy_sites_dir }}/{{ project_name }}.caddy"
+    mode: '0644'
+  notify: reload caddy
+
+- name: Validate complete Caddy configuration
+  ansible.builtin.command:
+    cmd: caddy validate --adapter caddyfile --config /etc/caddy/Caddyfile
+  changed_when: false
+
+- name: Enable and start Caddy
+  ansible.builtin.systemd:
+    name: caddy
+    enabled: yes
+    state: started

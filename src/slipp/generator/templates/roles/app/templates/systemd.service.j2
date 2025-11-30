@@ -1,0 +1,21 @@
+[Unit]
+Description={{ project_name }}-{{ service.name }}
+After=network.target {% if container_runtime == 'podman' %}podman.service{% else %}docker.service{% endif %}
+
+Requires={% if container_runtime == 'podman' %}podman.service{% else %}docker.service{% endif %}
+
+[Service]
+Type=simple
+ExecStartPre=-/usr/bin/{{ container_runtime }} stop {{ project_name }}-{{ service.name }}
+ExecStartPre=-/usr/bin/{{ container_runtime }} rm {{ project_name }}-{{ service.name }}
+ExecStart=/usr/bin/{{ container_runtime }} run \
+    --rm \
+    --name {{ project_name }}-{{ service.name }} \
+    -p {{ service.port }}:{{ service.port }} \
+    {{ project_name }}-{{ service.name }}
+ExecStop=/usr/bin/{{ container_runtime }} stop -t 10 {{ project_name }}-{{ service.name }}
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

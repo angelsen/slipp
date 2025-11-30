@@ -1,0 +1,33 @@
+[project]
+name = "slipp"
+version = "0.1.0"
+description = "Build locally, slipp to production. 90% automation for self-hosted app deployments."
+readme = "README.md"
+authors = [
+    { name = "Fredrik Angelsen", email = "fredrikangelsen@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "ansible-runner>=2.4.2",
+    "httpx>=0.28.1",
+    "jinja2>=3.1.6",
+    "paramiko>=4.0.0",
+    "pydantic>=2.12.4",
+    "python-ulid>=3.1.0",
+    "rich>=14.2.0",
+    "ruamel-yaml>=0.18.16",
+    "typer>=0.20.0",
+]
+
+[project.scripts]
+slipp = "slipp:main"
+
+[build-system]
+requires = ["uv_build>=0.9.7,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.setuptools.package-data]
+slipp = ["playbooks/**/*"]
+
+[tool.basedpyright]
+typeCheckingMode = "standard"

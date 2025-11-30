@@ -1,0 +1,93 @@
+---
+# Caddy Dev Proxy Installation
+#
+# Installs Caddy with iptables redirect for dev proxy functionality.
+# Traffic flow: :443 → iptables PREROUTING → :8443 (Caddy) → localhost:443 (fallback)
+#
+# Usage: ansible-playbook playbook.yml -i inventory
+
+- name: Install Caddy dev proxy
+  hosts: all
+  become: true
+
+  tasks:
+    - name: Install prerequisites
+      ansible.builtin.apt:
+        name:
+          - debian-keyring
+          - debian-archive-keyring
+          - apt-transport-https
+          - curl
+          - iptables-persistent
+        state: present
+        update_cache: true
+
+    - name: Add Caddy GPG key
+      ansible.builtin.shell: |
+        curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+      args:
+        creates: /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+
+    - name: Add Caddy repository
+      ansible.builtin.copy:
+        content: |
+          deb [signed-by=/usr/share/keyrings/caddy-stable-archive-keyring.gpg] https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main
+          deb-src [signed-by=/usr/share/keyrings/caddy-stable-archive-keyring.gpg] https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main
+        dest: /etc/apt/sources.list.d/caddy-stable.list
+        mode: "0644"
+
+    - name: Install Caddy
+      ansible.builtin.apt:
+        name: caddy
+        state: present
+        update_cache: true
+
+    - name: Stop stuck Caddy if in bad state
+      ansible.builtin.shell: |
+        state=$(systemctl is-active caddy 2>/dev/null || echo "inactive")
+        if [ "$state" = "reloading" ] || [ "$state" = "failed" ]; then
+          systemctl kill caddy 2>/dev/null || true
+          systemctl reset-failed caddy 2>/dev/null || true
+        fi
+      changed_when: false
+
+    - name: Deploy Caddyfile
+      ansible.builtin.template:
+        src: templates/Caddyfile.j2
+        dest: /etc/caddy/Caddyfile
+        mode: "0644"
+        backup: true
+      notify: Restart Caddy
+
+    - name: Validate Caddyfile syntax
+      ansible.builtin.command: caddy validate --config /etc/caddy/Caddyfile
+      changed_when: false
+
+    - name: Add iptables PREROUTING rule (redirect :443 to :8443)
+      ansible.builtin.iptables:
+        table: nat
+        chain: PREROUTING
+        protocol: tcp
+        destination_port: "443"
+        jump: REDIRECT
+        to_ports: "8443"
+        comment: ansictl dev proxy
+      notify: Save iptables
+
+    - name: Ensure Caddy is running and enabled
+      ansible.builtin.systemd:
+        name: caddy
+        state: started
+        enabled: true
+
+  handlers:
+    - name: Restart Caddy
+      ansible.builtin.systemd:
+        name: caddy
+        state: restarted
+
+    - name: Save iptables
+      ansible.builtin.shell: |
+        iptables-save > /etc/iptables/rules.v4
+      args:
+        executable: /bin/bash
