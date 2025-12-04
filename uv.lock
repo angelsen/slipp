@@ -549,6 +549,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pyfiglet"
+version = "1.0.4"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/c8/e3/0a86276ad2c383ce08d76110a8eec2fe22e7051c4b8ba3fa163a0b08c428/pyfiglet-1.0.4.tar.gz", hash = "sha256:db9c9940ed1bf3048deff534ed52ff2dafbbc2cd7610b17bb5eca1df6d4278ef", size = 1560615, upload-time = "2025-08-15T18:32:47.302Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9f/5c/fe9f95abd5eaedfa69f31e450f7e2768bef121dbdf25bcddee2cd3087a16/pyfiglet-1.0.4-py3-none-any.whl", hash = "sha256:65b57b7a8e1dff8a67dc8e940a117238661d5e14c3e49121032bd404d9b2b39f", size = 1806118, upload-time = "2025-08-15T18:32:45.556Z" },
+]
+
+[[package]]
 name = "pygments"
 version = "2.19.2"
 source = { registry = "https://pypi.org/simple" }
@@ -675,6 +684,20 @@ wheels = [
 ]
 
 [[package]]
+name = "rich-pyfiglet"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "click" },
+    { name = "pyfiglet" },
+    { name = "rich" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/63/45/e9fe32d846099de94bb89402a0bd87ae536d5317329cc4adb1373e027c8d/rich_pyfiglet-1.0.0.tar.gz", hash = "sha256:a9ba2ae109eb43112a2eb8f35abb3fc4113be0927d4718cdbbc47513957f38ed", size = 13575, upload-time = "2025-07-31T04:17:42.218Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7e/33/594d2997ce77d4a18984a9bfc01907d456b8f60dbcc313c8ad1cb568526e/rich_pyfiglet-1.0.0-py3-none-any.whl", hash = "sha256:0b1653b0381cab356772c562e528c091171beeaa1821f71cfd65c379197b4244", size = 15319, upload-time = "2025-07-31T04:17:40.748Z" },
+]
+
+[[package]]
 name = "ruamel-yaml"
 version = "0.18.16"
 source = { registry = "https://pypi.org/simple" }
@@ -745,6 +768,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "python-ulid" },
     { name = "rich" },
+    { name = "rich-pyfiglet" },
     { name = "ruamel-yaml" },
     { name = "typer" },
 ]
@@ -758,6 +782,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.12.4" },
     { name = "python-ulid", specifier = ">=3.1.0" },
     { name = "rich", specifier = ">=14.2.0" },
+    { name = "rich-pyfiglet", specifier = ">=1.0.0" },
     { name = "ruamel-yaml", specifier = ">=0.18.16" },
     { name = "typer", specifier = ">=0.20.0" },
 ]

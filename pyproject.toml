@@ -15,6 +15,7 @@ dependencies = [
     "pydantic>=2.12.4",
     "python-ulid>=3.1.0",
     "rich>=14.2.0",
+    "rich-pyfiglet>=1.0.0",
     "ruamel-yaml>=0.18.16",
     "typer>=0.20.0",
 ]

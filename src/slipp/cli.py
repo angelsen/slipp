@@ -14,6 +14,7 @@ from slipp.commands.deploy import deploy_command
 from slipp.commands.exec import exec_command
 from slipp.commands.generate import generate_app
 from slipp.commands.launch import launch_command
+from slipp.commands.logo import logo_command, show_logo
 from slipp.commands.logs import logs_command
 from slipp.commands.projects import projects_app
 from slipp.commands.ps import ps_command
@@ -34,9 +35,12 @@ app = typer.Typer(
 )
 
 
-@app.callback()
+@app.callback(invoke_without_command=True)
 def main(
     ctx: typer.Context,
+    version: bool = typer.Option(
+        False, "--version", "-V", help="Show version and exit"
+    ),
     verbose: bool = typer.Option(
         False, "--verbose", "-v", help="Enable verbose logging"
     ),
@@ -49,8 +53,15 @@ def main(
 ):
     """slipp - Operations CLI for Ansible-managed infrastructure.
 
-    Run 'ac COMMAND --help' for command-specific help.
+    Run 'slipp COMMAND --help' for command-specific help.
     """
+    if version:
+        show_logo()
+        from slipp import __version__
+
+        output.text(f"slipp {__version__}")
+        raise typer.Exit()
+
     ctx.ensure_object(dict)
     ctx.obj["verbose"] = verbose
     output.set_output_format(output_format)
@@ -70,6 +81,7 @@ app.command(name="config")(config_command)
 app.command(name="deploy")(deploy_command)
 app.command(name="exec")(exec_command)
 app.command(name="launch")(launch_command)
+app.command(name="logo")(logo_command)
 app.command(name="logs")(logs_command)
 app.command(name="ps")(ps_command)
 app.command(name="run", context_settings=RUN_CONTEXT_SETTINGS)(run_command)
