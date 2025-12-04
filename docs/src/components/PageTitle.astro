@@ -1,0 +1,448 @@
+---
+import { Icon } from "astro-icon/components";
+import Markdown from "../icons/Markdown.astro";
+import Claude from "../icons/Claude.astro";
+import OpenAI from "../icons/OpenAI.astro";
+
+const { entry, editUrl } = Astro.locals.starlightRoute;
+const title = entry.data.title;
+const rawMarkdown = entry.body ?? "";
+const editUrlStr = editUrl?.toString();
+const blobUrl = editUrlStr?.replace("/edit/", "/blob/");
+const pageUrl = Astro.url.origin + Astro.url.pathname;
+
+const prompt = `I'm looking at this slipp documentation: ${pageUrl}
+Help me understand how to use it. Be ready to explain concepts, give examples, or help debug based on it.`;
+
+function getPromptUrl(baseURL: string) {
+  return `${baseURL}?q=${encodeURIComponent(prompt)}`;
+}
+
+const dropdownId = `page-actions-menu-${Math.random().toString(36).slice(2, 9)}`;
+---
+
+<div class="page-title-wrapper">
+  <h1 id="_top">{title}</h1>
+  {
+    rawMarkdown && (
+      <page-actions-dropdown>
+        <div class="button-group">
+          <button
+            type="button"
+            class="copy-btn"
+            data-action="copy"
+            data-content={rawMarkdown}
+          >
+            <Icon name="tabler:copy" class="copy-icon" />
+            <Icon name="tabler:check" class="check-icon" />
+            <span>Copy Page</span>
+          </button>
+          <div class="separator" />
+          <button
+            type="button"
+            class="dropdown-trigger"
+            aria-haspopup="menu"
+            aria-expanded="false"
+            aria-controls={dropdownId}
+          >
+            <Icon name="tabler:chevron-down" class="chevron" />
+          </button>
+        </div>
+        <div
+          id={dropdownId}
+          class="dropdown"
+          role="menu"
+          aria-orientation="vertical"
+          hidden
+        >
+          {blobUrl && (
+            <a
+              href={blobUrl}
+              class="menu-item"
+              role="menuitem"
+              tabindex="-1"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <Markdown size="1rem" />
+              <span class="menu-label">View as Markdown</span>
+            </a>
+          )}
+          <button
+            type="button"
+            class="menu-item"
+            role="menuitem"
+            tabindex="-1"
+            data-action="copy-prompt"
+            data-content={prompt}
+          >
+            <Icon name="tabler:clipboard" />
+            <span class="menu-label">Copy Prompt</span>
+          </button>
+          <a
+            href={getPromptUrl("https://chatgpt.com")}
+            class="menu-item"
+            role="menuitem"
+            tabindex="-1"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <OpenAI size="1rem" />
+            <span class="menu-label">Open in ChatGPT</span>
+          </a>
+          <a
+            href={getPromptUrl("https://claude.ai/new")}
+            class="menu-item"
+            role="menuitem"
+            tabindex="-1"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <Claude size="1rem" />
+            <span class="menu-label">Open in Claude</span>
+          </a>
+        </div>
+      </page-actions-dropdown>
+    )
+  }
+</div>
+
+<script>
+  class PageActionsDropdown extends HTMLElement {
+    private copyBtn: HTMLButtonElement | null = null;
+    private trigger: HTMLButtonElement | null = null;
+    private dropdown: HTMLElement | null = null;
+    private menuItems: HTMLElement[] = [];
+    private isOpen = false;
+    private focusIndex = -1;
+    private abortController: AbortController | null = null;
+
+    connectedCallback() {
+      this.copyBtn = this.querySelector(".copy-btn");
+      this.trigger = this.querySelector(".dropdown-trigger");
+      this.dropdown = this.querySelector(".dropdown");
+      this.menuItems = Array.from(this.querySelectorAll('[role="menuitem"]'));
+      this.abortController = new AbortController();
+      this.setupEventListeners();
+    }
+
+    disconnectedCallback() {
+      this.abortController?.abort();
+    }
+
+    private setupEventListeners() {
+      const { signal } = this.abortController!;
+
+      this.copyBtn?.addEventListener("click", this.handleCopy.bind(this), {
+        signal,
+      });
+      this.trigger?.addEventListener("click", this.toggle.bind(this), {
+        signal,
+      });
+      this.trigger?.addEventListener(
+        "keydown",
+        this.handleTriggerKeydown.bind(this),
+        { signal },
+      );
+      this.dropdown?.addEventListener(
+        "keydown",
+        this.handleMenuKeydown.bind(this),
+        { signal },
+      );
+
+      document.addEventListener(
+        "click",
+        (e) => {
+          if (!this.contains(e.target as Node)) this.close();
+        },
+        { signal },
+      );
+
+      document.addEventListener(
+        "keydown",
+        (e) => {
+          if (e.key === "Escape" && this.isOpen) {
+            e.preventDefault();
+            this.close();
+            this.trigger?.focus();
+          }
+        },
+        { signal },
+      );
+
+      const copyPromptBtn = this.querySelector('[data-action="copy-prompt"]');
+      copyPromptBtn?.addEventListener(
+        "click",
+        (e) => {
+          e.preventDefault();
+          this.handleCopyPrompt(copyPromptBtn as HTMLElement);
+        },
+        { signal },
+      );
+    }
+
+    private toggle() {
+      this.isOpen ? this.close() : this.open();
+    }
+
+    private open() {
+      this.isOpen = true;
+      this.trigger?.setAttribute("aria-expanded", "true");
+      this.dropdown?.removeAttribute("hidden");
+      this.focusIndex = -1;
+    }
+
+    private close() {
+      this.isOpen = false;
+      this.trigger?.setAttribute("aria-expanded", "false");
+      this.dropdown?.setAttribute("hidden", "");
+      this.focusIndex = -1;
+      this.menuItems.forEach((item) =>
+        item.removeAttribute("data-highlighted"),
+      );
+    }
+
+    private updateFocus() {
+      this.menuItems.forEach((item, i) => {
+        if (i === this.focusIndex) {
+          item.setAttribute("data-highlighted", "");
+          item.focus();
+        } else {
+          item.removeAttribute("data-highlighted");
+        }
+      });
+    }
+
+    private handleTriggerKeydown(e: KeyboardEvent) {
+      switch (e.key) {
+        case "ArrowDown":
+        case "Enter":
+        case " ":
+          e.preventDefault();
+          this.open();
+          break;
+      }
+    }
+
+    private handleMenuKeydown(e: KeyboardEvent) {
+      switch (e.key) {
+        case "ArrowDown":
+          e.preventDefault();
+          this.focusIndex =
+            this.focusIndex < 0
+              ? 0
+              : (this.focusIndex + 1) % this.menuItems.length;
+          this.updateFocus();
+          break;
+        case "ArrowUp":
+          e.preventDefault();
+          this.focusIndex =
+            this.focusIndex < 0
+              ? this.menuItems.length - 1
+              : (this.focusIndex - 1 + this.menuItems.length) %
+                this.menuItems.length;
+          this.updateFocus();
+          break;
+        case "Home":
+          e.preventDefault();
+          this.focusIndex = 0;
+          this.updateFocus();
+          break;
+        case "End":
+          e.preventDefault();
+          this.focusIndex = this.menuItems.length - 1;
+          this.updateFocus();
+          break;
+        case "Tab":
+          this.close();
+          break;
+      }
+    }
+
+    private async handleCopy() {
+      const content = this.copyBtn?.dataset.content ?? "";
+      try {
+        await navigator.clipboard.writeText(content);
+        this.copyBtn?.classList.add("copied");
+        setTimeout(() => {
+          this.copyBtn?.classList.remove("copied");
+        }, 2000);
+      } catch (err) {
+        console.error("Failed to copy:", err);
+      }
+    }
+
+    private async handleCopyPrompt(btn: HTMLElement) {
+      const content = btn.dataset.content ?? "";
+      try {
+        await navigator.clipboard.writeText(content);
+        this.close();
+      } catch (err) {
+        console.error("Failed to copy:", err);
+      }
+    }
+  }
+
+  customElements.define("page-actions-dropdown", PageActionsDropdown);
+</script>
+
+<style>
+  @layer starlight.components {
+    .page-title-wrapper {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: var(--sl-text-h1);
+      line-height: var(--sl-line-height-headings);
+      font-weight: 600;
+      color: var(--sl-color-white);
+    }
+
+    page-actions-dropdown {
+      position: relative;
+      display: inline-block;
+      flex-shrink: 0;
+      margin-top: 0.25rem;
+    }
+
+    .button-group {
+      display: flex;
+      align-items: center;
+      background: var(--sl-color-gray-6);
+      border-radius: 0.5rem;
+      position: relative;
+    }
+
+    .copy-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.375rem;
+      padding: 0.375rem 0.625rem;
+      border: none;
+      border-radius: 0.5rem 0 0 0.5rem;
+      background: transparent;
+      color: var(--sl-color-gray-2);
+      font-size: var(--sl-text-sm);
+      font-weight: 500;
+      cursor: pointer;
+      transition: color 0.15s;
+    }
+
+    .copy-btn:focus-visible {
+      outline: 2px solid var(--sl-color-accent);
+      outline-offset: 2px;
+      z-index: 1;
+      position: relative;
+    }
+
+    .copy-btn .copy-icon {
+      display: block;
+    }
+
+    .copy-btn .check-icon {
+      display: none;
+      color: var(--sl-color-accent);
+    }
+
+    .copy-btn.copied .copy-icon {
+      display: none;
+    }
+
+    .copy-btn.copied .check-icon {
+      display: block;
+    }
+
+    .copy-btn.copied {
+      color: var(--sl-color-accent);
+    }
+
+    .separator {
+      width: 1px;
+      height: 1.5rem;
+      background: var(--sl-color-gray-5);
+    }
+
+    .dropdown-trigger {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 2rem;
+      padding: 0.375rem;
+      border: none;
+      border-radius: 0 0.5rem 0.5rem 0;
+      background: transparent;
+      color: var(--sl-color-gray-2);
+      cursor: pointer;
+      transition: color 0.15s;
+    }
+
+    .dropdown-trigger:focus-visible {
+      outline: 2px solid var(--sl-color-accent);
+      outline-offset: 2px;
+      z-index: 1;
+      position: relative;
+    }
+
+    .dropdown-trigger .chevron {
+      transition: transform 0.2s;
+    }
+
+    .dropdown-trigger[aria-expanded="true"] .chevron {
+      transform: rotate(180deg);
+    }
+
+    .dropdown {
+      position: absolute;
+      top: calc(100% + 0.375rem);
+      right: 0;
+      padding: 0.25rem;
+      border: 1px solid var(--sl-color-gray-5);
+      border-radius: 0.5rem;
+      background: var(--sl-color-bg-nav);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+      z-index: 100;
+      white-space: nowrap;
+    }
+
+    .menu-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      width: 100%;
+      padding: 0.5rem 0.625rem;
+      border: none;
+      border-radius: 0.375rem;
+      background: transparent;
+      color: var(--sl-color-gray-2);
+      font-size: var(--sl-text-sm);
+      text-decoration: none;
+      cursor: pointer;
+      transition:
+        background 0.1s,
+        color 0.1s;
+    }
+
+    .menu-item:hover,
+    .menu-item[data-highlighted] {
+      background: var(--sl-color-gray-5);
+      color: var(--sl-color-white);
+      outline: none;
+    }
+
+    .menu-item:focus-visible {
+      outline: 2px solid var(--sl-color-accent);
+      outline-offset: -2px;
+    }
+
+    .menu-label {
+      flex: 1;
+      text-align: left;
+    }
+  }
+</style>

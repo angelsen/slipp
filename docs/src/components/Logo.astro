@@ -1,0 +1,15 @@
+---
+import logoHtml from "./logo-nav.html?raw";
+---
+
+<Fragment set:html={logoHtml} />
+
+<style is:global>
+  .sl-logo {
+    font-family: "Fira Code", "JetBrains Mono", ui-monospace, monospace;
+    font-size: var(--logo-size, 0.5rem);
+    line-height: 1.1;
+    margin: 0;
+    white-space: pre;
+  }
+</style>

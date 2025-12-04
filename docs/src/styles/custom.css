@@ -1,0 +1,172 @@
+@layer starlight.base,
+       starlight.reset,
+       starlight.core,
+       starlight.content,
+       starlight.components,
+       starlight.utils;
+
+:root {
+  --sl-hue-accent: 191;
+  --sl-color-accent-low: hsl(var(--sl-hue-accent), 100%, 12%);
+  --sl-color-accent: hsl(var(--sl-hue-accent), 100%, 50%);
+  --sl-color-accent-high: hsl(var(--sl-hue-accent), 100%, 80%);
+
+  --logo-color-1: var(--sl-color-accent-high);
+  --logo-color-2: color-mix(
+    in oklch,
+    var(--sl-color-accent-high) 66%,
+    var(--sl-color-accent)
+  );
+  --logo-color-3: color-mix(
+    in oklch,
+    var(--sl-color-accent-high) 33%,
+    var(--sl-color-accent)
+  );
+  --logo-color-4: var(--sl-color-accent);
+  --logo-color-5: color-mix(
+    in oklch,
+    var(--sl-color-accent) 50%,
+    var(--sl-color-accent-low)
+  );
+  --logo-color-6: var(--sl-color-accent-low);
+
+  --sl-color-white: hsl(0, 0%, 100%);
+  --sl-color-gray-1: hsl(191, 15%, 93%);
+  --sl-color-gray-2: hsl(191, 10%, 75%);
+  --sl-color-gray-3: hsl(191, 8%, 55%);
+  --sl-color-gray-4: hsl(191, 8%, 40%);
+  --sl-color-gray-5: hsl(191, 12%, 22%);
+  --sl-color-gray-6: hsl(191, 18%, 14%);
+  --sl-color-black: hsl(191, 20%, 7%);
+
+  --grid-color: hsla(var(--sl-hue-accent), 100%, 50%, 0.4);
+  --grid-h: 6px;
+  --grid-w: 24px;
+
+  --sl-color-bg: var(--sl-color-black);
+  --sl-color-bg-nav: hsl(191, 18%, 12%);
+  --sl-color-bg-sidebar: hsl(191, 18%, 12%);
+  --sl-color-bg-inline-code: hsl(191, 12%, 16%);
+}
+
+:root[data-theme="light"] {
+  --sl-color-accent-low: hsl(var(--sl-hue-accent), 80%, 90%);
+  --sl-color-accent: hsl(var(--sl-hue-accent), 90%, 40%);
+  --sl-color-accent-high: hsl(var(--sl-hue-accent), 100%, 25%);
+
+  --sl-color-white: hsl(191, 20%, 12%);
+  --sl-color-gray-1: hsl(191, 15%, 20%);
+  --sl-color-gray-2: hsl(191, 10%, 30%);
+  --sl-color-gray-3: hsl(191, 8%, 42%);
+  --sl-color-gray-4: hsl(191, 6%, 58%);
+  --sl-color-gray-5: hsl(191, 8%, 78%);
+  --sl-color-gray-6: hsl(191, 10%, 92%);
+  --sl-color-gray-7: hsl(191, 12%, 97%);
+  --sl-color-black: hsl(0, 0%, 100%);
+
+  --sl-color-bg: var(--sl-color-black);
+  --sl-color-bg-nav: hsl(191, 15%, 95%);
+  --sl-color-bg-sidebar: hsl(191, 12%, 97%);
+  --sl-color-bg-inline-code: hsl(191, 12%, 90%);
+
+  --grid-color: hsla(var(--sl-hue-accent), 80%, 40%, 0.35);
+}
+
+@layer starlight.base {
+  /* Grid only on landing page (pages with hero) */
+  :root[data-has-hero] body::before {
+    content: "";
+    position: fixed;
+    inset: auto 0 0;
+    height: 60vh;
+    background:
+      repeating-linear-gradient(
+        90deg,
+        transparent,
+        transparent calc(var(--grid-w) - 1px),
+        var(--grid-color) var(--grid-w)
+      ),
+      repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent calc(var(--grid-h) - 1px),
+        var(--grid-color) var(--grid-h)
+      );
+    transform: perspective(200px) rotateX(50deg)
+      translateY(calc(var(--scroll-progress, 0) * var(--grid-h) * -1));
+    transform-origin: center top;
+    /* Fade lines at horizon */
+    mask-image: linear-gradient(to bottom, transparent 0%, black 50%);
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 50%);
+    pointer-events: none;
+    z-index: -1;
+    will-change: transform;
+  }
+}
+
+@layer starlight.components {
+  a[href]:hover {
+    text-shadow: 0 0 8px hsla(var(--sl-hue-accent), 100%, 50%, 0.4);
+  }
+
+  .expressive-code pre {
+    border: 1px solid hsla(var(--sl-hue-accent), 100%, 50%, 0.15);
+  }
+
+  :root {
+    --sl-frame-gap: 0.75rem;
+  }
+
+  .sidebar-pane {
+    top: calc(var(--sl-nav-height) + var(--sl-frame-gap) * 2);
+    margin: var(--sl-frame-gap);
+    margin-top: 0;
+    border-radius: var(--sl-frame-gap);
+  }
+
+  header.header {
+    top: var(--sl-frame-gap);
+    left: var(--sl-frame-gap);
+    right: var(--sl-frame-gap);
+    width: auto;
+    border-radius: var(--sl-frame-gap);
+  }
+
+  @media (min-width: 72rem) {
+    .right-sidebar-container {
+      flex: 0 0 var(--sl-sidebar-width);
+    }
+
+    .main-pane {
+      flex: 1;
+    }
+
+    .content-panel .sl-container {
+      margin-inline: auto;
+    }
+
+    .right-sidebar {
+      position: fixed;
+      right: 0;
+      top: var(--sl-nav-height);
+      width: var(--sl-sidebar-width);
+      height: calc(100vh - var(--sl-nav-height));
+      padding: var(--sl-sidebar-pad-x);
+      overflow-y: auto;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  @layer starlight.base {
+    :root[data-has-hero] body::before {
+      transform: perspective(200px) rotateX(50deg);
+    }
+  }
+}
+
+@layer starlight.utils {
+  .sl-link-button {
+    border-radius: 0.5rem;
+  }
+}
