@@ -18,6 +18,8 @@ export default defineConfig({
         PageTitle: "./src/components/PageTitle.astro",
         SiteTitle: "./src/components/SiteTitle.astro",
         Hero: "./src/components/Hero.astro",
+        Header: "./src/components/Header.astro",
+        PageSidebar: "./src/components/PageSidebar.astro",
       },
       head: [
         { tag: "script", attrs: { src: "/scripts/parallax.js", defer: true } },
