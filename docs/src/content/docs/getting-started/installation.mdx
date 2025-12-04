@@ -1,0 +1,72 @@
+---
+title: Installation
+description: How to install slipp
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+## Requirements
+
+- Python 3.12+
+- [uv](https://docs.astral.sh/uv/) (recommended) or pip
+
+## Install slipp
+
+<Tabs syncKey="pkg">
+  <TabItem label="uv">
+    ```bash
+    uv tool install slipp
+    ```
+  </TabItem>
+  <TabItem label="pip">
+    ```bash
+    pip install slipp
+    ```
+  </TabItem>
+</Tabs>
+
+Or install from GitHub (latest):
+
+<Tabs syncKey="pkg">
+  <TabItem label="uv">
+    ```bash
+    uv tool install git+https://github.com/angelsen/slipp
+    ```
+  </TabItem>
+  <TabItem label="pip">
+    ```bash
+    pip install git+https://github.com/angelsen/slipp
+    ```
+  </TabItem>
+</Tabs>
+
+## For Development
+
+```bash
+git clone https://github.com/angelsen/slipp.git
+cd slipp
+uv sync
+uv run slipp --help
+```
+
+## Shell Completion
+
+Enable tab completion for your shell:
+
+<Tabs syncKey="shell">
+  <TabItem label="Bash">
+    ```bash
+    slipp --install-completion bash
+    ```
+  </TabItem>
+  <TabItem label="Zsh">
+    ```bash
+    slipp --install-completion zsh
+    ```
+  </TabItem>
+  <TabItem label="Fish">
+    ```bash
+    slipp --install-completion fish
+    ```
+  </TabItem>
+</Tabs>

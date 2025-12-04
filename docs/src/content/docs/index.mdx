@@ -1,9 +1,9 @@
 ---
-title: slipp
-description: Build locally, slipp to production. 90% automation for self-hosted app deployments.
+title: SLIPP
+description: Build locally, slipp to production. Tooling for self-hosted deployment.
 template: splash
 hero:
-  tagline: 90% automation for self-hosted app deployments
+  tagline: Tooling for self-hosted deployment
   actions:
     - text: Get Started
       link: /getting-started/installation/
@@ -14,25 +14,26 @@ hero:
       variant: minimal
 ---
 
-import { Card, CardGrid } from '@astrojs/starlight/components';
+import { Card, CardGrid } from "@astrojs/starlight/components";
 
 ## What is slipp?
 
 slipp generates complete Ansible deployments from your codebase and provides ops tools for debugging.
 
 <CardGrid stagger>
-	<Card title="Generate" icon="rocket">
-		Scan your project, generate Ansible playbooks, Dockerfiles, and inventory files.
-	</Card>
-	<Card title="Deploy" icon="laptop">
-		One command to deploy everything to your VPS with `slipp deploy`.
-	</Card>
-	<Card title="Debug" icon="magnifier">
-		Built-in ops: `slipp ps`, `slipp logs`, `slipp exec`, `slipp ssh`.
-	</Card>
-	<Card title="Local Dev" icon="pencil">
-		Run profiles connect local dev to remote infrastructure via tunnels.
-	</Card>
+  <Card title="Generate" icon="rocket">
+    Scan your project, generate Ansible playbooks, Dockerfiles, and inventory
+    files.
+  </Card>
+  <Card title="Deploy" icon="laptop">
+    One command to deploy everything to your VPS with `slipp deploy`.
+  </Card>
+  <Card title="Debug" icon="magnifier">
+    Built-in ops: `slipp ps`, `slipp logs`, `slipp exec`, `slipp ssh`.
+  </Card>
+  <Card title="Local Dev" icon="pencil">
+    Run profiles connect local dev to remote infrastructure via tunnels.
+  </Card>
 </CardGrid>
 
 ## Quick Example
@@ -53,7 +54,7 @@ slipp logs backend -f
 
 ## Philosophy
 
-**90% automation, not complete infrastructure management.**
+**Pragmatic tooling, not complete infrastructure management.**
 
 - Generate Ansible deployments for custom apps
 - Ops tools (logs/status/exec) for debugging

@@ -2,7 +2,7 @@
 
 **Build locally, slipp to production.**
 
-90% automation for self-hosted app deployments. Generate Ansible deployments from your codebase + ops tools (logs, status, exec) for debugging.
+Tooling for self-hosted deployment. Generate Ansible deployments from your codebase + ops tools (logs, status, exec) for debugging.
 
 ## Quick Start
 
@@ -115,7 +115,7 @@ slipp secrets sync vars.yml    # Generate secrets for {{ vault_* }} refs
 
 ## Philosophy
 
-**90% automation, not complete infrastructure management.**
+**Pragmatic tooling, not complete infrastructure management.**
 
 - Generate Ansible deployments for custom apps
 - Ops tools (logs/status/exec) for debugging

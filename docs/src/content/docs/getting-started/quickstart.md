@@ -13,7 +13,7 @@ slipp launch
 
 This scans your codebase and generates:
 
-```
+```yaml
 your-project/
 ├── inventory.yml        # Ansible inventory
 ├── playbook.yml         # Deployment playbook
