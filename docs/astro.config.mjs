@@ -56,7 +56,7 @@ export default defineConfig({
         },
       ],
       editLink: {
-        baseUrl: "https://github.com/angelsen/slipp/edit/main/docs/",
+        baseUrl: "https://github.com/angelsen/slipp/edit/master/docs/",
       },
     }),
   ],
