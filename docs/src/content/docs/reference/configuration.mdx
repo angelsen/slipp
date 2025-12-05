@@ -1,0 +1,242 @@
+---
+title: Configuration Reference
+description: Complete reference for slipp.yaml configuration file
+sidebar:
+  order: 2
+---
+
+import { FileTree } from "@astrojs/starlight/components";
+
+The `slipp.yaml` file configures a project for slipp operations.
+
+## File Location
+
+<FileTree>
+- your-project/
+  - slipp.yaml
+  - inventory/
+  - playbook.yml
+</FileTree>
+
+Created automatically by `slipp launch` or `slipp deploy --name`.
+
+## Full Example
+
+```yaml title="slipp.yaml"
+# Project identity
+name: myapp
+
+# Ansible paths
+inventory: inventory/hosts
+playbook: playbook.yml
+roles:
+  - roles
+
+# Secrets
+vault: inventory/host_vars/myserver/vault.yml
+
+# Container runtime (auto-detected if omitted)
+runtime: podman
+
+# Managed roles (for filtering in slipp ps)
+managed_roles:
+  - myapp
+  - myapp-worker
+
+# Tag presets for deployments
+tag_presets:
+  install: "--tags install-all"
+  setup: "--tags setup-all --skip-tags start"
+  restart: "--tags restart"
+  update: "--tags update-app"
+```
+
+## Fields
+
+### name
+
+**Required**. Project identifier used in:
+- Global registry
+- Service filtering with `slipp ps -p`
+- Cross-project vault access
+
+```yaml
+name: myapp
+```
+
+### inventory
+
+Path to Ansible inventory file, relative to project root.
+
+```yaml
+inventory: inventory/hosts
+```
+
+Default: `inventory/hosts`
+
+### playbook
+
+Path to main Ansible playbook.
+
+```yaml
+playbook: playbook.yml
+```
+
+Default: `playbook.yml`
+
+### roles
+
+List of directories containing Ansible roles.
+
+```yaml
+roles:
+  - roles
+  - ../shared-roles
+```
+
+Default: `["roles"]`
+
+### vault
+
+Path to Ansible vault file for secrets.
+
+```yaml
+vault: inventory/host_vars/myserver/vault.yml
+```
+
+Used by:
+- `slipp secrets` commands
+- `slipp run --vault` for environment injection
+
+### runtime
+
+Container runtime: `docker` or `podman`.
+
+```yaml
+runtime: podman
+```
+
+Auto-detected from playbook if omitted.
+
+### managed_roles
+
+List of Ansible role names this project manages. Used to filter `slipp ps` output.
+
+```yaml
+managed_roles:
+  - myapp
+  - myapp-worker
+  - myapp-scheduler
+```
+
+Services from these roles appear in `slipp ps` without `--all`.
+
+### tag_presets
+
+Named shortcuts for Ansible tag combinations.
+
+```yaml
+tag_presets:
+  install: "--tags install-all"
+  setup: "--tags setup-all --skip-tags start"
+  restart: "--tags restart"
+```
+
+Use with:
+```bash
+slipp deploy install
+slipp deploy setup
+```
+
+## Inventory Format
+
+The inventory file uses standard Ansible YAML format:
+
+```yaml title="inventory/hosts"
+all:
+  hosts:
+    myserver:
+      ansible_host: 192.168.1.100
+      ansible_user: slipp
+      ansible_port: 22
+```
+
+### Multiple hosts
+
+```yaml
+all:
+  hosts:
+    production:
+      ansible_host: prod.example.com
+      ansible_user: slipp
+    staging:
+      ansible_host: staging.example.com
+      ansible_user: slipp
+```
+
+### Host variables
+
+Per-host configuration in `host_vars/`:
+
+<FileTree>
+- inventory/
+  - hosts
+  - host_vars/
+    - myserver/
+      - vars.yml
+      - vault.yml
+</FileTree>
+
+```yaml title="inventory/host_vars/myserver/vars.yml"
+domain: app.example.com
+app_port: 3000
+database_host: localhost
+database_password: "{{ vault_database_password }}"
+```
+
+## Global Registry
+
+Projects are tracked globally at `~/.config/slipp/projects.json`:
+
+```json
+{
+  "projects": [
+    {
+      "name": "myapp",
+      "project_path": "/home/user/projects/myapp",
+      "registered_at": "2024-01-15T10:30:00Z"
+    }
+  ]
+}
+```
+
+View with:
+```bash
+slipp projects list
+```
+
+## Environment-Specific Config
+
+For multiple environments, use separate inventory files:
+
+<FileTree>
+- inventory/
+  - production
+  - staging
+  - development
+</FileTree>
+
+Deploy to specific environment:
+
+```bash
+slipp deploy staging
+```
+
+Or configure in slipp.yaml per environment (not yet supported - use CLI flags).
+
+## Migration from Older Formats
+
+If upgrading from an older slipp version:
+
+1. Rename `ansictl.yaml` to `slipp.yaml`
+2. The format is identical - no content changes needed

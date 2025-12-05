@@ -1,0 +1,778 @@
+---
+title: CLI Reference
+description: Complete command reference for slipp
+tableOfContents:
+  minHeadingLevel: 2
+  maxHeadingLevel: 3
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Complete reference for all slipp commands. Commands follow a consistent pattern:
+- **Singular** = action (`slipp run`, `slipp deploy`)
+- **Plural** = manage resources (`slipp runs`, `slipp secrets`)
+
+```bash
+slipp [OPTIONS] COMMAND [ARGS]
+```
+
+## Global Options
+
+| Option | Description |
+|--------|-------------|
+| `-v, --verbose` | Enable verbose logging |
+| `-o, --output` | Output format: `table` (default), `json` |
+| `-V, --version` | Show version and exit |
+| `--help` | Show help message |
+
+---
+
+## Operations
+
+Commands for monitoring and managing deployed services.
+
+### ps
+
+List running services across registered projects (like `docker ps`).
+
+```bash
+slipp ps [OPTIONS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --project` | Filter by project name |
+| `--refresh` | Force re-discovery (bypass cache) |
+| `--all` | Include system services |
+
+<Tabs>
+<TabItem label="Examples">
+```bash
+# List all services
+slipp ps
+
+# Filter by project
+slipp ps -p myproject
+
+# Fresh discovery
+slipp ps --refresh
+
+# JSON output
+slipp ps -o json
+```
+</TabItem>
+</Tabs>
+
+### logs
+
+View service logs (journalctl or container logs).
+
+```bash
+slipp logs <service> [OPTIONS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `-f, --follow` | Follow log output |
+| `-n, --lines` | Number of lines (default: 50) |
+| `--all` | Include system services in discovery |
+
+<Tabs>
+<TabItem label="Examples">
+```bash
+# View last 50 lines
+slipp logs synapse
+
+# Follow logs
+slipp logs synapse -f
+
+# Last 100 lines
+slipp logs synapse -n 100
+```
+</TabItem>
+</Tabs>
+
+### status
+
+Display detailed service status (like `systemctl status`).
+
+```bash
+slipp status <service> [OPTIONS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--all` | Include system services in discovery |
+
+### exec
+
+Execute a command on VPS or in a container.
+
+```bash
+slipp exec "<command>"
+slipp exec <service> "<command>"
+```
+
+| Option | Description |
+|--------|-------------|
+| `-u, --user` | Override user (root, postgres, www-data) |
+
+<Tabs>
+<TabItem label="Examples">
+```bash
+# Execute on VPS
+slipp exec "df -h"
+
+# Execute in container
+slipp exec synapse "cat /data/homeserver.yaml"
+
+# Execute as root
+slipp exec -u root "systemctl restart nginx"
+```
+</TabItem>
+</Tabs>
+
+### ssh
+
+Open interactive shell on VPS or container service.
+
+```bash
+slipp ssh [service]
+```
+
+| Option | Description |
+|--------|-------------|
+| `-u, --user` | Override user |
+
+<Tabs>
+<TabItem label="Examples">
+```bash
+# SSH to VPS
+slipp ssh
+
+# Shell into container
+slipp ssh synapse
+
+# As specific user
+slipp ssh -u postgres
+```
+</TabItem>
+</Tabs>
+
+### host
+
+Output host connection info (pipeable).
+
+```bash
+slipp host [project]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--ip` | Output IP only |
+| `--user` | Output user only |
+| `--port` | Output port only |
+
+<Tabs>
+<TabItem label="Examples">
+```bash
+# Get connection string
+slipp host
+# Output: slipp@192.168.1.100
+
+# Get IP for scripting
+slipp host --ip
+# Output: 192.168.1.100
+
+# Specific project
+slipp host myproject --ip
+```
+</TabItem>
+</Tabs>
+
+---
+
+## Development
+
+Commands for local development workflows.
+
+### run
+
+Execute a run profile for local development with remote infrastructure.
+
+```bash
+slipp run <name> [OPTIONS] [-- ARGS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--cmd` | Command (creates/updates profile) |
+| `--env` | Environment variable `KEY=VALUE` (repeatable) |
+| `--vault` | Vault project(s) for secrets (repeatable) |
+| `--tunnel-out` | Reverse tunnel `local_port:domain@host` |
+| `--tunnel-in` | Forward tunnel `service:port@host` |
+
+<Tabs>
+<TabItem label="Create Profile">
+```bash
+# Create and run profile
+slipp run dev \
+  --cmd "npm run dev" \
+  --tunnel-out 5173:app.example.com@myserver \
+  --vault myproject
+```
+</TabItem>
+<TabItem label="Use Profile">
+```bash
+# Run saved profile
+slipp run dev
+
+# Pass additional args
+slipp run dev -- --port 3000
+
+# Override at runtime
+slipp run dev --env DEBUG=true
+```
+</TabItem>
+</Tabs>
+
+:::tip
+See [Local Development Guide](/guides/local-development) for tunnel concepts.
+:::
+
+### runs
+
+Manage saved run profiles.
+
+#### runs list
+
+```bash
+slipp runs list
+```
+
+Lists all saved profiles with their commands, vaults, and tunnels.
+
+#### runs remove
+
+```bash
+slipp runs remove <name>
+```
+
+Remove a saved run profile.
+
+### launch
+
+Generate complete Ansible project from codebase.
+
+```bash
+slipp launch [OPTIONS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `-n, --name` | Project name (required) |
+| `-e, --env` | Environment (default: production) |
+| `-d, --dir` | Directories to scan (repeatable) |
+| `--dry-run` | Show what would be done |
+| `--reconfigure` | Re-prompt for inventory config |
+| `--proxy` | Reverse proxy: `caddy`, `none` |
+
+<Tabs>
+<TabItem label="Example">
+```bash
+# Generate Ansible project
+slipp launch --name myapp
+
+# Multiple directories
+slipp launch --name myapp -d ./frontend -d ./backend
+
+# Different environment
+slipp launch --name myapp --env staging
+```
+</TabItem>
+</Tabs>
+
+### generate
+
+Generate specific Ansible project files.
+
+#### generate dockerfile
+
+```bash
+slipp generate dockerfile [OPTIONS]
+```
+
+Generate only Dockerfiles for detected services.
+
+#### generate scaffold
+
+```bash
+slipp generate scaffold [OPTIONS]
+```
+
+Generate project scaffolding without Dockerfiles.
+
+#### generate full
+
+```bash
+slipp generate full [OPTIONS]
+```
+
+Generate complete project (Dockerfiles + scaffolding).
+
+---
+
+## Tags
+
+Manage Ansible tag presets for deployments.
+
+### tag
+
+Show a tag preset's configuration.
+
+```bash
+slipp tag <preset>
+```
+
+<Tabs>
+<TabItem label="Example">
+```bash
+slipp tag install
+# Output:
+#   --tags: install-all
+#   --skip-tags: import-postgres
+```
+</TabItem>
+</Tabs>
+
+### tags
+
+Manage tag presets.
+
+#### tags list
+
+```bash
+slipp tags list
+```
+
+List all configured tag presets.
+
+#### tags add
+
+```bash
+slipp tags add <name> [OPTIONS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `-t, --tags` | Ansible tags to run (comma-separated) |
+| `--skip-tags` | Ansible tags to skip (comma-separated) |
+
+<Tabs>
+<TabItem label="Example">
+```bash
+slipp tags add install --tags install-all --skip-tags import-postgres
+slipp tags add setup --tags setup-all
+```
+</TabItem>
+</Tabs>
+
+#### tags remove
+
+```bash
+slipp tags remove <name>
+```
+
+Remove a tag preset.
+
+---
+
+## Secrets
+
+Generate and manage vault secrets.
+
+### secret
+
+Generate a cryptographically secure secret.
+
+```bash
+slipp secret [OPTIONS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `-b, --bytes` | Bytes of entropy (default: 32 = 256-bit) |
+| `--base64` | Output as base64 instead of hex |
+| `--ulid` | Output as ULID (ignores --bytes) |
+| `--jwk` | Output as RSA JWK keypair |
+| `--bits` | RSA key size for --jwk (default: 2048) |
+
+<Tabs>
+<TabItem label="Examples">
+```bash
+# Generate 256-bit hex secret
+slipp secret
+# Output: 64 hex chars
+
+# Base64 encoding
+slipp secret --base64
+
+# Generate JWK keypair
+slipp secret --jwk
+
+# Generate ULID
+slipp secret --ulid
+```
+</TabItem>
+</Tabs>
+
+### secrets
+
+Manage vault secrets.
+
+#### secrets list
+
+```bash
+slipp secrets list [target] [secret_name]
+```
+
+List secrets in a vault, or show available vaults if no target specified.
+
+<Tabs>
+<TabItem label="Examples">
+```bash
+# Show available vaults
+slipp secrets list
+
+# List secrets in project vault
+slipp secrets list myproject
+
+# Get template string for specific secret
+slipp secrets list myproject db_password
+# Output: {{ db_password }}
+```
+</TabItem>
+</Tabs>
+
+#### secrets add
+
+```bash
+slipp secrets add <name> [target] [OPTIONS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `-b, --bytes` | Bytes of entropy (default: 32) |
+| `--jwk` | Generate RSA JWK keypair |
+| `--bits` | RSA key size for --jwk (default: 2048) |
+
+<Tabs>
+<TabItem label="Examples">
+```bash
+# Add random secret to current project vault
+slipp secrets add vault_db_password
+
+# Add to specific project
+slipp secrets add vault_api_key myproject
+
+# Add JWK keypair
+slipp secrets add vault_signing_key --jwk
+```
+</TabItem>
+</Tabs>
+
+#### secrets sync
+
+```bash
+slipp secrets sync <path> [OPTIONS]
+```
+
+Scan YAML for `{{ vault_* }}` references and auto-generate secrets.
+
+| Option | Description |
+|--------|-------------|
+| `-b, --bytes` | Bytes of entropy (default: 32) |
+| `-f, --force` | Overwrite existing vault.yml |
+
+<Tabs>
+<TabItem label="Example">
+```bash
+slipp secrets sync inventory/host_vars/myhost/vars.yml
+# Creates vault.yml with generated secrets for all {{ vault_* }} refs
+```
+</TabItem>
+</Tabs>
+
+:::caution
+Always encrypt vault files after creation:
+```bash
+ansible-vault encrypt inventory/host_vars/myhost/vault.yml
+```
+:::
+
+---
+
+## Images
+
+Container image operations.
+
+### image push
+
+Push local container image to VPS via SSH.
+
+```bash
+slipp image push <image> [OPTIONS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--host` | Target host/project |
+| `-n, --name` | Rename image on VPS |
+
+<Tabs>
+<TabItem label="Examples">
+```bash
+# Push image
+slipp image push myapp:latest
+
+# Push to specific project host
+slipp image push myapp:latest --host myproject
+
+# Rename on push
+slipp image push myapp:v1.2.3 --name myapp:latest
+```
+</TabItem>
+</Tabs>
+
+### images list
+
+List container images on VPS.
+
+```bash
+slipp images list [OPTIONS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--host` | Target host/project |
+| `-f, --filter` | Filter by name pattern |
+
+<Tabs>
+<TabItem label="Examples">
+```bash
+# List all images
+slipp images list
+
+# Filter by pattern
+slipp images list --filter "myapp*"
+```
+</TabItem>
+</Tabs>
+
+---
+
+## Management
+
+Project and configuration management.
+
+### projects
+
+Manage registered projects.
+
+#### projects list
+
+```bash
+slipp projects list
+```
+
+List all registered projects with their paths.
+
+#### projects add
+
+```bash
+slipp projects add <name> [OPTIONS]
+```
+
+Register the current directory as a project.
+
+#### projects remove
+
+```bash
+slipp projects remove <name>
+```
+
+Unregister a project.
+
+### config
+
+Show current project configuration.
+
+```bash
+slipp config
+```
+
+Displays:
+- Project name, inventory, playbook, vault paths
+- Hosts from inventory
+- Global registry status
+
+Supports `-o json` for machine-readable output.
+
+---
+
+## Bootstrap
+
+VPS bootstrap operations for initial setup.
+
+### bootstrap account
+
+Create slipp service account on VPS.
+
+```bash
+slipp bootstrap account <host> [OPTIONS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--root-user` | Root user for initial connection (default: root) |
+| `--ssh-key` | SSH private key path |
+| `-p, --port` | SSH port (default: 22) |
+| `--user` | Service account name (default: slipp) |
+| `--dry-run` | Show what would be done |
+
+<Tabs>
+<TabItem label="Example">
+```bash
+slipp bootstrap account 192.168.1.100 --port 22
+
+# Dry run first
+slipp bootstrap account myserver.com --dry-run
+```
+</TabItem>
+</Tabs>
+
+This command:
+1. Creates the `slipp` user account
+2. Copies SSH keys from root
+3. Configures passwordless sudo
+4. Verifies the setup
+
+### bootstrap proxy
+
+Setup dev proxy infrastructure for `--tunnel-out`.
+
+```bash
+slipp bootstrap proxy <host> [OPTIONS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `-e, --email` | Email for Let's Encrypt certificates (required) |
+| `-p, --fallback-port` | Port for existing HTTPS service (default: 9443) |
+
+<Tabs>
+<TabItem label="Example">
+```bash
+slipp bootstrap proxy myproject --email admin@example.com
+```
+</TabItem>
+</Tabs>
+
+Installs Caddy dev proxy for routing production domains to local tunnels.
+
+### bootstrap registry
+
+Setup container registry authentication on VPS.
+
+#### bootstrap registry ghcr
+
+```bash
+slipp bootstrap registry ghcr [OPTIONS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--host` | Target host/project |
+| `-u, --user` | GitHub username |
+| `-t, --token` | GitHub PAT (or set `GITHUB_TOKEN`) |
+
+#### bootstrap registry dockerhub
+
+```bash
+slipp bootstrap registry dockerhub [OPTIONS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--host` | Target host/project |
+| `-u, --user` | Docker Hub username |
+| `-t, --token` | Docker Hub token (or set `DOCKER_TOKEN`) |
+
+<Tabs>
+<TabItem label="Examples">
+```bash
+# GitHub Container Registry
+slipp bootstrap registry ghcr --user myuser
+
+# Docker Hub
+slipp bootstrap registry dockerhub --user myuser
+```
+</TabItem>
+</Tabs>
+
+---
+
+## Deploy
+
+Execute Ansible playbook to deploy services.
+
+```bash
+slipp deploy [target] [preset] [OPTIONS]
+```
+
+| Argument | Description |
+|----------|-------------|
+| `target` | Environment name or tag preset (default: production) |
+| `preset` | Tag preset when using `slipp deploy <env> <preset>` |
+
+| Option | Description |
+|--------|-------------|
+| `-n, --name` | Project name (creates/updates slipp.yaml) |
+| `--dry-run` | Show what would be done |
+| `-i, --inventory` | Custom inventory file path |
+| `--playbook` | Custom playbook file path |
+| `--vault` | Path to vault file |
+| `-r, --requirements` | Path to requirements.yml |
+| `--roles` | Role directories (repeatable) |
+| `--force-requirements` | Force reinstall roles |
+| `-t, --tags` | Ansible tags to run |
+| `--skip-tags` | Ansible tags to skip |
+
+<Tabs>
+<TabItem label="Examples">
+```bash
+# Deploy with defaults
+slipp deploy
+
+# Use tag preset
+slipp deploy install
+
+# Deploy to staging with preset
+slipp deploy staging install
+
+# First-time setup
+slipp deploy --name myproject -i inventory/hosts
+
+# Dry run
+slipp deploy --dry-run
+```
+</TabItem>
+</Tabs>
+
+:::tip
+Create tag presets for common deployments:
+```bash
+slipp tags add install --tags install-all
+slipp deploy install
+```
+:::

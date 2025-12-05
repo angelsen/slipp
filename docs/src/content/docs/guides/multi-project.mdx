@@ -1,0 +1,242 @@
+---
+title: Multi-Project Setup
+description: Manage multiple applications on the same VPS
+sidebar:
+  order: 4
+---
+
+import { Steps, FileTree } from "@astrojs/starlight/components";
+
+Run multiple applications on a single VPS with shared infrastructure. slipp tracks projects globally so you can operate on any project from anywhere.
+
+## Project Registry
+
+slipp maintains a global registry of projects:
+
+```bash
+slipp projects list
+```
+
+```
+name          path                              registered
+myapp         /home/user/projects/myapp         2024-01-15
+auth-service  /home/user/projects/auth-service  2024-01-10
+landing       /home/user/projects/landing       2024-01-05
+```
+
+### Register a project
+
+```bash
+cd /path/to/myproject
+slipp projects add myapp
+```
+
+### Remove from registry
+
+```bash
+slipp projects remove myapp
+```
+
+Projects are also auto-registered on deploy.
+
+## Shared Infrastructure
+
+### Single VPS layout
+
+<FileTree>
+- /home/user/
+  - projects/
+    - myapp/
+      - slipp.yaml
+      - inventory/
+    - auth-service/
+      - slipp.yaml
+      - inventory/
+    - landing/
+      - slipp.yaml
+      - inventory/
+</FileTree>
+
+All projects point to the same VPS in their inventories:
+
+```yaml title="inventory/hosts"
+all:
+  hosts:
+    myserver:
+      ansible_host: 192.168.1.100
+      ansible_user: slipp
+```
+
+### View all services
+
+```bash
+slipp ps
+```
+
+Shows services across ALL registered projects:
+
+```
+name       project       host          state    uptime
+myapp      myapp         myserver      running  2d
+postgres   auth-service  myserver      running  5d
+nginx      landing       myserver      running  5d
+```
+
+## Operations Across Projects
+
+### Target specific project
+
+```bash
+slipp ps -p auth-service
+slipp logs postgres -p auth-service
+```
+
+### Use host from any directory
+
+```bash
+slipp exec "df -h"  # Uses current project's host
+slipp host myapp --ip  # Get IP for specific project
+```
+
+### Shared secrets
+
+Access vault from another project:
+
+```bash
+slipp run dev --vault shared-secrets --cmd "npm run dev"
+```
+
+## Deployment Workflow
+
+<Steps>
+
+1. **Deploy infrastructure first**
+
+   Projects like databases should deploy before dependent apps:
+
+   ```bash
+   cd auth-service
+   slipp deploy
+   ```
+
+2. **Deploy applications**
+
+   ```bash
+   cd myapp
+   slipp deploy
+
+   cd landing
+   slipp deploy
+   ```
+
+3. **Verify all services**
+
+   ```bash
+   slipp ps
+   ```
+
+</Steps>
+
+## Tag Presets
+
+Create consistent presets across projects:
+
+```yaml title="slipp.yaml"
+tag_presets:
+  install: "--tags install-all"
+  setup: "--tags setup-all --skip-tags start"
+  restart: "--tags restart"
+```
+
+Use from any project:
+
+```bash
+slipp deploy install
+```
+
+## Example: Full Stack Setup
+
+<FileTree>
+- projects/
+  - infrastructure/
+    - slipp.yaml
+    - inventory/
+    - roles/
+      - postgres/
+      - redis/
+      - traefik/
+  - api/
+    - slipp.yaml
+    - inventory/
+    - roles/
+      - api/
+  - frontend/
+    - slipp.yaml
+    - inventory/
+    - roles/
+      - frontend/
+</FileTree>
+
+### Deploy order
+
+```bash
+# 1. Infrastructure (database, cache, proxy)
+cd infrastructure && slipp deploy
+
+# 2. Backend API
+cd api && slipp deploy
+
+# 3. Frontend
+cd frontend && slipp deploy
+```
+
+### Local development
+
+```bash
+# Frontend: tunnel to production, connect to remote API
+slipp run dev \
+  --cmd "npm run dev" \
+  --tunnel-out 3000:app.example.com@myserver \
+  --tunnel-in api:8000@myserver
+```
+
+## Configuration
+
+### Project config (slipp.yaml)
+
+```yaml
+name: myapp
+inventory: inventory/hosts
+playbook: playbook.yml
+vault: inventory/host_vars/myserver/vault.yml
+```
+
+### Global registry
+
+Located at `~/.config/slipp/projects.json`:
+
+```json
+{
+  "projects": [
+    {
+      "name": "myapp",
+      "project_path": "/home/user/projects/myapp",
+      "registered_at": "2024-01-15T10:30:00Z"
+    }
+  ]
+}
+```
+
+## Tips
+
+:::tip[Consistent naming]
+Use the same host name across inventory files for seamless cross-project operations.
+:::
+
+:::tip[Shared roles]
+Keep common Ansible roles in a shared location and reference them in requirements.yml.
+:::
+
+:::tip[Backup registry]
+The global registry is just a JSON file - back it up or version control it.
+:::

@@ -1,0 +1,177 @@
+---
+title: Container Images
+description: Push and manage container images on your VPS
+sidebar:
+  order: 3
+---
+
+import { Steps, Tabs, TabItem } from "@astrojs/starlight/components";
+
+Transfer container images directly to your VPS without a registry. slipp handles runtime detection (Docker/Podman) automatically.
+
+## Push Images
+
+Transfer a local image to your VPS:
+
+```bash
+slipp image push myapp:latest
+```
+
+This:
+1. Exports the image locally
+2. Streams it over SSH
+3. Loads it on the VPS
+
+### Rename on push
+
+```bash
+slipp image push myapp:v1.2.3 --name myapp:latest
+```
+
+Useful for promoting versions without rebuilding.
+
+### Target specific host
+
+```bash
+slipp image push myapp:latest --host myproject
+```
+
+## List Images
+
+View images on your VPS:
+
+```bash
+slipp images list
+```
+
+Output:
+```
+image              size     created
+myapp:latest       245MB    2 hours ago
+myapp:v1.2.3       245MB    3 days ago
+postgres:15        379MB    2 weeks ago
+```
+
+### Filter by pattern
+
+```bash
+slipp images list --filter "myapp*"
+```
+
+## Workflow
+
+<Steps>
+
+1. **Build locally**
+
+   ```bash
+   docker build -t myapp:v1.2.3 .
+   # or
+   podman build -t myapp:v1.2.3 .
+   ```
+
+2. **Push to VPS**
+
+   ```bash
+   slipp image push myapp:v1.2.3
+   ```
+
+3. **Update deployment**
+
+   Edit your compose or vars file to use the new tag.
+
+4. **Redeploy**
+
+   ```bash
+   slipp deploy
+   ```
+
+</Steps>
+
+## Runtime Detection
+
+slipp automatically detects the container runtime:
+
+| Location | Detection |
+|----------|-----------|
+| Local | Checks if image exists in Podman, then Docker |
+| Remote | Reads from `slipp.yaml` or detects from playbook |
+
+:::tip
+Set runtime explicitly in `slipp.yaml`:
+```yaml
+runtime: podman  # or docker
+```
+:::
+
+## Registry Authentication
+
+For pulling images from registries on your VPS:
+
+### GitHub Container Registry
+
+```bash
+slipp bootstrap registry ghcr --user myuser
+```
+
+Uses `GITHUB_TOKEN` env var or prompts for token.
+
+### Docker Hub
+
+```bash
+slipp bootstrap registry dockerhub --user myuser
+```
+
+Uses `DOCKER_TOKEN` env var or prompts for token.
+
+## Use Cases
+
+### Development iteration
+
+Push local changes without CI/CD:
+
+```bash
+# Build with changes
+docker build -t myapp:dev .
+
+# Push and restart
+slipp image push myapp:dev
+slipp exec "docker compose restart myapp"
+```
+
+### Rollback
+
+Keep multiple versions, rollback by tag:
+
+```bash
+slipp images list --filter "myapp*"
+# Shows: myapp:v1.2.3, myapp:v1.2.2, myapp:v1.2.1
+
+# Update compose to use v1.2.2
+slipp deploy
+```
+
+### Air-gapped environments
+
+No registry needed - direct SSH transfer:
+
+```bash
+slipp image push myapp:latest --host isolated-server
+```
+
+## Performance Tips
+
+:::tip[Compress layers]
+Use multi-stage builds to reduce image size:
+```dockerfile
+FROM node:20 AS builder
+# ... build steps
+
+FROM node:20-slim
+COPY --from=builder /app/dist /app
+```
+:::
+
+:::tip[Incremental layers]
+Push frequently-changing code last in Dockerfile for better layer caching.
+:::

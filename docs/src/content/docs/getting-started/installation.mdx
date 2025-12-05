@@ -1,72 +1,117 @@
 ---
 title: Installation
-description: How to install slipp
+description: Install slipp and set up your development environment
 ---
 
-import { Tabs, TabItem } from "@astrojs/starlight/components";
+import { Tabs, TabItem, Steps } from "@astrojs/starlight/components";
 
 ## Requirements
 
 - Python 3.12+
 - [uv](https://docs.astral.sh/uv/) (recommended) or pip
+- Ansible (for deployments)
 
-## Install slipp
+## Quick Install
+
+<Steps>
+
+1. **Install slipp**
+
+   <Tabs syncKey="pkg">
+   <TabItem label="uv (recommended)">
+   ```bash
+   uv tool install slipp
+   ```
+   </TabItem>
+   <TabItem label="pip">
+   ```bash
+   pip install slipp
+   ```
+   </TabItem>
+   </Tabs>
+
+2. **Verify installation**
+
+   ```bash
+   slipp --version
+   ```
+
+3. **Enable shell completion** (optional)
+
+   <Tabs syncKey="shell">
+   <TabItem label="Bash">
+   ```bash
+   slipp --install-completion bash
+   source ~/.bashrc
+   ```
+   </TabItem>
+   <TabItem label="Zsh">
+   ```bash
+   slipp --install-completion zsh
+   source ~/.zshrc
+   ```
+   </TabItem>
+   <TabItem label="Fish">
+   ```bash
+   slipp --install-completion fish
+   ```
+   </TabItem>
+   </Tabs>
+
+</Steps>
+
+## Install from GitHub
+
+For the latest development version:
 
 <Tabs syncKey="pkg">
-  <TabItem label="uv">
-    ```bash
-    uv tool install slipp
-    ```
-  </TabItem>
-  <TabItem label="pip">
-    ```bash
-    pip install slipp
-    ```
-  </TabItem>
-</Tabs>
-
-Or install from GitHub (latest):
-
-<Tabs syncKey="pkg">
-  <TabItem label="uv">
-    ```bash
-    uv tool install git+https://github.com/angelsen/slipp
-    ```
-  </TabItem>
-  <TabItem label="pip">
-    ```bash
-    pip install git+https://github.com/angelsen/slipp
-    ```
-  </TabItem>
-</Tabs>
-
-## For Development
-
+<TabItem label="uv">
 ```bash
-git clone https://github.com/angelsen/slipp.git
-cd slipp
-uv sync
-uv run slipp --help
+uv tool install git+https://github.com/angelsen/slipp
 ```
-
-## Shell Completion
-
-Enable tab completion for your shell:
-
-<Tabs syncKey="shell">
-  <TabItem label="Bash">
-    ```bash
-    slipp --install-completion bash
-    ```
-  </TabItem>
-  <TabItem label="Zsh">
-    ```bash
-    slipp --install-completion zsh
-    ```
-  </TabItem>
-  <TabItem label="Fish">
-    ```bash
-    slipp --install-completion fish
-    ```
-  </TabItem>
+</TabItem>
+<TabItem label="pip">
+```bash
+pip install git+https://github.com/angelsen/slipp
+```
+</TabItem>
 </Tabs>
+
+## Development Setup
+
+For contributing or local development:
+
+<Steps>
+
+1. **Clone the repository**
+
+   ```bash
+   git clone https://github.com/angelsen/slipp.git
+   cd slipp
+   ```
+
+2. **Install dependencies**
+
+   ```bash
+   uv sync
+   ```
+
+3. **Run slipp**
+
+   ```bash
+   uv run slipp --help
+   ```
+
+</Steps>
+
+:::tip
+Install Ansible separately if you plan to deploy:
+```bash
+uv tool install ansible
+```
+:::
+
+## Next Steps
+
+- [Quick Start](/getting-started/quickstart) - Deploy your first app in 5 minutes
+- [First Deployment](/getting-started/first-deploy) - Detailed walkthrough

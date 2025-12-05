@@ -1,0 +1,240 @@
+---
+title: GitHub Actions CI/CD
+description: Automate deployments with GitHub Actions
+---
+
+import { Steps, FileTree } from "@astrojs/starlight/components";
+
+Deploy automatically when you push to main.
+
+## Prerequisites
+
+- slipp project deployed and working manually
+- SSH key access configured
+- GitHub repository
+
+## Setup
+
+<Steps>
+
+1. **Generate deployment SSH key**
+
+   ```bash
+   ssh-keygen -t ed25519 -C "github-actions-deploy" -f deploy_key
+   ```
+
+2. **Add public key to VPS**
+
+   ```bash
+   # Copy public key
+   cat deploy_key.pub
+
+   # Add to VPS authorized_keys
+   slipp exec "echo 'YOUR_PUBLIC_KEY' >> ~/.ssh/authorized_keys"
+   ```
+
+3. **Add secrets to GitHub**
+
+   Go to Repository → Settings → Secrets and variables → Actions:
+
+   | Secret | Value |
+   |--------|-------|
+   | `SSH_PRIVATE_KEY` | Contents of `deploy_key` |
+   | `SSH_HOST` | Your VPS IP or hostname |
+   | `SSH_USER` | `slipp` |
+   | `VAULT_PASSWORD` | Your Ansible vault password |
+
+4. **Create workflow file**
+
+   <FileTree>
+   - .github/
+     - workflows/
+       - deploy.yml
+   </FileTree>
+
+</Steps>
+
+## Workflow File
+
+```yaml title=".github/workflows/deploy.yml"
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Install slipp
+        run: pip install slipp
+
+      - name: Create vault password file
+        run: echo "${{ secrets.VAULT_PASSWORD }}" > .vault_pass
+
+      - name: Deploy
+        env:
+          ANSIBLE_VAULT_PASSWORD_FILE: .vault_pass
+        run: |
+          slipp deploy
+
+      - name: Cleanup
+        if: always()
+        run: rm -f .vault_pass ~/.ssh/deploy_key
+```
+
+## Build and Deploy
+
+If you need to build first:
+
+```yaml title=".github/workflows/deploy.yml"
+name: Build and Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install and Build
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build Docker Image
+        run: docker build -t myapp:${{ github.sha }} .
+
+      - name: Save Image
+        run: docker save myapp:${{ github.sha }} > image.tar
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: docker-image
+          path: image.tar
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Transfer Image
+        run: |
+          cat image.tar | ssh -i ~/.ssh/deploy_key \
+            ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} \
+            "docker load"
+
+      - name: Install slipp
+        run: pip install slipp
+
+      - name: Create vault password file
+        run: echo "${{ secrets.VAULT_PASSWORD }}" > .vault_pass
+
+      - name: Deploy
+        env:
+          ANSIBLE_VAULT_PASSWORD_FILE: .vault_pass
+          SSH_KEY_FILE: ~/.ssh/deploy_key
+        run: slipp deploy
+
+      - name: Cleanup
+        if: always()
+        run: rm -f .vault_pass image.tar ~/.ssh/deploy_key
+```
+
+## Environment-Specific Deploys
+
+Deploy to different environments based on branch:
+
+```yaml
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+      - staging
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set environment
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "DEPLOY_ENV=production" >> $GITHUB_ENV
+          else
+            echo "DEPLOY_ENV=staging" >> $GITHUB_ENV
+          fi
+
+      - name: Deploy
+        run: slipp deploy ${{ env.DEPLOY_ENV }}
+```
+
+## Notifications
+
+Add Slack/Discord notifications:
+
+```yaml
+      - name: Notify Success
+        if: success()
+        run: |
+          curl -X POST ${{ secrets.SLACK_WEBHOOK }} \
+            -H 'Content-type: application/json' \
+            -d '{"text":"Deployed ${{ github.repository }} to production"}'
+
+      - name: Notify Failure
+        if: failure()
+        run: |
+          curl -X POST ${{ secrets.SLACK_WEBHOOK }} \
+            -H 'Content-type: application/json' \
+            -d '{"text":"Deploy failed for ${{ github.repository }}"}'
+```
+
+## Security Tips
+
+:::caution[Never commit secrets]
+Use GitHub Secrets for all sensitive values.
+:::
+
+:::tip[Use deploy keys]
+Create a dedicated SSH key for CI/CD, not your personal key.
+:::
+
+:::tip[Limit key permissions]
+Consider restricting the deploy key to specific commands using SSH forced commands.
+:::

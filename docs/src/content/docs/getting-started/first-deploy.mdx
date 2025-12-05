@@ -1,0 +1,254 @@
+---
+title: First Deployment
+description: Detailed walkthrough for your first deployment with VPS setup
+---
+
+import { Steps, FileTree, Tabs, TabItem } from "@astrojs/starlight/components";
+
+A complete guide from zero to deployed application, including VPS setup.
+
+## Prerequisites
+
+- A VPS with Ubuntu/Debian (fresh install recommended)
+- SSH access as root
+- A domain pointing to your VPS
+- slipp installed locally
+
+## VPS Setup
+
+<Steps>
+
+1. **SSH to your VPS as root**
+
+   ```bash
+   ssh root@your-server-ip
+   ```
+
+2. **Update system packages**
+
+   ```bash
+   apt update && apt upgrade -y
+   ```
+
+3. **Install required packages**
+
+   ```bash
+   apt install -y python3 python3-pip docker.io docker-compose-v2
+   systemctl enable --now docker
+   ```
+
+4. **Create slipp service account**
+
+   From your local machine:
+
+   ```bash
+   slipp bootstrap account your-server-ip
+   ```
+
+   This creates a `slipp` user with:
+   - SSH key access (copied from root)
+   - Passwordless sudo
+   - Verified connectivity
+
+</Steps>
+
+## Generate Deployment
+
+<Steps>
+
+1. **Navigate to your project**
+
+   ```bash
+   cd your-project
+   ```
+
+2. **Run launch**
+
+   ```bash
+   slipp launch --name myapp
+   ```
+
+3. **Answer the prompts**
+
+   - **Host IP**: Your VPS IP address
+   - **SSH User**: `slipp` (created by bootstrap)
+   - **Domain**: Your domain (e.g., `app.example.com`)
+
+4. **Review generated files**
+
+   <FileTree>
+   - inventory/
+     - hosts
+     - host_vars/
+       - myserver/
+         - vars.yml
+         - vault.yml
+   - group_vars/
+     - all.yml
+   - roles/
+     - myapp/
+       - tasks/
+       - templates/
+   - playbook.yml
+   - slipp.yaml
+   - Dockerfile
+   </FileTree>
+
+</Steps>
+
+## Configure Secrets
+
+<Steps>
+
+1. **Generate secrets for vault references**
+
+   ```bash
+   slipp secrets sync inventory/host_vars/myserver/vars.yml
+   ```
+
+2. **Encrypt the vault**
+
+   ```bash
+   ansible-vault encrypt inventory/host_vars/myserver/vault.yml
+   ```
+
+   Choose a strong password and save it securely.
+
+</Steps>
+
+## Deploy
+
+<Steps>
+
+1. **Install Ansible roles** (if requirements.yml exists)
+
+   ```bash
+   ansible-galaxy install -r requirements.yml
+   ```
+
+2. **Run deployment**
+
+   ```bash
+   slipp deploy
+   ```
+
+   Enter your vault password when prompted.
+
+3. **Verify deployment**
+
+   ```bash
+   slipp ps
+   ```
+
+   You should see your service running:
+
+   ```
+   name    project  host      state    uptime
+   myapp   myapp    myserver  running  1m
+   ```
+
+</Steps>
+
+## Verify
+
+### Check logs
+
+```bash
+slipp logs myapp -f
+```
+
+### Test the application
+
+Open `https://your-domain.com` in a browser.
+
+### Debug issues
+
+```bash
+# Check container status
+slipp exec "docker ps -a"
+
+# Check container logs directly
+slipp exec "docker logs myapp"
+
+# SSH for deeper debugging
+slipp ssh
+```
+
+## Common Issues
+
+:::caution[Connection refused]
+**Cause**: SSH not configured correctly
+
+**Fix**:
+```bash
+# Test SSH directly
+ssh slipp@your-server-ip
+
+# Re-run bootstrap if needed
+slipp bootstrap account your-server-ip
+```
+:::
+
+:::caution[Vault password incorrect]
+**Cause**: Wrong password or unencrypted vault
+
+**Fix**:
+```bash
+# Check if vault is encrypted
+file inventory/host_vars/myserver/vault.yml
+# Should show: ASCII text
+
+# Re-encrypt if needed
+ansible-vault encrypt inventory/host_vars/myserver/vault.yml
+```
+:::
+
+:::caution[Docker not found]
+**Cause**: Docker not installed on VPS
+
+**Fix**:
+```bash
+# SSH to VPS
+slipp ssh
+
+# Install Docker
+sudo apt install -y docker.io docker-compose-v2
+sudo systemctl enable --now docker
+```
+:::
+
+:::caution[Domain not resolving]
+**Cause**: DNS not configured
+
+**Fix**:
+1. Add A record pointing to your VPS IP
+2. Wait for DNS propagation (up to 48 hours)
+3. Test: `dig your-domain.com`
+:::
+
+## What's Next?
+
+Now that your app is deployed:
+
+- [Local Development](/guides/local-development) - Develop locally with remote infrastructure
+- [Secrets Management](/guides/secrets) - Manage sensitive configuration
+- [Container Images](/guides/images) - Push images without a registry
+
+## Redeployment
+
+After making changes:
+
+```bash
+# Redeploy everything
+slipp deploy
+
+# Use tag preset for specific changes
+slipp deploy restart
+```
+
+Create tag presets for common operations:
+
+```bash
+slipp tags add restart --tags restart
+slipp tags add update --tags update-app
+```

@@ -1,0 +1,115 @@
+---
+title: Quick Start
+description: Deploy your first app in 5 minutes
+---
+
+import { Steps, FileTree } from "@astrojs/starlight/components";
+
+Deploy your first application to a VPS in 5 minutes.
+
+## Prerequisites
+
+- slipp installed ([Installation](/getting-started/installation))
+- VPS with SSH access
+- A project to deploy (any app with a `Dockerfile` or detectable framework)
+
+## Deploy Your App
+
+<Steps>
+
+1. **Navigate to your project**
+
+   ```bash
+   cd your-project
+   ```
+
+2. **Generate Ansible configuration**
+
+   ```bash
+   slipp launch --name myapp
+   ```
+
+   This scans your codebase and generates deployment files:
+
+   <FileTree>
+   - inventory/
+     - hosts
+   - group_vars/
+     - all.yml
+   - roles/
+     - myapp/
+   - playbook.yml
+   - slipp.yaml
+   - Dockerfile (if needed)
+   </FileTree>
+
+3. **Configure your VPS**
+
+   Edit `inventory/hosts` with your server details:
+
+   ```yaml
+   all:
+     hosts:
+       myserver:
+         ansible_host: 192.168.1.100
+         ansible_user: slipp
+   ```
+
+4. **Deploy**
+
+   ```bash
+   slipp deploy
+   ```
+
+5. **Verify**
+
+   ```bash
+   slipp ps
+   ```
+
+</Steps>
+
+## What Just Happened?
+
+slipp generated a complete Ansible deployment and ran it on your VPS:
+
+1. **Scanned** your project for services (Docker Compose, Dockerfile, etc.)
+2. **Generated** Ansible roles, playbook, and inventory
+3. **Deployed** via `ansible-playbook`
+4. **Registered** the project for future operations
+
+## Basic Operations
+
+Now that your app is deployed:
+
+```bash
+# List running services
+slipp ps
+
+# View logs
+slipp logs myapp -f
+
+# Execute commands in container
+slipp exec myapp "ls -la"
+
+# SSH to VPS
+slipp ssh
+```
+
+## Common Issues
+
+:::caution[Connection refused?]
+- Check that SSH is configured correctly
+- Verify the `slipp` user exists on the VPS
+- Run `slipp bootstrap account <host>` to create the service account
+:::
+
+:::tip[First time deploying?]
+See [First Deployment](/getting-started/first-deploy) for a detailed walkthrough including VPS setup.
+:::
+
+## Next Steps
+
+- [First Deployment](/getting-started/first-deploy) - Detailed walkthrough with VPS setup
+- [Local Development](/guides/local-development) - Run locally with remote infrastructure
+- [Secrets Management](/guides/secrets) - Handle sensitive configuration

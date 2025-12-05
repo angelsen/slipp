@@ -1,0 +1,137 @@
+---
+title: SvelteKit Local Dev
+description: Develop SvelteKit locally with remote authentication and database
+sidebar:
+  badge:
+    text: Popular
+    variant: tip
+---
+
+import { Steps } from "@astrojs/starlight/components";
+
+Develop a SvelteKit app locally while using remote OAuth, database, and services.
+
+## Goal
+
+- Local SvelteKit dev server at `localhost:5173`
+- Accessible via production domain `app.example.com`
+- Connected to remote PostgreSQL database
+- OAuth callbacks work correctly
+
+## Prerequisites
+
+- Deployed infrastructure with auth service and database
+- Dev proxy set up: `slipp bootstrap proxy myserver --email admin@example.com`
+- Vault secrets configured
+
+## Setup
+
+<Steps>
+
+1. **Create run profile**
+
+   ```bash
+   slipp run dev \
+     --cmd "npm run dev" \
+     --tunnel-out 5173:app.example.com@myserver \
+     --tunnel-in postgres:5432@myserver \
+     --vault myproject
+   ```
+
+2. **Configure environment**
+
+   Your `.env.local` should reference localhost for tunneled services:
+
+   ```bash title=".env.local"
+   DATABASE_URL=postgresql://user:pass@localhost:5432/mydb
+   PUBLIC_APP_URL=https://app.example.com
+   ```
+
+3. **Run development**
+
+   ```bash
+   slipp run dev
+   ```
+
+</Steps>
+
+## How It Works
+
+```mermaid
+sequenceDiagram
+    participant Browser
+    participant Caddy as VPS Caddy
+    participant TunnelOut as SSH Tunnel (out)
+    participant Dev as SvelteKit Dev
+    participant TunnelIn as SSH Tunnel (in)
+    participant DB as Remote PostgreSQL
+
+    Browser->>Caddy: app.example.com
+    Caddy->>TunnelOut: Route to tunnel
+    TunnelOut->>Dev: localhost:5173
+    Dev->>TunnelIn: localhost:5432
+    TunnelIn->>DB: Query
+    DB-->>Browser: Response
+```
+
+## OAuth Callbacks
+
+Since your app is accessible at the production domain:
+
+1. OAuth provider redirects to `https://app.example.com/auth/callback`
+2. Request tunnels to your local server
+3. Session is established locally
+4. Refresh and it works!
+
+No need to configure localhost callback URLs.
+
+## Database Migrations
+
+Run migrations against remote database:
+
+```bash
+# With tunnel active
+npx prisma migrate deploy
+
+# Or Drizzle
+npm run db:push
+```
+
+:::caution
+Be careful running migrations against production data!
+:::
+
+## Multiple Developers
+
+Each developer needs their own domain:
+
+```bash
+# Developer 1
+slipp run dev --tunnel-out 5173:alice.app.example.com@myserver
+
+# Developer 2
+slipp run dev --tunnel-out 5173:bob.app.example.com@myserver
+```
+
+Configure DNS wildcards or separate A records.
+
+## Troubleshooting
+
+:::caution[Tunnel not connecting?]
+Check dev proxy is running:
+```bash
+slipp exec "systemctl status caddy-dev"
+```
+:::
+
+:::caution[OAuth redirect fails?]
+Ensure the exact callback URL is registered with your OAuth provider.
+:::
+
+:::caution[Database connection refused?]
+Verify the tunnel is established:
+```bash
+# Check tunnel is active
+lsof -i :5432
+```
+:::

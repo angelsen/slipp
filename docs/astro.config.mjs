@@ -38,6 +38,7 @@ export default defineConfig({
           items: [
             { label: "Installation", slug: "getting-started/installation" },
             { label: "Quick Start", slug: "getting-started/quickstart" },
+            { label: "First Deployment", slug: "getting-started/first-deploy" },
           ],
         },
         {
@@ -47,6 +48,11 @@ export default defineConfig({
         {
           label: "Reference",
           autogenerate: { directory: "reference" },
+        },
+        {
+          label: "Recipes",
+          autogenerate: { directory: "recipes" },
+          collapsed: true,
         },
       ],
       editLink: {
