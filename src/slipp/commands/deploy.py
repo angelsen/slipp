@@ -207,31 +207,26 @@ def deploy_command(
                     output.hint(f"See log: {result.log_path}")
                 raise typer.Exit(1)
 
+    # Collect vault password BEFORE starting spinner (prompt needs clean terminal)
+    vault_pw_context = None
+    vault_pw_file = None
+    if needs_vault_password:
+        vault_pw_context = get_vault_password_file(confirm=False)
+        vault_pw_file = vault_pw_context.__enter__()
+
     try:
         with output.spinner("Running playbook", spinner_type="earth") as update:
-            if needs_vault_password:
-                with get_vault_password_file(confirm=False) as pw_file:
-                    result = run_playbook(
-                        playbook_file,
-                        inventory_file,
-                        check=dry_run,
-                        vault_file=vault_file,
-                        vault_password_file=pw_file,
-                        tags=tags,
-                        skip_tags=skip_tags,
-                        log_dir=log_dir,
-                        on_progress=update,
-                    )
-            else:
-                result = run_playbook(
-                    playbook_file,
-                    inventory_file,
-                    check=dry_run,
-                    tags=tags,
-                    skip_tags=skip_tags,
-                    log_dir=log_dir,
-                    on_progress=update,
-                )
+            result = run_playbook(
+                playbook_file,
+                inventory_file,
+                check=dry_run,
+                vault_file=vault_file,
+                vault_password_file=vault_pw_file,
+                tags=tags,
+                skip_tags=skip_tags,
+                log_dir=log_dir,
+                on_progress=update,
+            )
         returncode = result.exit_code
         if returncode != 0:
             output.error("Running playbook failed")
@@ -240,6 +235,9 @@ def deploy_command(
     except AnsibleNotFoundError as e:
         output.error(str(e))
         raise typer.Exit(1)
+    finally:
+        if vault_pw_context:
+            vault_pw_context.__exit__(None, None, None)
 
     if returncode == 0:
         output.success_animation("Deploy completed")

@@ -8,7 +8,6 @@ Provides functions for:
 """
 
 import base64
-import getpass
 import os
 import re
 import shutil
@@ -22,7 +21,6 @@ import yaml
 
 from slipp.utils.errors import (
     DuplicateEnvVarError,
-    PasswordMismatchError,
     VaultDecryptError,
     VaultError,
     VaultNotFoundError,
@@ -52,7 +50,7 @@ def _check_installed() -> None:
 
 @contextmanager
 def vault_password_file(
-    prompt: str = "Vault password: ",
+    prompt: str = "Vault password",
     confirm: bool = True,
 ) -> Iterator[Path]:
     """Context manager that prompts for password and creates temp file.
@@ -71,12 +69,9 @@ def vault_password_file(
         with vault_password_file() as pw_file:
             encrypt_string("secret", "name", password_file=pw_file)
     """
-    password = getpass.getpass(prompt)
+    from slipp import output
 
-    if confirm:
-        password2 = getpass.getpass("Confirm password: ")
-        if password != password2:
-            raise PasswordMismatchError("Passwords do not match")
+    password = output.prompt_password(prompt, confirm=confirm)
 
     fd, path = tempfile.mkstemp(prefix="vault_pass_", text=True)
     try:
@@ -115,6 +110,31 @@ def generate_secret(num_bytes: int = 32, encoding: str = "hex") -> str:
         return base64.b64encode(raw_bytes).decode("ascii")
     else:
         return raw_bytes.hex()
+
+
+def generate_jwk(bits: int = 2048) -> str:
+    """Generate RSA keypair as JWK JSON.
+
+    Args:
+        bits: RSA key size (default: 2048)
+
+    Returns:
+        JSON string containing private JWK (includes public components)
+
+    Examples:
+        >>> generate_jwk()  # 2048-bit RSA
+        >>> generate_jwk(4096)  # 4096-bit RSA
+    """
+    from jwcrypto import jwk
+
+    key = jwk.JWK.generate(
+        kty="RSA",
+        size=bits,
+        alg="RS256",
+        use="sig",
+        kid=f"key-{generate_secret(4, 'hex')}",
+    )
+    return key.export_private()
 
 
 def encrypt_string(

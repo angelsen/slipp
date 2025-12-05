@@ -125,10 +125,10 @@ def add_command(
         raise typer.Exit(1)
 
     output.success(f"Registered '{name}'")
-    output.text(f"  inventory: {inventory_rel}")
-    output.text(f"  playbook: {playbook_rel}")
-    output.text(f"  roles: {', '.join(roles_rel)}")
+    output.kv("inventory", inventory_rel, indent=1)
+    output.kv("playbook", playbook_rel, indent=1)
+    output.kv("roles", ", ".join(roles_rel), indent=1)
     if vault:
-        output.text(f"  vault: {vault}")
+        output.kv("vault", vault, indent=1)
 
     LocalConfigService.ensure_logs_gitignore(project_root)

@@ -4,11 +4,17 @@ Philosophy: Unix/POSIX style (systemctl, git, apt, ps).
 All commands MUST use these primitives (no escape hatches).
 
 Stream routing (Unix convention):
-    stdout = data (pipeable to jq, grep, etc.)
+    stdout = data (pipeable to jq, grep, ssh, etc.)
     stderr = diagnostics (progress, hints, errors)
+
+Commands explicitly choose what goes where - no abstraction magic.
 
 Usage:
     from slipp import output
+
+    # Data output (stdout - pipeable)
+    output.stdout(f"{user}@{host}")           # Raw pipeable data
+    output.json_output({"services": [...]})   # Structured JSON
 
     # UI output (stderr - visible but doesn't pollute pipes)
     output.success("Operation completed")
@@ -16,19 +22,19 @@ Usage:
     output.info("FYI message")
     output.warning("Non-critical issue")
     output.task("Major step heading")
+    output.hint("Dimmed suggestion")
 
-    # Data output (stdout - pipeable)
-    output.table([
-        {"service": "backend", "port": 5000},
-        {"service": "frontend", "port": 3000},
-    ])
-    output.text(json.dumps(data))
+    # Structured display (stderr)
+    output.kv("name", "value")                # key: value pair
+    output.kv("name", "value", indent=1)      # indented
+    output.kv_block({"a": 1, "b": 2})         # auto-aligned block
+    output.bullet("Item text")                # • bullet point
+    output.table([{"col": "val"}])            # formatted table
 
-    # Long operations (simple)
+    # Long operations
     with output.status("Building image"):
         build_image()
 
-    # Long operations (with live updates)
     with output.spinner("Installing") as update:
         for line in process.stdout:
             update(line.strip()[:60])
@@ -38,24 +44,11 @@ Usage:
         proceed()
     name = output.prompt("Enter name", default="default")
 
-    # File logging (for long commands)
-    output.setup_file_logging(Path(".slipp/deploy.log"))
-    try:
-        # ... command work ...
-    finally:
-        output.cleanup_file_logging()
-
-    # Output format control (global -o flag)
-    if output.get_output_format() == OutputFormat.json:
-        output.text(json.dumps(data))
-    else:
-        output.table(data)
-
 Available Primitives:
-    UI (stderr): success, error, info, warning, task, hint, blank, table
-    Data (stdout): text
-    Display (stderr): list_items, group, suggestions
-    Progress: status (context manager), spinner (with live updates)
+    Data (stdout): stdout, json_output
+    UI (stderr): success, error, info, warning, task, hint, blank
+    Display (stderr): kv, kv_block, bullet, table, list_items, group, suggestions
+    Progress (stderr): status, spinner, progress
     Input: confirm, prompt
     Logging: setup_file_logging, cleanup_file_logging, get_log_dir
     Format: set_output_format, get_output_format
@@ -116,14 +109,23 @@ _output_format: OutputFormat = OutputFormat.table
 
 
 def _print_ui(msg: str, style: str | None = None) -> None:
-    """Print UI/diagnostic output to stderr (and file if enabled)."""
+    """Print UI/diagnostic output to stderr and file.
+
+    Args:
+        msg: Message to print.
+        style: Rich style markup (e.g., "bold red"). Defaults to None.
+    """
     _err_console.print(msg, style=style)
     if _file_console:
         _file_console.print(msg, style=None, markup=False)
 
 
 def _print_data(msg: str) -> None:
-    """Print data output to stdout (and file if enabled)."""
+    """Print data output to stdout and file.
+
+    Args:
+        msg: Data to print (pipeable).
+    """
     _console.print(msg)
     if _file_console:
         _file_console.print(msg, markup=False)
@@ -166,16 +168,64 @@ def blank() -> None:
     _print_ui("")
 
 
-def text(msg: str) -> None:
-    """Plain text data output (stdout). Pipeable."""
-    _print_data(msg)
+def stdout(data: str) -> None:
+    """Write raw data to stdout. No formatting, pipeable."""
+    _print_data(data)
+
+
+def json_output(obj: Any) -> None:
+    """Write JSON to stdout for structured output."""
+    import json
+
+    _console.print(json.dumps(obj, indent=2, default=str), highlight=False)
+    if _file_console:
+        import json as json_mod
+
+        _file_console.print(json_mod.dumps(obj, indent=2, default=str), markup=False)
+
+
+def kv(key: str, value: Any, indent: int = 0) -> None:
+    """Write key: value pair to stderr with alignment."""
+    prefix = "  " * indent
+    _err_console.print(f"{prefix}[dim]{key}:[/dim] {value}")
+    if _file_console:
+        _file_console.print(f"{prefix}{key}: {value}")
+
+
+def kv_block(data: dict[str, Any], indent: int = 0) -> None:
+    """Write multiple key-value pairs with auto-alignment."""
+    if not data:
+        return
+    max_key_len = max(len(k) for k in data.keys())
+    prefix = "  " * indent
+    for key, value in data.items():
+        padded_key = key.ljust(max_key_len)
+        _err_console.print(f"{prefix}[dim]{padded_key}:[/dim] {value}")
+        if _file_console:
+            _file_console.print(f"{prefix}{padded_key}: {value}")
+
+
+def bullet(msg: str, indent: int = 0) -> None:
+    """Write single bullet item to stderr."""
+    prefix = "  " * indent
+    _print_ui(f"{prefix}• {msg}")
+
+
+def progress(current: int, total: int, label: str = "") -> None:
+    """Write progress fraction to stderr."""
+    pct = (current / total * 100) if total > 0 else 0
+    msg = f"{label} " if label else ""
+    _err_console.print(f"{msg}[{current}/{total}] {pct:.0f}%", end="\r")
 
 
 def table(rows: list[dict[str, Any]]) -> None:
-    """Unix-style table (stderr).
+    """Display formatted table with auto-alignment.
 
     Headers are uppercase. Numbers are right-aligned, text is left-aligned.
     Empty list produces no output.
+
+    Args:
+        rows: List of dicts where each dict is a row.
     """
     if not rows:
         return
@@ -414,6 +464,33 @@ def prompt(question: str, default: str | None = None) -> str:
     import typer
 
     return typer.prompt(question, default=default)
+
+
+def prompt_password(question: str = "Password", confirm: bool = False) -> str:
+    """Password input with optional confirmation.
+
+    Args:
+        question: Password prompt text
+        confirm: If True, prompt twice and verify match
+
+    Returns:
+        Password string
+
+    Raises:
+        PasswordMismatchError: If confirm=True and passwords don't match
+    """
+    import typer
+
+    from slipp.utils.errors import PasswordMismatchError
+
+    password = typer.prompt(question, hide_input=True)
+
+    if confirm:
+        password2 = typer.prompt("Confirm password", hide_input=True)
+        if password != password2:
+            raise PasswordMismatchError("Passwords do not match")
+
+    return password
 
 
 def setup_file_logging(log_path: Path) -> None:

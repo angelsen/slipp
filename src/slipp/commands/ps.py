@@ -181,7 +181,7 @@ def ps_command(
             }
             for s in services
         ]
-        output.text(json.dumps(data, indent=2))
+        output.stdout(json.dumps(data, indent=2))
         return
 
     display_services_table(

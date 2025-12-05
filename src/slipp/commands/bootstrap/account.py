@@ -57,7 +57,7 @@ def _copy_ssh_keys(
 
     perms = ssh.execute(f"ls -ld /home/{slipp_user}/.ssh")
     output.success("SSH keys copied and secured")
-    output.text(f"  {perms.strip()}")
+    output.hint(f"  {perms.strip()}")
 
 
 def _configure_sudoers(ssh: SSHService, username: str, dry_run: bool) -> None:
@@ -90,7 +90,7 @@ SUDOERS_EOF
 
     if "parsed OK" not in validation:
         output.error("Sudoers syntax validation failed")
-        output.text(f"  {validation}")
+        output.hint(f"  {validation}")
         raise Exception("Sudoers file has syntax errors")
 
     # Move to sudoers.d (atomic operation)
@@ -183,8 +183,8 @@ def account_command(
 ) -> None:
     """Create slipp service account on VPS."""
     output.blank()
-    output.text(f"Bootstrapping slipp on {host}")
-    output.text(f"Connecting as {root_user}...")
+    output.info(f"Bootstrapping slipp on {host}")
+    output.hint(f"Connecting as {root_user}...")
     output.blank()
 
     # Create root SSH connection config

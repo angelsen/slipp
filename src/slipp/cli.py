@@ -13,6 +13,9 @@ from slipp.commands.config import config_command
 from slipp.commands.deploy import deploy_command
 from slipp.commands.exec import exec_command
 from slipp.commands.generate import generate_app
+from slipp.commands.host import host_command
+from slipp.commands.image import image_app
+from slipp.commands.images import images_app
 from slipp.commands.launch import launch_command
 from slipp.commands.logo import logo_command, show_logo
 from slipp.commands.logs import logs_command
@@ -59,7 +62,7 @@ def main(
         show_logo()
         from slipp import __version__
 
-        output.text(f"slipp {__version__}")
+        output.stdout(f"slipp {__version__}")
         raise typer.Exit()
 
     ctx.ensure_object(dict)
@@ -72,6 +75,8 @@ def main(
 
 app.add_typer(bootstrap_app, name="bootstrap")
 app.add_typer(generate_app, name="generate")
+app.add_typer(image_app, name="image")
+app.add_typer(images_app, name="images")
 app.add_typer(projects_app, name="projects")
 app.add_typer(runs_app, name="runs")
 app.add_typer(secrets_app, name="secrets")
@@ -80,6 +85,7 @@ app.add_typer(tags_app, name="tags")
 app.command(name="config")(config_command)
 app.command(name="deploy")(deploy_command)
 app.command(name="exec")(exec_command)
+app.command(name="host")(host_command)
 app.command(name="launch")(launch_command)
 app.command(name="logo")(logo_command)
 app.command(name="logs")(logs_command)

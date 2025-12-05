@@ -180,21 +180,21 @@ def logo_command(
     if list_fonts:
         output.info("Recommended fonts (use with --font):")
         for font_name in RECOMMENDED_FONTS:
-            output.text(f"  {font_name}")
+            output.stdout(f"  {font_name}")
         output.hint("Run 'pyfiglet --list_fonts' for all 500+ fonts")
         return
 
     if list_colors:
         output.info("Color palettes (use with --colors):")
         for name, palette in COLOR_PALETTES.items():
-            output.text(f"  {name}: {', '.join(palette)}")
+            output.stdout(f"  {name}: {', '.join(palette)}")
         output.hint("Or use custom: --colors '#ff0000,#00ff00'")
         return
 
     if list_themes:
         output.info("Available themes (use with --theme):")
         for name, values in THEMES.items():
-            output.text(f"  {name}: {values[0]} ... {values[-1]}")
+            output.stdout(f"  {name}: {values[0]} ... {values[-1]}")
         return
 
     if animate and save:

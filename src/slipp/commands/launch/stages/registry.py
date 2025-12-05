@@ -68,7 +68,7 @@ class SummaryStage:
         else:
             output.success("Launch complete!")
             output.blank()
-            output.text(f"Generated {len(context.generated_files)} files:")
+            output.stdout(f"Generated {len(context.generated_files)} files:")
             output.list_items(
                 [
                     "inventory.yml",
@@ -82,7 +82,7 @@ class SummaryStage:
             )
 
             output.blank()
-            output.text("Next steps:")
+            output.stdout("Next steps:")
             output.list_items(
                 [
                     "Review generated files",
@@ -93,5 +93,5 @@ class SummaryStage:
             )
 
             output.blank()
-            output.text("Your app will be available at:")
-            output.text(f"  https://{first_host.app_domain}")
+            output.stdout("Your app will be available at:")
+            output.stdout(f"  https://{first_host.app_domain}")

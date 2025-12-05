@@ -65,7 +65,7 @@ def list_command(
                     "registered_at": p.registered_at.isoformat(),
                 }
             )
-        output.text(json.dumps(data, indent=2))
+        output.stdout(json.dumps(data, indent=2))
     else:
         output.blank()
         output.task("Registered Projects")

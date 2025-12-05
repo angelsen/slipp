@@ -36,13 +36,13 @@ def tag_command(
 
     args = resolver.get_preset_args(preset)
     output.info(f"Preset '{preset}':")
-    output.text(f"  {args}")
+    output.stdout(f"  {args}")
     output.blank()
 
     if tags:
-        output.text(f"  --tags: {tags}")
+        output.stdout(f"  --tags: {tags}")
     if skip_tags:
-        output.text(f"  --skip-tags: {skip_tags}")
+        output.stdout(f"  --skip-tags: {skip_tags}")
 
     output.blank()
     output.hint(f"Use: ac deploy {preset}")

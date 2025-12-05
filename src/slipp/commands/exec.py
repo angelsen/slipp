@@ -92,7 +92,7 @@ def exec_command(
         output.info(
             f"Executing on {ssh_config.ansible_host} ({context_msg}, as {resolution.user})"
         )
-        output.text(f"Command: {command}")
+        output.stdout(f"Command: {command}")
         output.blank()
 
         try:
@@ -101,7 +101,7 @@ def exec_command(
             if cmd_output.strip():
                 print(cmd_output)  # Raw output for piping
             else:
-                output.text("(no output)")
+                output.stdout("(no output)")
 
             output.blank()
             output.success("Command completed successfully")

@@ -30,21 +30,21 @@ def list_profiles() -> None:
         return
 
     output.blank()
-    output.text("Saved profiles:")
+    output.stdout("Saved profiles:")
     output.blank()
 
     for name, profile in profiles.items():
-        output.text(f"  {name}:")
-        output.text(f"    cmd: {profile.cmd}")
+        output.stdout(f"  {name}:")
+        output.stdout(f"    cmd: {profile.cmd}")
         if profile.vaults:
-            output.text(f"    vaults: {', '.join(profile.vaults)}")
+            output.stdout(f"    vaults: {', '.join(profile.vaults)}")
         if profile.tunnels:
             if profile.tunnels.out:
                 for t in profile.tunnels.out:
-                    output.text(f"    tunnel-out: {t}")
+                    output.stdout(f"    tunnel-out: {t}")
             if profile.tunnels.in_:
                 for t in profile.tunnels.in_:
-                    output.text(f"    tunnel-in: {t}")
+                    output.stdout(f"    tunnel-in: {t}")
         output.blank()
 
 

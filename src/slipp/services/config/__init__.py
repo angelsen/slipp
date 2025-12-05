@@ -8,6 +8,7 @@ from slipp.services.config.inventory import InventoryService
 from slipp.services.config.local import LocalConfigService
 from slipp.services.config.presets import PresetResolver, parse_preset_args
 from slipp.services.config.resolver import ConfigResolver, resolve_project_name
+from slipp.services.config.runtime import RuntimeDetectionError, RuntimeDetector
 
 __all__ = [
     "LocalConfigService",
@@ -17,4 +18,6 @@ __all__ = [
     "PresetResolver",
     "parse_preset_args",
     "HostResolver",
+    "RuntimeDetector",
+    "RuntimeDetectionError",
 ]

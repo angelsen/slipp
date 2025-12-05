@@ -6,7 +6,7 @@ Generates cryptographically secure random secrets for application use.
 import typer
 
 from slipp import output
-from slipp.services.vault import generate_secret
+from slipp.services.vault import generate_jwk, generate_secret
 
 
 def secret_command(
@@ -17,21 +17,23 @@ def secret_command(
         False, "--base64", help="Output as base64 instead of hex"
     ),
     ulid: bool = typer.Option(False, "--ulid", help="Output as ULID (ignores --bytes)"),
+    jwk: bool = typer.Option(False, "--jwk", help="Output as RSA JWK keypair"),
+    bits: int = typer.Option(
+        2048, "--bits", help="RSA key size for --jwk (default: 2048)"
+    ),
 ) -> None:
-    """Generate a cryptographically secure secret.
-
-    Args:
-        num_bytes: Bytes of entropy for random generation. Defaults to 32 (256-bit).
-        base64_encode: If True, output as base64; otherwise output as hex.
-        ulid: If True, output as ULID format (ignores num_bytes).
-    """
-    if ulid:
+    """Generate a cryptographically secure secret."""
+    if jwk:
+        secret = generate_jwk(bits)
+        output.stdout(secret)
+        output.hint(f"RSA-{bits} JWK (private key)")
+    elif ulid:
         secret = generate_secret(encoding="ulid")
-        output.text(secret)
+        output.stdout(secret)
         output.hint("26 char ULID")
     else:
         encoding = "base64" if base64_encode else "hex"
         secret = generate_secret(num_bytes, encoding)
-        bits = num_bytes * 8
-        output.text(secret)
-        output.hint(f"{len(secret)} {encoding} chars, {bits}-bit")
+        bits_entropy = num_bytes * 8
+        output.stdout(secret)
+        output.hint(f"{len(secret)} {encoding} chars, {bits_entropy}-bit")

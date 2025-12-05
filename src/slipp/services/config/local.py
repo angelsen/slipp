@@ -173,6 +173,8 @@ class LocalConfigService:
             data.pop("managed_roles", None)
         if not data.get("tag_presets"):
             data.pop("tag_presets", None)
+        if not data.get("runtime"):
+            data.pop("runtime", None)
 
         ordered_data: dict[str, Any] = {}
         field_order = [
@@ -181,6 +183,7 @@ class LocalConfigService:
             "playbook",
             "roles",
             "vault",
+            "runtime",
             "managed_roles",
             "tag_presets",
         ]

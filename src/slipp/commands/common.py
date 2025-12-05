@@ -39,8 +39,6 @@ def display_services_table(
         output.info("No services found")
         return
 
-    print()
-
     service_dicts = []
     for s in services:
         row = {}

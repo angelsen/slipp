@@ -95,7 +95,7 @@ def _show_table(project_root: Path) -> None:
     if hosts:
         output.info(f"Hosts ({len(hosts)}):")
         for host in hosts:
-            output.text(f"  - {host['inventory_hostname']}: {host['ansible_host']}")
+            output.stdout(f"  - {host['inventory_hostname']}: {host['ansible_host']}")
     else:
         output.warning("No hosts found in inventory")
 
@@ -142,4 +142,4 @@ def _show_json(project_root: Path) -> None:
             "registered_at": project.registered_at.isoformat(),
         }
 
-    output.text(json.dumps(result, indent=2))
+    output.stdout(json.dumps(result, indent=2))

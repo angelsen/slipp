@@ -20,6 +20,7 @@ class LocalConfig(BaseModel):
         playbook: Path to playbook file (default: playbook.yml)
         roles: Role directories to scan for service filtering
         vault: Optional path to vault file
+        runtime: Container runtime (docker/podman), auto-detected if not set
         managed_roles: Role names for service filtering (auto-populated from roles dirs)
         tag_presets: Named tag presets (name -> ansible args like "--tags setup-all")
     """
@@ -29,6 +30,9 @@ class LocalConfig(BaseModel):
     playbook: str = Field(default="playbook.yml", description="Playbook file path")
     roles: list[str] = Field(default_factory=list, description="Role directories")
     vault: str | None = Field(default=None, description="Vault file path")
+    runtime: str | None = Field(
+        default=None, description="Container runtime (docker/podman)"
+    )
     managed_roles: list[str] = Field(
         default_factory=list, description="Role names for service filtering"
     )

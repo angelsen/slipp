@@ -59,28 +59,28 @@ def status_command(
             )
             details = _parse_systemctl_status(cmd_output)
 
-            output.text(f"Service: {target_service.name}")
-            output.text(f"Unit: {target_service.unit_name}")
-            output.text(f"Runtime: {target_service.runtime}")
-            output.text(f"State: {target_service.state}")
+            output.stdout(f"Service: {target_service.name}")
+            output.stdout(f"Unit: {target_service.unit_name}")
+            output.stdout(f"Runtime: {target_service.runtime}")
+            output.stdout(f"State: {target_service.state}")
 
             if details.get("loaded"):
-                output.text(f"Loaded: {details['loaded']}")
+                output.stdout(f"Loaded: {details['loaded']}")
             if details.get("active"):
-                output.text(f"Active: {details['active']}")
+                output.stdout(f"Active: {details['active']}")
             if details.get("pid"):
-                output.text(f"Main PID: {details['pid']}")
+                output.stdout(f"Main PID: {details['pid']}")
             if details.get("memory"):
-                output.text(f"Memory: {details['memory']}")
+                output.stdout(f"Memory: {details['memory']}")
             if details.get("tasks"):
-                output.text(f"Tasks: {details['tasks']}")
+                output.stdout(f"Tasks: {details['tasks']}")
 
             output.blank()
             output.task("Recent logs")
 
             log_lines = _extract_log_lines(cmd_output)
             for line in log_lines[-10:]:
-                output.text(line)
+                output.stdout(line)
 
             output.blank()
             output.hint(f"Tip: Use 'ac logs {target_service.name} -f' to follow logs")

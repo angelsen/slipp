@@ -209,14 +209,14 @@ class ScaffoldSummaryStage:
         output.success("Scaffold complete!")
         output.blank()
 
-        output.text(f"Generated {len(context.generated_files)} files:")
+        output.stdout(f"Generated {len(context.generated_files)} files:")
         output.list_items(
             [str(f.relative_to(context.output_dir)) for f in context.generated_files],
             bullet=output.ICON_BULLET,
         )
 
         output.blank()
-        output.text("Next steps:")
+        output.stdout("Next steps:")
         output.list_items(
             [
                 "Edit vars.yml with your configuration",

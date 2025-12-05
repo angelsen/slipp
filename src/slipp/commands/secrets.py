@@ -1,8 +1,4 @@
-"""Vault secret management commands.
-
-Follows the design principle: plural commands = manage resources.
-Provides CRUD operations for vault secrets.
-"""
+"""Vault secret management commands."""
 
 from pathlib import Path
 
@@ -15,6 +11,7 @@ from slipp.services.vault import (
     SecretSynchronizer,
     append_to_vault,
     encrypt_string,
+    generate_jwk,
     generate_secret,
     list_keys,
 )
@@ -112,7 +109,7 @@ def list_secrets(
         None, help="Secret name to get template string for"
     ),
 ) -> None:
-    """List secret names in a vault file."""
+    """List secrets in a vault, or show available vaults."""
     resolver = _get_resolver(target)
 
     cli_vault = target if target and Path(target).exists() else None
@@ -134,7 +131,7 @@ def list_secrets(
         if secret_name not in keys:
             output.error(f"Secret '{secret_name}' not found in vault")
             raise typer.Exit(1)
-        output.text(f"{{{{ {secret_name} }}}}")
+        output.stdout(f"{{{{ {secret_name} }}}}")
         return
 
     if not keys:
@@ -143,7 +140,7 @@ def list_secrets(
 
     output.info(f"Secrets in {format_path(vault_path, resolver.project_root)}:")
     for key in keys:
-        output.text(f"  {key}")
+        output.bullet(key, indent=1)
 
 
 @secrets_app.command(name="add")
@@ -155,8 +152,12 @@ def add_secret(
     num_bytes: int = typer.Option(
         32, "--bytes", "-b", help="Bytes of entropy (default: 32 = 256-bit)"
     ),
+    jwk: bool = typer.Option(False, "--jwk", help="Generate RSA JWK keypair"),
+    bits: int = typer.Option(
+        2048, "--bits", help="RSA key size for --jwk (default: 2048)"
+    ),
 ) -> None:
-    """Generate a secret and add it to a vault file."""
+    """Generate and add a secret to a vault."""
     resolver = _get_resolver(target)
 
     cli_vault = target if target and Path(target).exists() else None
@@ -174,7 +175,10 @@ def add_secret(
         )
         raise typer.Exit(1)
 
-    secret = generate_secret(num_bytes, "hex")
+    if jwk:
+        secret = generate_jwk(bits)
+    else:
+        secret = generate_secret(num_bytes, "hex")
 
     try:
         encrypted = encrypt_string(secret, name)
@@ -190,6 +194,8 @@ def add_secret(
     output.success(
         f"Added '{name}' to {format_path(vault_path, resolver.project_root)}"
     )
+    if jwk:
+        output.hint(f"RSA-{bits} JWK keypair")
     output.hint(f"Use {{{{ {name} }}}} in templates")
 
 
@@ -203,7 +209,7 @@ def sync_secrets(
         False, "--force", "-f", help="Overwrite existing vault.yml"
     ),
 ) -> None:
-    """Scan YAML file for vault references and generate secrets."""
+    """Scan YAML for vault references and auto-generate secrets."""
     project_root = Path.cwd()
     vault_path = path.parent / "vault.yml"
 
@@ -233,7 +239,7 @@ def sync_secrets(
 
     output.info(f"Found {len(refs)} vault reference(s):")
     for ref in sorted(refs):
-        output.text(f"  {ref}")
+        output.bullet(ref, indent=1)
 
     try:
         synchronizer.sync(path, vault_path, force=force)

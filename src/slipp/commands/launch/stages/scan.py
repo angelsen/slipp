@@ -45,7 +45,7 @@ class ProjectScanStage:
 
         if not context.services:
             output.warning("No services detected")
-            output.text("Supported frameworks:")
+            output.stdout("Supported frameworks:")
             output.list_items(
                 [
                     "Python: Flask, FastAPI, Django",
