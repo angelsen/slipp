@@ -9,7 +9,6 @@ from slipp import output
 from slipp.constants import DEFAULT_ENV
 from slipp.output import format_path
 from slipp.services.ansible import (
-    check_roles_installed,
     install_requirements,
     run_playbook,
 )
@@ -54,7 +53,12 @@ def deploy_command(
         help="Path to requirements.yml (auto-detected if not specified)",
     ),
     roles: list[str] = typer.Option(
-        [], "--roles", help="Role directories to scan (repeatable)"
+        [], "--roles", help="Role search directories (repeatable)"
+    ),
+    galaxy_path_flag: str = typer.Option(
+        None,
+        "--galaxy-path",
+        help="Install path for external roles from requirements.yml",
     ),
     force_requirements: bool = typer.Option(
         False,
@@ -91,7 +95,7 @@ def deploy_command(
                     name=name,
                     inventory_path=inventory,
                     playbook_path=playbook or "playbook.yml",
-                    roles=roles if roles else None,
+                    roles_path=roles if roles else None,
                     vault_path=vault,
                     project_root=project_root,
                 )
@@ -139,7 +143,14 @@ def deploy_command(
 
     inventory_file = str(config.inventory)
     playbook_file = str(config.playbook)
-    roles_paths = [str(r) for r in config.roles]
+    roles_paths = [str(r) for r in config.roles_path]
+
+    galaxy_path = galaxy_path_flag or (
+        str(config.galaxy_path) if config.galaxy_path else None
+    )
+
+    if galaxy_path and galaxy_path not in roles_paths:
+        roles_paths.append(galaxy_path)
 
     project_root = resolver.project_root
     if not inventory and config.inventory_source == "local":
@@ -182,19 +193,19 @@ def deploy_command(
     log_dir = output.get_log_dir()
     reqs_file = requirements or "requirements.yml"
     if Path(reqs_file).exists():
-        roles_dir = roles_paths[0] if roles_paths else None
-        if not roles_dir:
-            output.error("--roles required when requirements.yml exists")
-            output.hint("Example: ac deploy --roles ./roles")
+        if not galaxy_path:
+            output.error("galaxy_path required when requirements.yml exists")
+            output.hint("Use: --galaxy-path roles/galaxy")
             raise typer.Exit(1)
 
-        if not force_requirements and check_roles_installed(roles_dir):
-            output.info(f"Roles already installed in {roles_dir}")
+        galaxy_dir = Path(galaxy_path)
+        if not force_requirements and galaxy_dir.exists() and any(galaxy_dir.iterdir()):
+            output.info(f"Roles already installed in {galaxy_path}")
         else:
             with output.spinner("Installing requirements") as update:
                 result = install_requirements(
                     reqs_file,
-                    roles_dir,
+                    galaxy_path,
                     log_dir=log_dir,
                     force=force_requirements,
                     on_progress=update,
@@ -224,6 +235,7 @@ def deploy_command(
                 vault_password_file=vault_pw_file,
                 tags=tags,
                 skip_tags=skip_tags,
+                roles_path=roles_paths if roles_paths else None,
                 log_dir=log_dir,
                 on_progress=update,
             )
@@ -242,14 +254,23 @@ def deploy_command(
     if returncode == 0:
         output.success_animation("Deploy completed")
 
-        if any([inventory, playbook, roles_list, vault]) and not dry_run and not name:
+        if (
+            any([inventory, playbook, roles_list, galaxy_path_flag, vault])
+            and not dry_run
+            and not name
+        ):
             changes: dict[str, Any] = {}
             if inventory:
                 changes["inventory"] = inventory
             if playbook:
                 changes["playbook"] = playbook
             if roles_list:
-                changes["roles"] = roles_list
+                merged_roles = list(roles_list)
+                if galaxy_path_flag and galaxy_path_flag not in merged_roles:
+                    merged_roles.append(galaxy_path_flag)
+                changes["roles_path"] = merged_roles
+            if galaxy_path_flag:
+                changes["galaxy_path"] = galaxy_path_flag
             if vault:
                 changes["vault"] = vault
 

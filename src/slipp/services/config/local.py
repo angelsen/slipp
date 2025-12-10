@@ -77,7 +77,8 @@ class LocalConfigService:
         name: str,
         inventory_path: str,
         playbook_path: str = "playbook.yml",
-        roles: list[str] | None = None,
+        roles_path: list[str] | None = None,
+        galaxy_path: str | None = None,
         vault_path: str | None = None,
         project_root: Path | None = None,
     ) -> LocalConfig:
@@ -87,7 +88,8 @@ class LocalConfigService:
             name: Project identifier (required)
             inventory_path: Relative path to inventory
             playbook_path: Relative path to playbook
-            roles: List of role directories
+            roles_path: Role directories for ansible --roles-path
+            galaxy_path: Install path for ansible-galaxy
             vault_path: Optional vault file path
             project_root: Project root (defaults to cwd)
 
@@ -99,7 +101,7 @@ class LocalConfigService:
         root = project_root or Path.cwd()
 
         managed_roles: list[str] = []
-        roles_list = roles or []
+        roles_list = roles_path or []
         if roles_list:
             managed_roles = InventoryService.scan_roles_from_directories(
                 roles_list, root
@@ -109,7 +111,8 @@ class LocalConfigService:
             name=name,
             inventory=inventory_path,
             playbook=playbook_path,
-            roles=roles_list,
+            roles_path=roles_list,
+            galaxy_path=galaxy_path,
             vault=vault_path,
             managed_roles=managed_roles,
         )
@@ -144,9 +147,9 @@ class LocalConfigService:
 
         updated = config.model_copy(update=changes)
 
-        if "roles" in changes and changes["roles"]:
+        if "roles_path" in changes and changes["roles_path"]:
             updated.managed_roles = InventoryService.scan_roles_from_directories(
-                changes["roles"], root
+                changes["roles_path"], root
             )
 
         LocalConfigService.save(updated, root)
@@ -167,8 +170,10 @@ class LocalConfigService:
 
         data = config.model_dump(exclude_none=True)
 
-        if not data.get("roles"):
-            data.pop("roles", None)
+        if not data.get("roles_path"):
+            data.pop("roles_path", None)
+        if not data.get("galaxy_path"):
+            data.pop("galaxy_path", None)
         if not data.get("managed_roles"):
             data.pop("managed_roles", None)
         if not data.get("tag_presets"):
@@ -181,7 +186,8 @@ class LocalConfigService:
             "name",
             "inventory",
             "playbook",
-            "roles",
+            "roles_path",
+            "galaxy_path",
             "vault",
             "runtime",
             "managed_roles",

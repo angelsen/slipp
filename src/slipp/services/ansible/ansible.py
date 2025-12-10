@@ -221,6 +221,7 @@ def run_playbook(
     vault_password_file: Path | None = None,
     tags: str | None = None,
     skip_tags: str | None = None,
+    roles_path: list[str] | None = None,
     log_dir: Path | None = None,
     extra_vars: dict[str, Any] | None = None,
     on_progress: ProgressCallback | None = None,
@@ -235,6 +236,7 @@ def run_playbook(
         vault_password_file: Optional path to vault password file
         tags: Optional comma-separated tags to run
         skip_tags: Optional comma-separated tags to skip
+        roles_path: Optional list of role directories (--roles-path)
         log_dir: Directory for log file (optional)
         extra_vars: Optional dict of extra variables to pass (-e key=value)
         on_progress: Optional callback for progress updates
@@ -269,6 +271,8 @@ def run_playbook(
 
     env = os.environ.copy()
     env["PYTHONUNBUFFERED"] = "1"
+    if roles_path:
+        env["ANSIBLE_ROLES_PATH"] = ":".join(roles_path)
 
     proc = subprocess.Popen(
         cmd,

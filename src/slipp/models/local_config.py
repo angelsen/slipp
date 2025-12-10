@@ -18,7 +18,8 @@ class LocalConfig(BaseModel):
         name: Project identifier (required, appears first in YAML)
         inventory: Path to inventory file (relative to project root)
         playbook: Path to playbook file (default: playbook.yml)
-        roles: Role directories to scan for service filtering
+        roles_path: Role directories for ansible --roles-path
+        galaxy_path: Install destination for ansible-galaxy (from requirements.yml)
         vault: Optional path to vault file
         runtime: Container runtime (docker/podman), auto-detected if not set
         managed_roles: Role names for service filtering (auto-populated from roles dirs)
@@ -28,7 +29,13 @@ class LocalConfig(BaseModel):
     name: str = Field(..., min_length=1, description="Project identifier")
     inventory: str = Field(..., description="Inventory file path")
     playbook: str = Field(default="playbook.yml", description="Playbook file path")
-    roles: list[str] = Field(default_factory=list, description="Role directories")
+    roles_path: list[str] = Field(
+        default_factory=list, description="Role directories for ansible --roles-path"
+    )
+    galaxy_path: str | None = Field(
+        default=None,
+        description="Install path for ansible-galaxy (from requirements.yml)",
+    )
     vault: str | None = Field(default=None, description="Vault file path")
     runtime: str | None = Field(
         default=None, description="Container runtime (docker/podman)"

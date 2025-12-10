@@ -14,6 +14,7 @@ from slipp.services.vault import (
     generate_jwk,
     generate_secret,
     list_keys,
+    vault_password_file,
 )
 from slipp.utils.errors import (
     ProjectNotFoundError,
@@ -102,45 +103,52 @@ def _list_available_vaults() -> None:
 
 @secrets_app.command(name="list")
 def list_secrets(
-    target: str = typer.Argument(
-        None, help="Project name or vault file path (discovery mode if omitted)"
+    targets: list[str] = typer.Argument(
+        None, help="Project name(s) or vault file path(s) (discovery mode if omitted)"
     ),
-    secret_name: str = typer.Argument(
-        None, help="Secret name to get template string for"
+    secret_name: str = typer.Option(
+        None, "--name", "-n", help="Secret name to get template string for"
     ),
 ) -> None:
-    """List secrets in a vault, or show available vaults."""
-    resolver = _get_resolver(target)
-
-    cli_vault = target if target and Path(target).exists() else None
-    vault_path = resolver.resolve_vault(cli_vault=cli_vault)
-
-    if not vault_path:
+    """List secrets in vault(s), or show available vaults."""
+    if not targets:
         _list_available_vaults()
         return
 
-    try:
-        keys = list_keys(vault_path)
-    except FileNotFoundError:
-        output.error(
-            f"Vault file not found: {format_path(vault_path, resolver.project_root)}"
-        )
-        raise typer.Exit(1)
+    for i, target in enumerate(targets):
+        if i > 0:
+            output.blank()
 
-    if secret_name:
-        if secret_name not in keys:
-            output.error(f"Secret '{secret_name}' not found in vault")
-            raise typer.Exit(1)
-        output.stdout(f"{{{{ {secret_name} }}}}")
-        return
+        resolver = _get_resolver(target)
+        cli_vault = target if Path(target).exists() else None
+        vault_path = resolver.resolve_vault(cli_vault=cli_vault)
 
-    if not keys:
-        output.info("No secrets found in vault")
-        return
+        if not vault_path:
+            output.warning(f"No vault configured for '{target}'")
+            continue
 
-    output.info(f"Secrets in {format_path(vault_path, resolver.project_root)}:")
-    for key in keys:
-        output.bullet(key, indent=1)
+        try:
+            keys = list_keys(vault_path)
+        except FileNotFoundError:
+            output.error(
+                f"Vault file not found: {format_path(vault_path, resolver.project_root)}"
+            )
+            continue
+
+        if secret_name:
+            if secret_name not in keys:
+                output.error(f"Secret '{secret_name}' not found in {target}")
+                continue
+            output.stdout(f"{{{{ {secret_name} }}}}")
+            continue
+
+        if not keys:
+            output.info(f"No secrets found in {target}")
+            continue
+
+        output.info(f"Secrets in {format_path(vault_path, resolver.project_root)}:")
+        for key in keys:
+            output.bullet(key, indent=1)
 
 
 @secrets_app.command(name="add")
@@ -152,12 +160,22 @@ def add_secret(
     num_bytes: int = typer.Option(
         32, "--bytes", "-b", help="Bytes of entropy (default: 32 = 256-bit)"
     ),
+    encoding: str = typer.Option(
+        "hex",
+        "--encoding",
+        "-e",
+        help="Output encoding: hex (default), base64, or ulid",
+    ),
     jwk: bool = typer.Option(False, "--jwk", help="Generate RSA JWK keypair"),
     bits: int = typer.Option(
         2048, "--bits", help="RSA key size for --jwk (default: 2048)"
     ),
 ) -> None:
     """Generate and add a secret to a vault."""
+    if encoding not in ("hex", "base64", "ulid"):
+        output.error(f"Invalid encoding '{encoding}'. Use: hex, base64, or ulid")
+        raise typer.Exit(1)
+
     resolver = _get_resolver(target)
 
     cli_vault = target if target and Path(target).exists() else None
@@ -177,11 +195,14 @@ def add_secret(
 
     if jwk:
         secret = generate_jwk(bits)
+    elif encoding == "ulid":
+        secret = generate_secret(encoding="ulid")
     else:
-        secret = generate_secret(num_bytes, "hex")
+        secret = generate_secret(num_bytes, encoding)
 
     try:
-        encrypted = encrypt_string(secret, name)
+        with vault_password_file(confirm=False) as pw_file:
+            encrypted = encrypt_string(secret, name, password_file=pw_file)
     except VaultNotFoundError as e:
         output.error(str(e))
         raise typer.Exit(1)
@@ -196,6 +217,10 @@ def add_secret(
     )
     if jwk:
         output.hint(f"RSA-{bits} JWK keypair")
+    elif encoding == "ulid":
+        output.hint("ULID identifier (26 chars)")
+    elif encoding == "base64":
+        output.hint(f"Base64 encoded ({num_bytes} bytes)")
     output.hint(f"Use {{{{ {name} }}}} in templates")
 
 
@@ -205,11 +230,21 @@ def sync_secrets(
     num_bytes: int = typer.Option(
         32, "--bytes", "-b", help="Bytes of entropy (default: 32 = 256-bit)"
     ),
+    encoding: str = typer.Option(
+        "hex",
+        "--encoding",
+        "-e",
+        help="Output encoding: hex (default), base64, or ulid",
+    ),
     force: bool = typer.Option(
         False, "--force", "-f", help="Overwrite existing vault.yml"
     ),
 ) -> None:
     """Scan YAML for vault references and auto-generate secrets."""
+    if encoding not in ("hex", "base64", "ulid"):
+        output.error(f"Invalid encoding '{encoding}'. Use: hex, base64, or ulid")
+        raise typer.Exit(1)
+
     project_root = Path.cwd()
     vault_path = path.parent / "vault.yml"
 
@@ -229,7 +264,7 @@ def sync_secrets(
         raise typer.Exit(1)
 
     content = path.read_text()
-    synchronizer = SecretSynchronizer(num_bytes=num_bytes)
+    synchronizer = SecretSynchronizer(num_bytes=num_bytes, encoding=encoding)
     refs = synchronizer.find_vault_references(content)
 
     if not refs:

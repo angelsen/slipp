@@ -49,22 +49,24 @@ class ResolvedConfig:
     Attributes:
         inventory: Resolved inventory path
         playbook: Resolved playbook path
-        roles: Resolved role directories
+        roles_path: Role directories for ansible --roles-path
+        galaxy_path: Install path for ansible-galaxy (may be None)
         vault: Resolved vault path (may be None)
         managed_roles: Role names for service filtering
         inventory_source: Where inventory was resolved from
         playbook_source: Where playbook was resolved from
-        roles_source: Where roles was resolved from
+        roles_path_source: Where roles_path was resolved from
     """
 
     inventory: Path
     playbook: Path
-    roles: list[Path]
+    roles_path: list[Path]
+    galaxy_path: Path | None
     vault: Path | None
     managed_roles: list[str]
     inventory_source: str  # "cli", "local", "default"
     playbook_source: str
-    roles_source: str
+    roles_path_source: str
 
 
 class ConfigResolver:
@@ -181,14 +183,19 @@ class ConfigResolver:
             pb_source = "default"
 
         if cli_roles:
-            roles = [Path(r) for r in cli_roles]
-            roles_source = "cli"
-        elif self._local_config and self._local_config.roles:
-            roles = [self.project_root / r for r in self._local_config.roles]
-            roles_source = "local"
+            roles_path = [Path(r) for r in cli_roles]
+            roles_path_source = "cli"
+        elif self._local_config and self._local_config.roles_path:
+            roles_path = [self.project_root / r for r in self._local_config.roles_path]
+            roles_path_source = "local"
         else:
-            roles = []
-            roles_source = "default"
+            roles_path = []
+            roles_path_source = "default"
+
+        if self._local_config and self._local_config.galaxy_path:
+            galaxy_path = self.project_root / self._local_config.galaxy_path
+        else:
+            galaxy_path = None
 
         if cli_vault:
             vault = Path(cli_vault)
@@ -202,10 +209,11 @@ class ConfigResolver:
         return ResolvedConfig(
             inventory=inventory,
             playbook=playbook,
-            roles=roles,
+            roles_path=roles_path,
+            galaxy_path=galaxy_path,
             vault=vault,
             managed_roles=managed_roles,
             inventory_source=inv_source,
             playbook_source=pb_source,
-            roles_source=roles_source,
+            roles_path_source=roles_path_source,
         )

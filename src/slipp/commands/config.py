@@ -67,7 +67,7 @@ def _show_table(project_root: Path) -> None:
         raise typer.Exit(1)
 
     local_config = resolver.local_config
-    assert local_config is not None  # Already checked has_local_config
+    assert local_config is not None
 
     output.task("Project Configuration")
     output.blank()
@@ -77,9 +77,12 @@ def _show_table(project_root: Path) -> None:
         {"setting": "inventory", "value": local_config.inventory},
         {"setting": "playbook", "value": local_config.playbook},
         {
-            "setting": "roles",
-            "value": ", ".join(local_config.roles) if local_config.roles else "(none)",
+            "setting": "roles_path",
+            "value": ", ".join(local_config.roles_path)
+            if local_config.roles_path
+            else "(none)",
         },
+        {"setting": "galaxy_path", "value": local_config.galaxy_path or "(none)"},
         {"setting": "vault", "value": local_config.vault or "(none)"},
         {
             "setting": "managed_roles",

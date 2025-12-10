@@ -46,7 +46,12 @@ def add_command(
     roles: list[str] | None = typer.Option(
         None,
         "--roles",
-        help="Role directories to scan (auto-detected if not specified)",
+        help="Role search directories (auto-detected if not specified)",
+    ),
+    galaxy_path: str | None = typer.Option(
+        None,
+        "--galaxy-path",
+        help="Install path for external roles from requirements.yml",
     ),
     vault: str | None = typer.Option(
         None, "--vault", help="Path to vault.yml for secret management"
@@ -105,12 +110,16 @@ def add_command(
     playbook_rel = str(playbook_path.relative_to(project_root))
     roles_rel = [str(rp.relative_to(project_root)) for rp in roles_paths]
 
+    if galaxy_path and galaxy_path not in roles_rel:
+        roles_rel.append(galaxy_path)
+
     try:
         LocalConfigService.create(
             name=name,
             inventory_path=inventory_rel,
             playbook_path=playbook_rel,
-            roles=roles_rel,
+            roles_path=roles_rel,
+            galaxy_path=galaxy_path,
             vault_path=vault,
             project_root=project_root,
         )
@@ -127,7 +136,9 @@ def add_command(
     output.success(f"Registered '{name}'")
     output.kv("inventory", inventory_rel, indent=1)
     output.kv("playbook", playbook_rel, indent=1)
-    output.kv("roles", ", ".join(roles_rel), indent=1)
+    output.kv("roles_path", ", ".join(roles_rel), indent=1)
+    if galaxy_path:
+        output.kv("galaxy_path", galaxy_path, indent=1)
     if vault:
         output.kv("vault", vault, indent=1)
 

@@ -28,13 +28,15 @@ class SecretSynchronizer:
     and generates missing secrets in the vault file.
     """
 
-    def __init__(self, num_bytes: int = 32):
+    def __init__(self, num_bytes: int = 32, encoding: str = "hex"):
         """Initialize synchronizer.
 
         Args:
             num_bytes: Number of bytes of entropy for generated secrets
+            encoding: Output encoding (hex, base64, or ulid)
         """
         self.num_bytes = num_bytes
+        self.encoding = encoding
 
     def find_vault_references(self, content: str) -> set[str]:
         """Extract vault_* variable names from YAML content.
@@ -109,7 +111,10 @@ class SecretSynchronizer:
         try:
             with vault_password_file() as pw_file:
                 for name in names:
-                    secret = generate_secret(self.num_bytes, "hex")
+                    if self.encoding == "ulid":
+                        secret = generate_secret(encoding="ulid")
+                    else:
+                        secret = generate_secret(self.num_bytes, self.encoding)
                     encrypted = encrypt_string(secret, name, password_file=pw_file)
                     secrets[name] = encrypted
         except PasswordMismatchError:
