@@ -11,3 +11,4 @@ wheels/
 
 # Local/private files
 misc/
+*.local.*

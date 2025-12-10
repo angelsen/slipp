@@ -29,8 +29,9 @@ name: myapp
 # Ansible paths
 inventory: inventory/hosts
 playbook: playbook.yml
-roles:
+roles_path:
   - roles
+galaxy_path: roles/galaxy
 
 # Secrets
 vault: inventory/host_vars/myserver/vault.yml
@@ -84,17 +85,27 @@ playbook: playbook.yml
 
 Default: `playbook.yml`
 
-### roles
+### roles_path
 
-List of directories containing Ansible roles.
+List of directories to search for Ansible roles. Passed to Ansible via `ANSIBLE_ROLES_PATH`.
 
 ```yaml
-roles:
+roles_path:
   - roles
   - ../shared-roles
 ```
 
-Default: `["roles"]`
+Default: `[]` (Ansible default)
+
+### galaxy_path
+
+Install directory for roles from `requirements.yml`. Automatically added to `roles_path` at runtime.
+
+```yaml
+galaxy_path: roles/galaxy
+```
+
+When `requirements.yml` exists, slipp runs `ansible-galaxy install` to this directory before deployment.
 
 ### vault
 
