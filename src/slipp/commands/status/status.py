@@ -20,17 +20,7 @@ def status_command(
     ctx: typer.Context,
     service: str = typer.Argument(..., help="Service name to show status for"),
 ):
-    """Display detailed service status (like systemctl status).
-
-    Shows service state, resource usage, and recent logs from systemctl.
-
-    Args:
-        ctx: Typer context (auto-injected).
-        service: Service name or identifier to display status for.
-
-    Raises:
-        typer.Exit: On service not found or host resolution errors.
-    """
+    """Display detailed service status (like systemctl status)."""
     resolver = HostResolver()
 
     try:
@@ -83,7 +73,7 @@ def status_command(
                 output.stdout(line)
 
             output.blank()
-            output.hint(f"Tip: Use 'ac logs {target_service.name} -f' to follow logs")
+            output.hint(f"Tip: Use 'slipp logs {target_service.name} -f' to follow logs")
 
         except Exception as e:
             output.error(f"Failed to get status: {e}")

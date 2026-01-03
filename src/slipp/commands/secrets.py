@@ -18,6 +18,8 @@ from slipp.services.vault import (
 )
 from slipp.utils.errors import (
     ProjectNotFoundError,
+    PullTimeoutError,
+    SourceNotFoundError,
     VaultError,
     VaultNotFoundError,
     VaultSyncError,
@@ -55,7 +57,7 @@ def _get_resolver(target: str | None) -> ConfigResolver:
             return ConfigResolver.for_project(target)
         except ProjectNotFoundError:
             output.error(f"Project '{target}' not found")
-            output.hint("Use 'ac projects' to list registered projects")
+            output.hint("Use 'slipp projects' to list registered projects")
             raise typer.Exit(1)
 
     return ConfigResolver()
@@ -65,6 +67,7 @@ def _list_available_vaults() -> None:
     """Show all registered projects that have vaults configured (discovery mode)."""
     from slipp.services.config import LocalConfigService
     from slipp.services.registry import ProjectRegistry
+    from slipp.services.secrets import get_source, list_sources
 
     registry = ProjectRegistry()
     projects = registry.list_all()
@@ -88,17 +91,19 @@ def _list_available_vaults() -> None:
                     }
                 )
 
-    if not vaults_found:
+    if vaults_found:
+        output.info("Available vaults:")
+        output.table(vaults_found)
+    else:
         output.warning("No vaults found in any registered project")
-        output.hint(
-            "Register a project with vault: ac register <name> -i <inventory> --vault <path>"
-        )
-        return
 
-    output.info("Available vaults:")
-    output.table(vaults_found)
-    output.blank()
-    output.hint("Use: ac secrets list <project>")
+    sources = list_sources()
+    if sources:
+        output.blank()
+        output.info("Pull sources:")
+        for name in sources:
+            src = get_source(name)
+            output.bullet(f"{name} - {src.get_description()}", indent=1)
 
 
 @secrets_app.command(name="list")
@@ -286,3 +291,41 @@ def sync_secrets(
     output.hint(
         f"Encrypt with: ansible-vault encrypt {format_path(vault_path, project_root)}"
     )
+
+
+@secrets_app.command(name="pull")
+def pull_secrets(
+    source: str = typer.Argument(..., help="Secret source (e.g., nor-auth)"),
+    target: str = typer.Argument(
+        None, help="Target vault (project name or path, uses local config if omitted)"
+    ),
+    timeout: int = typer.Option(300, "--timeout", "-t", help="Timeout in seconds"),
+) -> None:
+    """Pull credentials from external source to vault."""
+    import asyncio
+
+    from slipp.services.secrets import get_source
+
+    try:
+        secret_source = get_source(source)
+    except SourceNotFoundError as e:
+        output.error(str(e))
+        output.hint("Use 'slipp secrets list' to see available sources")
+        raise typer.Exit(1)
+
+    from slipp.services.secrets.pull import PullService
+
+    service = PullService(secret_source)
+    try:
+        credentials = asyncio.run(service.pull(target=target, timeout=timeout))
+        output.success("Credentials stored in vault")
+        output.blank()
+        for var_name in credentials.keys():
+            output.bullet(var_name, indent=1)
+    except PullTimeoutError:
+        output.error("Timed out waiting for approval (5 minutes)")
+        output.hint("Make sure to approve the export in your browser")
+        raise typer.Exit(1)
+    except VaultError as e:
+        output.error(f"Failed to store credentials: {e}")
+        raise typer.Exit(1)

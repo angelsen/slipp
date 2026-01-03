@@ -5,7 +5,6 @@ Extracts dependencies internally using language-specific helper.
 """
 
 from pathlib import Path
-from typing import Optional
 
 from slipp.scanner.helpers import extract_python_dependencies
 from slipp.scanner.models import ScannerConfig, SourceInfo
@@ -17,7 +16,7 @@ FLASK_TEMPLATE = "https://raw.githubusercontent.com/superfly/flyctl/master/scann
 def configure_flask(
     source_dir: Path,
     config: ScannerConfig,
-) -> Optional[SourceInfo]:
+) -> SourceInfo | None:
     """Configure Flask application.
 
     Extracts Python dependencies internally and checks for "flask" package.
@@ -40,10 +39,7 @@ def configure_flask(
         >>> info.port
         8080
     """
-    # Extract Python dependencies using centralized helper
     dependencies = extract_python_dependencies(source_dir)
-
-    # Simple membership check
     if "flask" not in dependencies:
         return None
 

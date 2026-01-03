@@ -1,8 +1,4 @@
-"""Tag preset show/apply command.
-
-Follows the design principle: singular command = action.
-Shows or applies a single tag preset. Preset management is in tags.py.
-"""
+"""Show a tag preset's Ansible configuration."""
 
 from typing import Annotated
 
@@ -19,8 +15,8 @@ def tag_command(
     """Show a tag preset's configuration."""
     if not preset:
         output.info("No preset specified")
-        output.hint("Use 'ac tags list' to see available presets")
-        output.hint("Use 'ac tag <preset>' to show a preset's tags")
+        output.hint("Use 'slipp tags list' to see available presets")
+        output.hint("Use 'slipp tag <preset>' to show a preset's tags")
         return
 
     resolver = PresetResolver()
@@ -45,4 +41,4 @@ def tag_command(
         output.stdout(f"  --skip-tags: {skip_tags}")
 
     output.blank()
-    output.hint(f"Use: ac deploy {preset}")
+    output.hint(f"Use: slipp deploy {preset}")

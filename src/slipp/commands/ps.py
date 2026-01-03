@@ -1,12 +1,4 @@
-"""List running services across registered projects.
-
-Lists services (containers, systemd units) running on registered hosts.
-Supports filtering by project and including system services. Caches
-discovery results unless --refresh is used.
-
-This module implements the `slipp ps` command which works like `docker ps`
-but across multiple hosts and projects.
-"""
+"""List running services (like docker ps) across registered projects."""
 
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -144,7 +136,7 @@ def ps_command(
 
         if not hosts:
             output.warning("No projects registered")
-            output.info("Hint: Use 'ac register' or 'ac deploy' to register a project")
+            output.info("Hint: Use 'slipp register' or 'slipp deploy' to register a project")
             raise typer.Exit(0)
 
         from slipp.services.config import LocalConfigService

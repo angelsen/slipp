@@ -14,7 +14,7 @@ from slipp.services.config import ConfigResolver, LocalConfigService
 from slipp.services.registry import ProjectRegistry
 
 
-def config_command():
+def config_command() -> None:
     """Show current project configuration."""
     project_root = Path.cwd()
 
@@ -27,7 +27,9 @@ def config_command():
 def _load_hosts_for_project(project_path: Path) -> list[dict[str, str | int]]:
     """Load hosts from project's local config and inventory.
 
-    Returns list of dicts with inventory_hostname and ansible_host.
+    Returns:
+        List of dicts with inventory_hostname, ansible_host, ansible_user,
+        and ansible_port.
     """
     from slipp.services.config import InventoryService
 
@@ -60,9 +62,9 @@ def _show_table(project_root: Path) -> None:
 
     if not resolver.has_local_config:
         output.warning("No slipp.yaml found in current directory")
-        output.hint("Run 'ac register <name> -i <inventory>' to create config")
+        output.hint("Run 'slipp register <name> -i <inventory>' to create config")
         output.hint(
-            "Or 'ac deploy --name <name> -i <inventory>' to deploy and save config"
+            "Or 'slipp deploy --name <name> -i <inventory>' to deploy and save config"
         )
         raise typer.Exit(1)
 
@@ -110,7 +112,7 @@ def _show_table(project_root: Path) -> None:
         output.success(f"Global registry: registered as '{project.name}'")
     else:
         output.warning("Not in global registry")
-        output.hint("Run 'ac register' or 'ac deploy' to register globally")
+        output.hint("Run 'slipp register' or 'slipp deploy' to register globally")
 
 
 def _show_json(project_root: Path) -> None:

@@ -198,6 +198,76 @@ class CaddyProxy:
         finally:
             inventory_path.unlink(missing_ok=True)
 
+    def add_proxy_route(
+        self, from_domain: str, from_path: str, to_host: str, to_path: str
+    ) -> str:
+        """Add a path-based proxy route to Caddy.
+
+        Routes traffic matching domain + path to a different host + path,
+        rewriting the URI in the process.
+
+        Args:
+            from_domain: Source domain to match (e.g., "matrix.example.com")
+            from_path: Source path to match (e.g., "/_matrix/client/v3/keys/upload")
+            to_host: Target host:port (e.g., "localhost:5173")
+            to_path: Target path (e.g., "/api/matrix/keys/upload")
+
+        Returns:
+            Route ID for later removal
+
+        Raises:
+            CaddyProxyError: If route addition fails
+        """
+        route_id = f"proxy-{re.sub(r'[^a-zA-Z0-9-]', '-', f'{from_domain}{from_path}'.lower())}"
+
+        route_config = {
+            "@id": route_id,
+            "match": [{"host": [from_domain], "path": [from_path]}],
+            "handle": [
+                {
+                    "handler": "subroute",
+                    "routes": [
+                        {"handle": [{"handler": "rewrite", "uri": to_path}]},
+                        {
+                            "handle": [
+                                {
+                                    "handler": "reverse_proxy",
+                                    "upstreams": [{"dial": to_host}],
+                                }
+                            ]
+                        },
+                    ],
+                }
+            ],
+            "terminal": True,
+        }
+
+        route_json = json.dumps(route_config)
+
+        add_cmd = (
+            f"curl -sf http://localhost:2019/config/apps/http/servers/srv1/routes | "
+            f"jq '[{route_json}] + .' | "
+            f"curl -sf -X PATCH 'http://localhost:2019/config/apps/http/servers/srv1/routes' "
+            f"-H 'Content-Type: application/json' -d @-"
+        )
+
+        try:
+            with SSHService(self.host) as ssh:
+                result = ssh.execute(add_cmd)
+
+                if result and "error" in result.lower():
+                    raise CaddyProxyError(f"Failed to add proxy route: {result}")
+
+        except CaddyProxyError:
+            raise
+        except Exception as e:
+            raise CaddyProxyError(
+                f"Failed to add proxy route for {from_domain}{from_path}: {e}"
+            ) from e
+
+        self.route_ids.append(route_id)
+        return route_id
+
     def add_route(self, domain: str, local_port: int) -> str:
         """Add a dev route to Caddy.
 
@@ -228,8 +298,7 @@ class CaddyProxy:
             "terminal": True,
         }
 
-        # Must prepend to routes array so dev routes match before fallback
-        # (Caddy JSON routes are evaluated sequentially, first match wins)
+        # Prepend to routes so dev routes match before fallback (first match wins)
         route_json = json.dumps(route_config)
 
         add_cmd = (

@@ -5,7 +5,6 @@ Ties together fetcher, renderer, and extractors to generate deployment files.
 
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from pydantic import BaseModel
 
@@ -19,8 +18,8 @@ from slipp.models.deployment import DetectedService
 class GeneratedFile(BaseModel):
     """Single generated file."""
 
-    path: Path  # Output path (e.g., "Dockerfile")
-    content: str  # Rendered content
+    path: Path
+    content: str
 
 
 class TemplateGenerator:
@@ -29,7 +28,7 @@ class TemplateGenerator:
     Orchestrates template fetching, variable extraction, and rendering.
     """
 
-    def __init__(self, cache_dir: Optional[Path] = None):
+    def __init__(self, cache_dir: Path | None = None):
         """Initialize generator with optional cache directory.
 
         Args:
@@ -99,23 +98,15 @@ class TemplateGenerator:
             >>> generator._extract_template_path(url)
             'scanner/templates/flask/Dockerfile'
         """
-        # URL format: https://raw.githubusercontent.com/{org}/{repo}/{branch}/{path}
-        # We want: scanner/templates/{framework}/Dockerfile
-
-        # Split URL and extract path after branch
         parts = template_url.split("/")
 
-        # Find index of branch (usually "master" or "main")
-        # Everything after branch is the path
         if "master" in parts:
             branch_index = parts.index("master")
         elif "main" in parts:
             branch_index = parts.index("main")
         else:
-            # Fallback: assume it's the 6th element (after org/repo/branch)
             branch_index = 5
 
-        # Path is everything after branch
         path_parts = parts[branch_index + 1 :]
         return "/".join(path_parts)
 
@@ -166,7 +157,6 @@ class TemplateGenerator:
             >>> generator._apply_podman_fixes(content)
             'COPY package.json .'
         """
-        # Remove --link flag (Docker BuildKit feature not in Podman)
+        # Docker BuildKit's --link flag not supported in Podman
         content = content.replace("COPY --link", "COPY")
-
         return content

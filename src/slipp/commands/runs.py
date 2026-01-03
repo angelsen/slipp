@@ -45,6 +45,9 @@ def list_profiles() -> None:
             if profile.tunnels.in_:
                 for t in profile.tunnels.in_:
                     output.stdout(f"    tunnel-in: {t}")
+        if profile.proxy:
+            for route in profile.proxy:
+                output.stdout(f"    proxy: {route.from_}@{route.host} -> {route.to}")
         output.blank()
 
 

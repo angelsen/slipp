@@ -19,6 +19,7 @@ class ScaffoldValidationStage:
     """Validate playbook exists and has valid syntax."""
 
     def execute(self, context: Any) -> None:
+        """Verify playbook and install Ansible requirements."""
         output.task(f"Scaffolding inventory for {context.output_dir.name}")
 
         # Install requirements before validation (roles needed for syntax check)
@@ -84,6 +85,7 @@ class ScaffoldPromptStage:
     """Prompt for inventory hostname and host IP."""
 
     def execute(self, context: Any) -> None:
+        """Collect hostname and IP from user or use dry-run placeholders."""
         if context.dry_run:
             context.hostname = "<hostname>"
             context.host_ip = "<ip>"
@@ -117,6 +119,7 @@ class ScaffoldInventoryStage:
     """Generate inventory files (hosts, vars.yml, vault.yml)."""
 
     def execute(self, context: Any) -> None:
+        """Create Ansible inventory structure with templated configuration files."""
         output.info("Generating inventory files...")
 
         if context.dry_run:
@@ -163,6 +166,7 @@ class ScaffoldRegistrationStage:
     """Write local config and register project in global registry."""
 
     def execute(self, context: Any) -> None:
+        """Create slipp.yaml and register project globally, with graceful error handling."""
         if context.dry_run:
             output.info("Dry run: would register project")
             return
@@ -201,6 +205,7 @@ class ScaffoldSummaryStage:
     """Display summary and next steps."""
 
     def execute(self, context: Any) -> None:
+        """Print generated files and display post-scaffold instructions."""
         if context.dry_run:
             output.warning("Dry run complete (no files written)")
             return
@@ -220,8 +225,8 @@ class ScaffoldSummaryStage:
         output.list_items(
             [
                 "Edit vars.yml with your configuration",
-                "ac secret add <secret_name>  # for each secret",
-                "ac deploy",
+                "slipp secret add <secret_name>  # for each secret",
+                "slipp deploy",
             ],
             numbered=True,
         )

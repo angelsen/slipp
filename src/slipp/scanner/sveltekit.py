@@ -5,7 +5,6 @@ Mirrors flyctl's jsFramework.go SvelteKit detection (lines 255-264).
 """
 
 from pathlib import Path
-from typing import Optional
 
 from slipp.scanner.helpers import extract_nodejs_dependencies
 from slipp.scanner.models import ScannerConfig, SourceInfo
@@ -17,7 +16,7 @@ SVELTEKIT_TEMPLATE = "https://raw.githubusercontent.com/superfly/flyctl/master/s
 def configure_sveltekit(
     source_dir: Path,
     config: ScannerConfig,
-) -> Optional[SourceInfo]:
+) -> SourceInfo | None:
     """Configure SvelteKit application.
 
     Mirrors flyctl's SvelteKit detection (jsFramework.go lines 255-264).
@@ -40,10 +39,7 @@ def configure_sveltekit(
         >>> info.port
         3000
     """
-    # Extract Node.js dependencies using centralized helper
     dependencies = extract_nodejs_dependencies(source_dir)
-
-    # Check for @sveltejs/kit (matches flyctl)
     if "@sveltejs/kit" not in dependencies:
         return None
 

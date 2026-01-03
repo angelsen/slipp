@@ -3,7 +3,6 @@
 import hashlib
 import json
 from pathlib import Path
-from typing import Optional
 
 import httpx
 from pydantic import BaseModel
@@ -14,9 +13,9 @@ from slipp.generator.errors import TemplateFetchError, TemplateNotFoundError
 class TemplateFile(BaseModel):
     """Single template file from GitHub."""
 
-    path: str  # Relative path (e.g., "Dockerfile")
-    content: str  # Raw template content
-    url: str  # GitHub raw URL
+    path: str
+    content: str
+    url: str
 
 
 class TemplateFetcher:
@@ -29,7 +28,7 @@ class TemplateFetcher:
     BRANCH = "master"
     BASE_URL = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{BRANCH}"
 
-    def __init__(self, cache_dir: Optional[Path] = None):
+    def __init__(self, cache_dir: Path | None = None):
         """Initialize fetcher with optional cache directory.
 
         Args:
@@ -62,13 +61,11 @@ class TemplateFetcher:
             >>> "FROM python:" in template.content
             True
         """
-        # Check cache first (unless force refresh)
         if not force_refresh:
             cached = self._get_from_cache(template_path)
             if cached:
                 return cached
 
-        # Fetch from GitHub
         url = f"{self.BASE_URL}/{template_path}"
 
         try:
@@ -85,19 +82,16 @@ class TemplateFetcher:
         except httpx.RequestError as e:
             raise TemplateFetchError(f"Network error fetching template: {e}")
 
-        # Create template file
         template = TemplateFile(
-            path=Path(template_path).name,  # Just the filename
+            path=Path(template_path).name,
             content=response.text,
             url=url,
         )
-
-        # Save to cache
         self._save_to_cache(template_path, template)
 
         return template
 
-    def _get_from_cache(self, template_path: str) -> Optional[TemplateFile]:
+    def _get_from_cache(self, template_path: str) -> TemplateFile | None:
         """Load template from cache if available.
 
         Args:

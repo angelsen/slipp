@@ -1,6 +1,6 @@
 """SSH service with Paramiko wrapper and best practices."""
 
-from typing import Generator, Optional
+from collections.abc import Generator
 
 import paramiko
 
@@ -32,7 +32,7 @@ class SSHService:
             host_config: Host configuration with SSH details
         """
         self.config = host_config
-        self.client: Optional[paramiko.SSHClient] = None
+        self.client: paramiko.SSHClient | None = None
 
     def __enter__(self):
         """Context manager entry - establish connection.

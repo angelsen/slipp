@@ -1,7 +1,6 @@
 """Account command - create slipp service account on VPS."""
 
 from pathlib import Path
-from typing import Optional
 
 import typer
 
@@ -12,7 +11,13 @@ from slipp.utils.errors import SSHConnectionError
 
 
 def _create_user(ssh: SSHService, username: str, dry_run: bool) -> None:
-    """Create slipp user account."""
+    """Create slipp user account.
+
+    Args:
+        ssh: SSH service connected to host.
+        username: Username to create.
+        dry_run: If True, show what would be done without making changes.
+    """
     output.info("1. Creating user account...")
 
     if dry_run:
@@ -34,7 +39,14 @@ def _create_user(ssh: SSHService, username: str, dry_run: bool) -> None:
 def _copy_ssh_keys(
     ssh: SSHService, root_user: str, slipp_user: str, dry_run: bool
 ) -> None:
-    """Copy SSH keys from root to slipp user."""
+    """Copy SSH keys from root to slipp user.
+
+    Args:
+        ssh: SSH service connected to host.
+        root_user: Root username.
+        slipp_user: Slipp service account username.
+        dry_run: If True, show what would be done without making changes.
+    """
     output.info("2. Copying SSH keys...")
 
     if dry_run:
@@ -51,7 +63,6 @@ def _copy_ssh_keys(
 
     ssh.execute(f"chown -R {slipp_user}:{slipp_user} /home/{slipp_user}/.ssh")
 
-    # Set permissions (security critical)
     ssh.execute(f"chmod 700 /home/{slipp_user}/.ssh")
     ssh.execute(f"chmod 600 /home/{slipp_user}/.ssh/*")
 
@@ -61,10 +72,15 @@ def _copy_ssh_keys(
 
 
 def _configure_sudoers(ssh: SSHService, username: str, dry_run: bool) -> None:
-    """Configure sudoers for full sudo access (SSH-key gated)."""
+    """Configure sudoers for full sudo access (SSH-key gated).
+
+    Args:
+        ssh: SSH service connected to host.
+        username: Slipp service account username.
+        dry_run: If True, show what would be done without making changes.
+    """
     output.info("3. Configuring sudoers...")
 
-    # Sudoers configuration (permissive - SSH key is the security gate)
     sudoers_content = f"""# slipp service account - full sudo access
 # Authentication: SSH key (passphrase-protected)
 # Authorization: User selects privilege via exec --user flag
@@ -93,15 +109,24 @@ SUDOERS_EOF
         output.hint(f"  {validation}")
         raise Exception("Sudoers file has syntax errors")
 
-    # Move to sudoers.d (atomic operation)
     ssh.execute(f"mv /tmp/sudoers-{username} /etc/sudoers.d/{username}")
     ssh.execute(f"chmod 440 /etc/sudoers.d/{username}")
 
     output.success(f"Sudoers configured (/etc/sudoers.d/{username})")
 
 
-def _verify_setup(host: str, port: int, username: str, ssh_key: Optional[Path]) -> None:
-    """Verify slipp user can connect and run commands."""
+def _verify_setup(host: str, port: int, username: str, ssh_key: Path | None) -> None:
+    """Verify slipp user can connect and run commands.
+
+    Args:
+        host: Hostname or IP address.
+        port: SSH port.
+        username: Slipp service account username.
+        ssh_key: Path to SSH private key.
+
+    Raises:
+        SSHConnectionError: If connection or command execution fails.
+    """
     output.info("4. Verifying setup...")
 
     slipp_config = AnsibleHost(
@@ -125,7 +150,6 @@ def _verify_setup(host: str, port: int, username: str, ssh_key: Optional[Path]) 
                 user_switch = ssh.execute("sudo -u root whoami").strip()
                 output.success(f"User switching verified (sudo -u root: {user_switch})")
             except Exception as e:
-                # Graceful degradation - warn but don't fail
                 output.warning(f"User switching test failed: {e}")
                 output.hint("  (This is expected with read-only sudoers)")
 
@@ -139,7 +163,13 @@ def _verify_setup(host: str, port: int, username: str, ssh_key: Optional[Path]) 
 
 
 def _display_completion(host: str, port: int, username: str) -> None:
-    """Display success message and next steps."""
+    """Display success message and next steps.
+
+    Args:
+        host: Hostname or IP address.
+        port: SSH port.
+        username: Slipp service account username.
+    """
     output.blank()
     output.success("Bootstrap complete!")
     output.blank()
@@ -168,7 +198,7 @@ def account_command(
     root_user: str = typer.Option(
         "root", "--root-user", help="Root user for initial connection (default: root)"
     ),
-    ssh_key: Optional[Path] = typer.Option(
+    ssh_key: Path | None = typer.Option(
         None,
         "--ssh-key",
         help="SSH private key for root connection (default: auto-discover)",
@@ -187,7 +217,6 @@ def account_command(
     output.hint(f"Connecting as {root_user}...")
     output.blank()
 
-    # Create root SSH connection config
     root_config = AnsibleHost(
         inventory_hostname="bootstrap-root",  # Temporary host for bootstrap
         ansible_host=host,
@@ -202,7 +231,6 @@ def account_command(
             _copy_ssh_keys(ssh, root_user, slipp_user, dry_run)
             _configure_sudoers(ssh, slipp_user, dry_run)
 
-            # Verify setup (not dry-run)
             if not dry_run:
                 _verify_setup(host, ssh_port, slipp_user, ssh_key)
 

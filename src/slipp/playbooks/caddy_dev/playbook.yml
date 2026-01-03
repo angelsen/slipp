@@ -71,7 +71,7 @@
         destination_port: "443"
         jump: REDIRECT
         to_ports: "8443"
-        comment: ansictl dev proxy
+        comment: slipp dev proxy
       notify: Save iptables
 
     - name: Ensure Caddy is running and enabled

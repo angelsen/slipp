@@ -20,19 +20,19 @@ def list_presets() -> None:
 
     if not resolver.config:
         output.warning("No slipp.yaml found")
-        output.hint("Run 'ac register' or 'ac launch' first")
+        output.hint("Run 'slipp register' or 'slipp launch' first")
         return
 
     if not presets:
         output.info("No tag presets configured")
-        output.hint("Add preset: ac tags add <name> --tags <tag>")
+        output.hint("Add preset: slipp tags add <name> --tags <tag>")
         return
 
     output.info("Tag presets:")
     rows = [{"name": name, "args": args} for name, args in presets.items()]
     output.table(rows)
     output.blank()
-    output.hint("Use: ac deploy <preset> or ac deploy <env> <preset>")
+    output.hint("Use: slipp deploy <preset> or slipp deploy <env> <preset>")
 
 
 @tags_app.command(name="add")
@@ -50,12 +50,12 @@ def add_preset(
 
     if not config:
         output.error("No slipp.yaml found")
-        output.hint("Run 'ac register' or 'ac launch' first")
+        output.hint("Run 'slipp register' or 'slipp launch' first")
         raise typer.Exit(1)
 
     if not tags and not skip_tags:
         output.error("Must specify --tags and/or --skip-tags")
-        output.hint("Example: ac tags add setup --tags setup-all")
+        output.hint("Example: slipp tags add setup --tags setup-all")
         raise typer.Exit(1)
 
     parts = []
@@ -76,7 +76,7 @@ def add_preset(
     config.tag_presets[name] = args
     LocalConfigService.save(config)
 
-    output.hint(f"Use: ac deploy {name}")
+    output.hint(f"Use: slipp deploy {name}")
 
 
 @tags_app.command(name="remove")

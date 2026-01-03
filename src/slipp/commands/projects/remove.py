@@ -22,4 +22,4 @@ def remove_command(
         output.success(f"Unregistered project '{project_name}'")
     else:
         output.warning(f"Project '{project_name}' not found in registry")
-        output.hint("Run 'ac projects list' to see registered projects")
+        output.hint("Run 'slipp projects list' to see registered projects")

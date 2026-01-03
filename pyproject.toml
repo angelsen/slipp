@@ -8,12 +8,15 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
+    "aiohttp>=3.13.2",
     "ansible-runner>=2.4.2",
+    "cryptography>=46.0.3",
     "httpx>=0.28.1",
     "jinja2>=3.1.6",
     "jwcrypto>=1.5.6",
     "paramiko>=4.0.0",
     "pydantic>=2.12.4",
+    "python-dotenv>=1.2.1",
     "python-ulid>=3.1.0",
     "rich>=14.2.0",
     "rich-pyfiglet>=1.0.0",

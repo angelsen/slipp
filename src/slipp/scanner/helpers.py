@@ -9,7 +9,6 @@ import re
 from pathlib import Path
 from typing import Callable
 
-# Type alias for check functions (matches flyctl's checkFn)
 CheckFn = Callable[[Path], bool]
 
 
@@ -85,7 +84,6 @@ def dir_contains(filename: str, pattern: str) -> CheckFn:
 
         try:
             content = file_path.read_text()
-            # Pattern can include (?i) for case-insensitive
             return re.search(pattern, content) is not None
         except (IOError, UnicodeDecodeError):
             return False
@@ -143,13 +141,9 @@ def parse_dependency(dep: str) -> str:
         >>> parse_dependency("Flask>=2.0.0; python_version >= '3.8'")
         'flask'
     """
-    # Remove environment markers (after semicolon)
     dep = dep.split(";")[0]
-    # Remove extras (in square brackets)
     dep = dep.split("[")[0]
-    # Remove version specifiers
     dep = dep.split(">=")[0].split("==")[0].split("~=")[0].split("<")[0].split(">")[0]
-    # Remove whitespace and lowercase
     return dep.strip().lower()
 
 
@@ -184,25 +178,20 @@ def parse_pyproject_dependencies(source_dir: Path) -> list[str]:
 
         dependencies = []
 
-        # Extract PEP 621 dependencies
         pep621_deps = data.get("project", {}).get("dependencies", [])
         for dep in pep621_deps:
             dependencies.append(parse_dependency(dep))
 
-        # Extract Poetry dependencies
         poetry_deps = data.get("tool", {}).get("poetry", {}).get("dependencies", {})
         for package_name in poetry_deps.keys():
-            # Skip 'python' key (it's a version specifier, not a package)
             if package_name.lower() != "python":
                 dependencies.append(package_name.lower())
 
         return dependencies
 
     except (ImportError, IOError):
-        # tomllib not available (Python < 3.11) or file not readable
         return []
     except Exception:
-        # TOML parsing error or other unexpected issue
         return []
 
 
@@ -230,29 +219,24 @@ def extract_python_dependencies(source_dir: Path) -> list[str]:
         >>> "uvicorn" in deps
         True
     """
-    dependencies = set()  # Use set for automatic deduplication
+    dependencies = set()
 
-    # Priority 1: pyproject.toml (handles both PEP 621 and Poetry)
     pyproject_deps = parse_pyproject_dependencies(source_dir)
     dependencies.update(pyproject_deps)
 
-    # Priority 2: requirements.txt
     requirements_file = source_dir / "requirements.txt"
     if requirements_file.exists():
         try:
             content = requirements_file.read_text()
             for line in content.splitlines():
                 line = line.strip()
-                # Skip empty lines and comments
                 if line and not line.startswith("#"):
                     package = parse_dependency(line)
-                    if package:  # Only add non-empty packages
+                    if package:
                         dependencies.add(package)
         except (IOError, UnicodeDecodeError):
-            # File not readable, skip
             pass
 
-    # Convert set to sorted list for consistent ordering
     return sorted(dependencies)
 
 
@@ -287,19 +271,10 @@ def extract_nodejs_dependencies(source_dir: Path) -> list[str]:
         with open(package_json) as f:
             config_data = json.load(f)
 
-        dependencies = set()  # Use set for automatic deduplication
-
-        # Extract dependencies
-        deps = config_data.get("dependencies", {})
-        dependencies.update(deps.keys())
-
-        # Extract devDependencies
-        dev_deps = config_data.get("devDependencies", {})
-        dependencies.update(dev_deps.keys())
-
-        # Convert set to sorted list for consistent ordering
+        dependencies = set()
+        dependencies.update(config_data.get("dependencies", {}).keys())
+        dependencies.update(config_data.get("devDependencies", {}).keys())
         return sorted(dependencies)
 
     except (json.JSONDecodeError, IOError):
-        # File not readable or invalid JSON, return empty list
         return []

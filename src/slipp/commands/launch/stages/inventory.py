@@ -19,7 +19,15 @@ class InventoryLoadStage:
     """Load or prompt for inventory configuration."""
 
     def execute(self, context: Any) -> None:
-        """Load inventory config from file or prompt user."""
+        """Load inventory config from file or prompt user.
+
+        Loads existing inventory if available and not reconfiguring,
+        otherwise prompts user for configuration. In dry-run mode,
+        creates dummy configuration.
+
+        Args:
+            context: Deployment context to populate with inventory config.
+        """
         if not context.dry_run:
             inventory_path = context.output_dir / get_inventory_filename(
                 context.environment
@@ -60,7 +68,18 @@ class InventoryValidationStage:
     """Validate required deployment fields in inventory."""
 
     def execute(self, context: Any) -> None:
-        """Validate that inventory has required fields for launch."""
+        """Validate that inventory has required fields for launch.
+
+        Ensures inventory contains app_domain and admin_email which are
+        required for the launch command. External projects should use
+        'slipp deploy' with explicit inventory paths instead.
+
+        Args:
+            context: Deployment context with loaded inventory config.
+
+        Raises:
+            typer.Exit: If required fields are missing.
+        """
         assert context.inventory_config is not None, (
             "Inventory config must be loaded before validation"
         )
@@ -69,12 +88,12 @@ class InventoryValidationStage:
 
         if not first_host.app_domain:
             output.error("Launch command requires app_domain in inventory")
-            output.error("For external projects, use 'ac deploy -i/-p' instead")
+            output.error("For external projects, use 'slipp deploy -i/-p' instead")
             raise typer.Exit(1)
 
         if not first_host.admin_email:
             output.error("Launch command requires admin_email in inventory")
-            output.error("For external projects, use 'ac deploy -i/-p' instead")
+            output.error("For external projects, use 'slipp deploy -i/-p' instead")
             raise typer.Exit(1)
 
 

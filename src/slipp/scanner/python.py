@@ -7,7 +7,6 @@ Mirrors and extends flyctl's python.go patterns.
 """
 
 from pathlib import Path
-from typing import Optional
 
 from slipp.scanner.helpers import (
     checks_pass,
@@ -16,7 +15,6 @@ from slipp.scanner.helpers import (
 )
 from slipp.scanner.models import ScannerConfig, SourceInfo
 
-# Fly.io template URL (matches flyctl)
 PYTHON_TEMPLATE = "https://raw.githubusercontent.com/superfly/flyctl/master/scanner/templates/python-docker/Dockerfile"
 
 
@@ -32,11 +30,9 @@ def _has_uv_project(source_dir: Path) -> bool:
     Returns:
         True if uv project detected, False otherwise
     """
-    # Priority 1: uv.lock (definitive)
     if (source_dir / "uv.lock").exists():
         return True
 
-    # Priority 2-4: pyproject.toml analysis
     pyproject = source_dir / "pyproject.toml"
     if pyproject.exists():
         try:
@@ -45,16 +41,13 @@ def _has_uv_project(source_dir: Path) -> bool:
             with open(pyproject, "rb") as f:
                 data = tomllib.load(f)
 
-            # Priority 2: [tool.uv] section
             if "uv" in data.get("tool", {}):
                 return True
 
-            # Priority 3: uv_build backend
             build_backend = data.get("build-system", {}).get("build-backend", "")
             if build_backend == "uv_build":
                 return True
 
-            # Priority 4: PEP 735 dependency-groups + .python-version (weak)
             if (
                 "dependency-groups" in data
                 and (source_dir / ".python-version").exists()
@@ -68,13 +61,7 @@ def _has_uv_project(source_dir: Path) -> bool:
 
 
 def _has_poetry_project(source_dir: Path) -> bool:
-    """Check if directory is a Poetry project (internal helper).
-
-    Matches flyctl's Poetry detection: requires BOTH files.
-
-    Returns:
-        True if Poetry project detected, False otherwise
-    """
+    """Check if directory is a Poetry project (requires poetry.lock and pyproject.toml)."""
     return (source_dir / "poetry.lock").exists() and (
         source_dir / "pyproject.toml"
     ).exists()
@@ -83,7 +70,7 @@ def _has_poetry_project(source_dir: Path) -> bool:
 def configure_python(
     source_dir: Path,
     config: ScannerConfig,
-) -> Optional[SourceInfo]:
+) -> SourceInfo | None:
     """Configure generic Python application.
 
     Enhanced priority-based detection (supersedes flyctl with uv support):
@@ -110,7 +97,6 @@ def configure_python(
         >>> info.port
         8080
     """
-    # Priority 1: uv (NEW - supersede flyctl)
     if _has_uv_project(source_dir):
         dependencies = extract_python_dependencies(source_dir)
         return SourceInfo(
@@ -122,7 +108,6 @@ def configure_python(
             # TODO: Use uv-optimized template in future
         )
 
-    # Priority 2: Poetry (match flyctl)
     if _has_poetry_project(source_dir):
         dependencies = extract_python_dependencies(source_dir)
         return SourceInfo(
@@ -134,8 +119,6 @@ def configure_python(
             # TODO: Use poetry-optimized template in future
         )
 
-    # Priority 3: PEP 621 pyproject.toml (match flyctl)
-    # Check for pyproject.toml with [project] section (not Poetry, not uv)
     pyproject = source_dir / "pyproject.toml"
     if pyproject.exists():
         try:
@@ -144,7 +127,6 @@ def configure_python(
             with open(pyproject, "rb") as f:
                 data = tomllib.load(f)
 
-            # Has [project] section = PEP 621
             if "project" in data:
                 dependencies = extract_python_dependencies(source_dir)
                 return SourceInfo(
@@ -157,7 +139,6 @@ def configure_python(
         except (ImportError, IOError, Exception):
             pass
 
-    # Priority 4: Pipenv (match flyctl)
     if (source_dir / "Pipfile").exists():
         dependencies = extract_python_dependencies(source_dir)
         return SourceInfo(
@@ -168,7 +149,6 @@ def configure_python(
             dependencies=dependencies,
         )
 
-    # Priority 5: pip/requirements.txt (match flyctl)
     if (source_dir / "requirements.txt").exists():
         dependencies = extract_python_dependencies(source_dir)
         return SourceInfo(
@@ -179,7 +159,6 @@ def configure_python(
             dependencies=dependencies,
         )
 
-    # Fallback: Generic Python (match flyctl)
     if checks_pass(
         source_dir,
         file_exists("setup.py", "setup.cfg", "environment.yml"),

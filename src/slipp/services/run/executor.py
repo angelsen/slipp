@@ -9,10 +9,11 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from slipp.models.run import RunProfile, TunnelConfig
+from slipp.models.run import ProxyRoute, RunProfile, TunnelConfig
 from slipp.services.run.caddy import CaddyProxy
 from slipp.services.ssh import (
     TunnelManager,
+    parse_container_tunnel_in,
     parse_tunnel_in,
     parse_tunnel_out,
     resolve_tunnel_host,
@@ -194,18 +195,37 @@ class RunProfileExecutor:
         tunnel_out_details: list[tuple[int, str, str]] = []
         tunnel_in_details: list[tuple[str, int, str]] = []
 
+        # Track created tunnels: (port, host) -> first domain (for logging)
+        created_tunnels: dict[tuple[int, str], str] = {}
+
         try:
             for spec in tunnels.out:
                 local_port, domain, host_spec = parse_tunnel_out(spec)
                 host = resolve_tunnel_host(host_spec)
-                tunnel_manager.start_tunnel_out(local_port, domain, host)
+
+                tunnel_key = (local_port, host.ansible_host)
+                if tunnel_key not in created_tunnels:
+                    tunnel_manager.start_tunnel_out(local_port, domain, host)
+                    created_tunnels[tunnel_key] = domain
+
                 tunnel_out_details.append((local_port, domain, host.ansible_host))
 
             for spec in tunnels.in_:
-                service, remote_port, host_spec = parse_tunnel_in(spec)
-                host = resolve_tunnel_host(host_spec)
-                tunnel_manager.start_tunnel_in(service, remote_port, host)
-                tunnel_in_details.append((service, remote_port, host.ansible_host))
+                container_spec = parse_container_tunnel_in(spec)
+                if container_spec:
+                    runtime, container, remote_port, local_port, host_spec = container_spec
+                    host = resolve_tunnel_host(host_spec)
+                    tunnel_manager.start_container_tunnel_in(
+                        runtime, container, remote_port, local_port, host
+                    )
+                    tunnel_in_details.append(
+                        (f"{runtime}://{container}", local_port, host.ansible_host)
+                    )
+                else:
+                    service, remote_port, host_spec = parse_tunnel_in(spec)
+                    host = resolve_tunnel_host(host_spec)
+                    tunnel_manager.start_tunnel_in(service, remote_port, host)
+                    tunnel_in_details.append((service, remote_port, host.ansible_host))
 
             result = TunnelSetupResult(
                 tunnel_count=len(tunnel_manager.processes),
@@ -249,6 +269,34 @@ class RunProfileExecutor:
             routes.append((domain, local_port))
 
         return CaddyRouteResult(route_count=len(routes), routes=routes)
+
+    def setup_proxy_routes(
+        self,
+        proxy_routes: list[ProxyRoute],
+        caddy_proxies: dict[str, CaddyProxy],
+    ) -> None:
+        """Setup proxy routes, resolving host for each route.
+
+        Args:
+            proxy_routes: List of proxy routes to configure
+            caddy_proxies: Dict to populate with CaddyProxy instances
+
+        Raises:
+            CaddyProxyError: If route setup fails
+        """
+        for route in proxy_routes:
+            host = resolve_tunnel_host(route.host)
+
+            if host.ansible_host not in caddy_proxies:
+                caddy_proxies[host.ansible_host] = CaddyProxy(host)
+
+            proxy = caddy_proxies[host.ansible_host]
+            proxy.add_proxy_route(
+                route.from_domain,
+                route.from_path,
+                route.to_host,
+                route.to_path,
+            )
 
     def execute(self, profile: RunProfile, name: str) -> ExecutionResult:
         """Execute profile, return result.
@@ -294,6 +342,9 @@ class RunProfileExecutor:
 
                 if profile.tunnels.out:
                     self.setup_caddy_routes(profile.tunnels.out, caddy_proxies)
+
+            if profile.proxy:
+                self.setup_proxy_routes(profile.proxy, caddy_proxies)
 
             exit_code = run_command(profile.cmd, env=env)
 

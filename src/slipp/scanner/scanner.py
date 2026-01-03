@@ -4,8 +4,8 @@ Orchestrates framework detection by running detectors in priority order.
 Mirrors flyctl's scanner.go Scan() function.
 """
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Optional
 
 from slipp.models.deployment import DetectedService
 from slipp.scanner.flask import configure_flask
@@ -14,8 +14,8 @@ from slipp.scanner.node import configure_node
 from slipp.scanner.python import configure_python
 from slipp.scanner.sveltekit import configure_sveltekit
 
-# Type alias for scanner functions (detectors extract dependencies internally)
-SourceScanner = Callable[[Path, ScannerConfig], Optional[SourceInfo]]
+# Detectors must extract dependencies internally (not passed as arguments)
+SourceScanner = Callable[[Path, ScannerConfig], SourceInfo | None]
 
 
 def _source_info_to_detected_service(
@@ -45,18 +45,17 @@ def _source_info_to_detected_service(
 
 
 # Scanner registry in priority order (matches flyctl's scanner.go lines 115-140)
-# Framework-specific detectors run before generic detectors
 SCANNERS: list[SourceScanner] = [
-    configure_flask,  # Specific Python framework
-    configure_sveltekit,  # Specific Node.js framework
-    configure_python,  # Generic Python (fallback)
-    configure_node,  # Generic Node.js (fallback)
+    configure_flask,
+    configure_sveltekit,
+    configure_python,
+    configure_node,
 ]
 
 
 def scan(
-    source_dir: Path, config: Optional[ScannerConfig] = None
-) -> Optional[DetectedService]:
+    source_dir: Path, config: ScannerConfig | None = None
+) -> DetectedService | None:
     """Scan directory for framework.
 
     Language-specific extraction architecture: Detectors call extraction
@@ -83,11 +82,9 @@ def scan(
     if config is None:
         config = ScannerConfig()
 
-    # Run scanners in priority order (each extracts dependencies internally)
     for scanner in SCANNERS:
         source_info = scanner(source_dir, config)
         if source_info is not None:
-            # Convert internal SourceInfo to public DetectedService
             return _source_info_to_detected_service(
                 source_info, path=source_dir, name=source_dir.name
             )

@@ -1,14 +1,10 @@
 """Service discovery via systemctl queries.
 
-This module contains:
-1. DiscoveryService - Low-level systemctl querying with caching
-2. Business logic functions - Filtering, lookup, and discovery pipeline
-
-The functions here are the single source of truth for service discovery
-and filtering logic, used by both ServiceLocator and commands.
+Provides low-level systemctl querying with caching (DiscoveryService) and
+business logic functions for filtering, lookup, and discovery pipeline.
+These are the single source of truth for service discovery logic used by
+both ServiceLocator and commands.
 """
-
-from typing import List
 
 from slipp.models.host import AnsibleHost
 from slipp.models.service import Runtime, Service, ServiceState
@@ -45,7 +41,7 @@ class DiscoveryService:
         host_config: AnsibleHost,
         force: bool = False,
         include_system: bool = False,
-    ) -> List[Service]:
+    ) -> list[Service]:
         """Discover services on host.
 
         Args:
@@ -85,7 +81,7 @@ class DiscoveryService:
 
         return services
 
-    def _query_systemctl_batch(self, host_config: AnsibleHost) -> List[Service]:
+    def _query_systemctl_batch(self, host_config: AnsibleHost) -> list[Service]:
         """Query all service data in TWO passes (aligned).
 
         Pass 1: Get filtered service list + states
@@ -118,7 +114,7 @@ class DiscoveryService:
                 unit_names, states, metadata, host_config
             )
 
-    def _filter_system_services(self, services: List[Service]) -> List[Service]:
+    def _filter_system_services(self, services: list[Service]) -> list[Service]:
         """Filter out system/noise services.
 
         Args:
@@ -150,7 +146,7 @@ class DiscoveryService:
         ]
         return any(name.startswith(p) for p in system_patterns)
 
-    def enrich_with_projects(self, services: List[Service]) -> List[Service]:
+    def enrich_with_projects(self, services: list[Service]) -> list[Service]:
         """Enrich services with project names based on host ownership.
 
         All services on a host belong to ALL projects that own that host.
@@ -429,10 +425,7 @@ def _fuzzy_match_roles(
     """
     from slipp.utils.matching import fuzzy_match
 
-    # Normalize service name (strip .service suffix)
     service_clean = service_name.lower().replace(".service", "")
-
-    # Check if service matches any role
     return fuzzy_match(service_clean, roles, threshold=threshold) is not None
 
 
@@ -477,25 +470,19 @@ def filter_services(
     """
     result = services
 
-    # Filter by project (check if project is in the service's projects list)
     if project:
         result = [s for s in result if project in s.projects]
 
-    # Filter by host
     if host:
         result = [s for s in result if s.inventory_hostname == host]
 
-    # Filter by service name
     if service_name:
         result = [s for s in result if s.name == service_name]
 
-    # Hybrid filtering: fuzzy role match (unless show_all or specific service)
-    # All services (including containers) must match a managed role
     if managed_roles and not show_all and not service_name:
         result = [s for s in result if _fuzzy_match_roles(s.name, managed_roles)]
-    # Default behavior: hide services with no project ownership (unless show_all or specific service)
     elif not show_all and not service_name:
-        result = [s for s in result if s.projects]  # Non-empty projects list
+        result = [s for s in result if s.projects]
 
     return result
 
@@ -557,7 +544,6 @@ def find_service(
         >>> # Project-qualified lookup (checks if project is in service.projects)
         >>> svc = find_service(services, "PoC:poc-backend")
     """
-    # Parse service identifier syntax
     service_name = extract_service_name(service_identifier)
     host_filter = None
     project_filter = None
@@ -567,10 +553,8 @@ def find_service(
     elif ":" in service_identifier:
         project_filter, _ = service_identifier.split(":", 1)
 
-    # Find matching services (exact match first)
     matches = [s for s in services if s.name == service_name]
 
-    # Fuzzy fallback if no exact match
     if not matches:
         from slipp.utils.matching import fuzzy_match
 
@@ -579,11 +563,9 @@ def find_service(
         if best_match:
             matches = [s for s in services if s.name == best_match]
 
-    # Apply additional filters if specified
     if host_filter:
         matches = [s for s in matches if s.inventory_hostname == host_filter]
     if project_filter:
         matches = [s for s in matches if project_filter in s.projects]
 
-    # Return first match or None
     return matches[0] if matches else None

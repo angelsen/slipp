@@ -1,13 +1,7 @@
-"""Run command - dev environment orchestration.
+"""Execute run profiles for dev environment orchestration.
 
 Follows the design principle: singular command = action.
-Executes run profiles. Profile management is in runs.py.
-
-Supports:
-- Saved profiles: `ac run dev`
-- Create/update profiles: `ac run dev --cmd "npm run dev"`
-- Runtime env merging: `ac run dev --env EXTRA=val`
-- Pass-through args: `ac run python script.py` (appends to saved cmd)
+Profile management is in runs.py.
 """
 
 import shlex
@@ -16,8 +10,9 @@ from typing import Annotated
 import typer
 
 from slipp import output
-from slipp.models.run import RunProfile, TunnelConfig
+from slipp.models.run import ProxyRoute, RunProfile, TunnelConfig
 from slipp.services.run import RunProfileExecutor, RunProfileService
+from slipp.services.run.proxy import parse_proxy_spec
 from slipp.utils.errors import ConfigError
 
 
@@ -40,14 +35,34 @@ def run_command(
     tunnel_in: Annotated[
         list[str], typer.Option("--tunnel-in", help="Forward tunnel")
     ] = [],
+    proxy: Annotated[
+        list[str], typer.Option("--proxy", help="Proxy route (from@host -> to)")
+    ] = [],
 ) -> None:
-    """Execute a run profile."""
+    """Execute a run profile.
+
+    Supports saved profiles, creating/updating profiles with --cmd,
+    and merging runtime options. Pass-through args append to saved commands.
+
+    Args:
+        ctx: Typer context for capturing pass-through arguments.
+        name: Profile name to execute or create.
+        cmd: Command to execute (creates/updates profile if provided).
+        env: Environment variables to add (KEY=VALUE format).
+        vault: Vault project(s) to include.
+        tunnel_out: Reverse tunnels to add (local_port:domain@host).
+        tunnel_in: Forward tunnels to add (service:port@host).
+        proxy: Proxy routes to add (from@host -> to).
+
+    Raises:
+        typer.Exit: If profile not found and --cmd not provided.
+    """
     service = RunProfileService()
     executor = RunProfileExecutor()
 
     if cmd:
         profile = _build_profile(
-            cmd, list(env), list(vault), list(tunnel_out), list(tunnel_in)
+            cmd, list(env), list(vault), list(tunnel_out), list(tunnel_in), list(proxy)
         )
         _save_profile(name, profile)
         _execute_profile(executor, profile, name)
@@ -55,7 +70,7 @@ def run_command(
     elif service.profile_exists(name):
         profile = service.get_profile(name)
         merged = _merge_runtime_options(
-            profile, list(env), list(vault), list(tunnel_out), list(tunnel_in)
+            profile, list(env), list(vault), list(tunnel_out), list(tunnel_in), list(proxy)
         )
 
         if ctx.args:
@@ -67,8 +82,8 @@ def run_command(
 
     else:
         output.error(f"Profile '{name}' not found")
-        output.hint("Use 'ac runs list' to see saved profiles")
-        output.hint('Or create with: ac run <name> --cmd "..."')
+        output.hint("Use 'slipp runs list' to see saved profiles")
+        output.hint('Or create with: slipp run <name> --cmd "..."')
         raise typer.Exit(1)
 
 
@@ -89,13 +104,19 @@ def _build_profile(
     vaults: list[str],
     tunnel_out: list[str],
     tunnel_in: list[str],
+    proxy: list[str],
 ) -> RunProfile:
     """Build a RunProfile from command options."""
     tunnels = None
     if tunnel_out or tunnel_in:
         tunnels = TunnelConfig.model_validate({"out": tunnel_out, "in": tunnel_in})
 
-    return RunProfile(cmd=cmd, env=env, vaults=vaults, tunnels=tunnels)
+    proxy_routes = []
+    for spec in proxy:
+        from_url, to_url, host = parse_proxy_spec(spec)
+        proxy_routes.append(ProxyRoute(**{"from": from_url, "to": to_url, "host": host}))
+
+    return RunProfile(cmd=cmd, env=env, vaults=vaults, tunnels=tunnels, proxy=proxy_routes)
 
 
 def _save_profile(name: str, profile: RunProfile) -> None:
@@ -116,6 +137,7 @@ def _merge_runtime_options(
     vault: list[str],
     tunnel_out: list[str],
     tunnel_in: list[str],
+    proxy: list[str],
 ) -> RunProfile:
     """Merge runtime options with saved profile (not persisted).
 
@@ -123,8 +145,9 @@ def _merge_runtime_options(
     - env: Appended (CLI values override profile values for same key at execution)
     - vault: Added if not already present
     - tunnels: Added to existing tunnels
+    - proxy: Added to existing proxy routes
     """
-    if not any([env, vault, tunnel_out, tunnel_in]):
+    if not any([env, vault, tunnel_out, tunnel_in, proxy]):
         return profile
 
     merged_env = list(profile.env) + list(env)
@@ -141,10 +164,17 @@ def _merge_runtime_options(
             }
         )
 
+    merged_proxy = list(profile.proxy)
+    if proxy:
+        for spec in proxy:
+            from_url, to_url, host = parse_proxy_spec(spec)
+            merged_proxy.append(ProxyRoute(**{"from": from_url, "to": to_url, "host": host}))
+
     return RunProfile(
         cmd=profile.cmd,
         env=merged_env,
         vaults=merged_vaults,
         tunnels=merged_tunnels,
+        proxy=merged_proxy,
         acme_email=profile.acme_email,
     )

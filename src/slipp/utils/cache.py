@@ -3,7 +3,7 @@
 import json
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 
 class Cache:
@@ -19,7 +19,7 @@ class Cache:
         {'data': 'value'}
     """
 
-    def __init__(self, cache_dir: Optional[Path] = None):
+    def __init__(self, cache_dir: Path | None = None):
         """Initialize cache.
 
         Args:
@@ -56,7 +56,7 @@ class Cache:
         except IOError:
             pass
 
-    def get(self, key: str) -> Optional[Any]:
+    def get(self, key: str) -> Any | None:
         """Get value from cache if not expired.
 
         Args:

@@ -50,7 +50,7 @@ def list_command(
 
     if not projects:
         output.warning("No projects registered yet")
-        output.hint("Deploy a project with 'ac deploy' to register it automatically")
+        output.hint("Deploy a project with 'slipp deploy' to register it automatically")
         return
 
     if output.get_output_format() == OutputFormat.json:
@@ -98,4 +98,4 @@ def list_command(
 
         output.blank()
         output.info(f"Found {len(projects)} project(s), {total_hosts} host(s)")
-        output.hint("Tip: Use 'ac logs <project>' from any directory")
+        output.hint("Tip: Use 'slipp logs <project>' from any directory")

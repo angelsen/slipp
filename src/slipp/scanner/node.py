@@ -7,7 +7,6 @@ Mirrors flyctl's node.go (simplified for MVP).
 """
 
 from pathlib import Path
-from typing import Optional
 
 from slipp.scanner.helpers import extract_nodejs_dependencies
 from slipp.scanner.models import ScannerConfig, SourceInfo
@@ -19,22 +18,18 @@ NODE_TEMPLATE = "https://raw.githubusercontent.com/superfly/flyctl/master/scanne
 def configure_node(
     source_dir: Path,
     config: ScannerConfig,
-) -> Optional[SourceInfo]:
+) -> SourceInfo | None:
     """Configure generic Node.js application.
 
-    Mirrors flyctl's configureNode (node.go, simplified for MVP).
-    Extracts dependencies internally using language-specific helper.
-
-    Detection:
-    - Checks for package.json with dependencies
-    - This is a fallback detector (runs after specific frameworks)
+    Detects Node.js projects by checking for package.json with dependencies.
+    This is a fallback detector (runs after specific frameworks).
 
     Args:
-        source_dir: Directory to scan
-        config: Scanner configuration (unused in MVP)
+        source_dir: Directory to scan.
+        config: Scanner configuration (unused in MVP).
 
     Returns:
-        SourceInfo if Node.js project detected, None otherwise
+        SourceInfo if Node.js project detected, None otherwise.
 
     Example:
         >>> info = configure_node(Path("/path/to/node-app"), ScannerConfig())
@@ -43,10 +38,7 @@ def configure_node(
         >>> info.port
         3000
     """
-    # Extract Node.js dependencies using centralized helper
     dependencies = extract_nodejs_dependencies(source_dir)
-
-    # Require at least some dependencies (not empty package.json)
     if not dependencies:
         return None
 

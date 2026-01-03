@@ -3,8 +3,10 @@
 Manages SSH tunnels for:
 - Reverse tunnels (tunnel-out): Expose local port to remote
 - Forward tunnels (tunnel-in): Pull remote service to local
+- Container tunnels (tunnel-in): Pull Docker/Podman container service to local
 """
 
+import re
 import socket
 import subprocess
 import time
@@ -12,7 +14,13 @@ from dataclasses import dataclass
 
 from slipp.models.host import AnsibleHost
 from slipp.services.config import HostResolver
+from slipp.services.ssh.client import SSHService
 from slipp.utils.errors import HostNotFoundError, TunnelError
+
+# Pattern for container tunnel specs: docker://container:port:local@host
+CONTAINER_TUNNEL_PATTERN = re.compile(
+    r"^(docker|podman)://([^:]+):(\d+):(\d+)@(.+)$"
+)
 
 
 @dataclass
@@ -69,6 +77,23 @@ def parse_tunnel_in(spec: str) -> tuple[str, int, str]:
             f"Invalid tunnel-in spec: {spec}\n"
             f"Expected format: service:port@host (e.g., postgres:5432@metria)"
         ) from e
+
+
+def parse_container_tunnel_in(spec: str) -> tuple[str, str, int, int, str] | None:
+    """Parse container tunnel-in spec: 'docker://container:port:local@host'.
+
+    Args:
+        spec: Tunnel spec string like 'docker://matrix-synapse:8008:8008@metria'
+
+    Returns:
+        Tuple of (runtime, container, remote_port, local_port, host_spec)
+        or None if spec doesn't match container format
+    """
+    match = CONTAINER_TUNNEL_PATTERN.match(spec)
+    if not match:
+        return None
+    runtime, container, remote_port, local_port, host_spec = match.groups()
+    return runtime, container, int(remote_port), int(local_port), host_spec
 
 
 def resolve_tunnel_host(host_spec: str) -> AnsibleHost:
@@ -183,7 +208,6 @@ class TunnelManager:
         Raises:
             TunnelError: If tunnel fails to start or local port in use
         """
-        # Check local port availability
         if is_port_in_use(remote_port):
             raise TunnelError(
                 f"Local port {remote_port} already in use\n"
@@ -222,6 +246,96 @@ class TunnelManager:
         self.processes.append(proc)
         self._tunnel_info.append(
             f"in: {service}:{remote_port} → localhost:{remote_port}"
+        )
+
+    def start_container_tunnel_in(
+        self,
+        runtime: str,
+        container: str,
+        remote_port: int,
+        local_port: int,
+        host: AnsibleHost,
+    ) -> None:
+        """Start forward tunnel to Docker/Podman container.
+
+        Resolves container IP via inspect, then creates standard SSH forward.
+
+        Args:
+            runtime: Container runtime ('docker' or 'podman')
+            container: Container name
+            remote_port: Port inside container
+            local_port: Local port to bind
+            host: Remote host to tunnel through
+
+        Raises:
+            TunnelError: If tunnel fails to start or container not found
+        """
+        if is_port_in_use(local_port):
+            raise TunnelError(
+                f"Local port {local_port} already in use\n"
+                f"Hint: Stop the local service or use a different port"
+            )
+
+        # Resolve container IP via SSH (use root for docker access)
+        # Add space separator to handle containers on multiple networks
+        root_host = host.model_copy(update={"ansible_user": "root"})
+        inspect_cmd = (
+            f'{runtime} inspect -f '
+            f'"{{{{range.NetworkSettings.Networks}}}}{{{{.IPAddress}}}} {{{{end}}}}" '
+            f'{container}'
+        )
+
+        try:
+            with SSHService(root_host) as ssh:
+                result = ssh.execute(inspect_cmd).strip().strip('"')
+                # Take first IP if container is on multiple networks
+                container_ip = result.split()[0] if result.split() else ""
+        except Exception as e:
+            raise TunnelError(
+                f"Failed to get IP for container '{container}' on {host.ansible_host}\n"
+                f"{e}"
+            ) from e
+        if not container_ip or not container_ip[0].isdigit():
+            raise TunnelError(
+                f"Could not resolve IP for container '{container}'\n"
+                f"Got: {result[:100] if result else '(empty)'}\n"
+                f"Hint: Make sure the container is running and docker is accessible"
+            )
+
+        # Start SSH forward to container IP
+        cmd = [
+            "ssh",
+            "-L",
+            f"{local_port}:{container_ip}:{remote_port}",
+            "-N",
+            "-o",
+            "ExitOnForwardFailure=yes",
+            "-o",
+            "ServerAliveInterval=30",
+            f"{host.ansible_user}@{host.ansible_host}",
+        ]
+
+        if host.ansible_port != 22:
+            cmd.extend(["-p", str(host.ansible_port)])
+
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
+        time.sleep(1.5)
+        if proc.poll() is not None:
+            stderr = proc.stderr.read().decode() if proc.stderr else ""
+            raise TunnelError(
+                f"Container tunnel failed to start: {container}:{remote_port} via {host.ansible_host}\n"
+                f"Container IP: {container_ip}\n"
+                f"{stderr}"
+            )
+
+        self.processes.append(proc)
+        self._tunnel_info.append(
+            f"in: {runtime}://{container}:{remote_port} → localhost:{local_port}"
         )
 
     def get_tunnel_info(self) -> list[str]:

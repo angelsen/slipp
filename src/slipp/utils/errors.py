@@ -29,12 +29,6 @@ class TunnelError(SlippError):
     pass
 
 
-class SessionError(SlippError):
-    """Interactive session operation failed."""
-
-    pass
-
-
 class UserResolutionError(SlippError):
     """Failed to resolve SSH target user."""
 
@@ -131,7 +125,7 @@ class AmbiguousServiceError(SlippError):
         """
         suggestions = []
         for proj, host, _ in self.matches:
-            suggestions.append(f"ac {command} {proj}:{self.service}@{host}")
+            suggestions.append(f"slipp {command} {proj}:{self.service}@{host}")
         return suggestions
 
 
@@ -153,7 +147,7 @@ class ProjectNameRequiredError(ConfigError):
     def __init__(self) -> None:
         super().__init__(
             "No project name configured. "
-            "Use --name flag or run 'ac register <name> -i <inventory>'"
+            "Use --name flag or run 'slipp register <name> -i <inventory>'"
         )
 
 
@@ -179,14 +173,6 @@ class RegistrationError(SlippError):
     """Project registration failed."""
 
     pass
-
-
-class RegistryCorruptedError(SlippError):
-    """Registry file is corrupted."""
-
-    def __init__(self, message: str, backup_path: str | None = None):
-        self.backup_path = backup_path
-        super().__init__(message)
 
 
 class ProfileNotFoundError(SlippError):
@@ -219,7 +205,31 @@ class CaddyProxyError(SlippError):
     pass
 
 
+class ProxyRouteError(SlippError):
+    """Proxy route operation failed."""
+
+    pass
+
+
 class DeploymentError(SlippError):
     """Deployment failed."""
+
+    pass
+
+
+class SourceNotFoundError(SlippError):
+    """Secret source not found."""
+
+    pass
+
+
+class PullTimeoutError(SlippError):
+    """Timed out waiting for credentials."""
+
+    pass
+
+
+class PullCancelledError(SlippError):
+    """User cancelled the pull operation."""
 
     pass

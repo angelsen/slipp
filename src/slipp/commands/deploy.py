@@ -1,4 +1,4 @@
-"""Deploy command for executing Ansible playbooks."""
+"""Execute Ansible playbooks to deploy services and manage infrastructure."""
 
 from pathlib import Path
 from typing import Any
@@ -33,7 +33,7 @@ def deploy_command(
         help="Environment name or tag preset (preset if it exists, else environment)",
     ),
     preset: str = typer.Argument(
-        None, help="Tag preset name (when using 'ac deploy <env> <preset>')"
+        None, help="Tag preset name (when using 'slipp deploy <env> <preset>')"
     ),
     name: str = typer.Option(
         None, "-n", "--name", help="Project name (creates/updates local config)"
@@ -72,7 +72,10 @@ def deploy_command(
         None, "--skip-tags", help="Ansible tags to skip (comma-separated)"
     ),
 ):
-    """Execute ansible-playbook to deploy services."""
+    """Execute ansible-playbook to deploy services and manage infrastructure.
+
+    Supports tag presets, vault encryption, role installation, and dry-run mode.
+    """
     if name and inventory:
         project_root = Path.cwd()
         inventory_path = Path(inventory)
@@ -167,7 +170,7 @@ def deploy_command(
             f"Inventory file not found: {format_path(inventory_file, project_root)}"
         )
         if not resolver.has_local_config:
-            output.hint("Run 'ac register <name> -i <inventory>' to configure project")
+            output.hint("Run 'slipp register <name> -i <inventory>' to configure project")
         raise typer.Exit(1)
 
     if not Path(playbook_file).exists():
