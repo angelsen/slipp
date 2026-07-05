@@ -1,6 +1,6 @@
 [project]
 name = "slipp"
-version = "0.1.0"
+version = "0.2.0"
 description = "Build locally, slipp to production. 90% automation for self-hosted app deployments."
 readme = "README.md"
 authors = [
