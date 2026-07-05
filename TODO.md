@@ -1,36 +1,5 @@
 # slipp TODO
 
-## Tunnel Auth
-
-### Goal
-
-Add HTTP basic auth to tunnel-out routes for security.
-
-```bash
-slipp run dev --tunnel-out 5173:auth.metria.no@mdad --tunnel-auth user:pass
-```
-
-### Implementation
-
-- Add `--tunnel-auth` flag to `slipp run`
-- Pass credentials to `CaddyProxy.add_route()`
-- Caddy hashes password and adds `basicauth` directive
-- One auth applies to all tunnel-out routes
-
-### Caddy Config
-
-```caddyfile
-@auth host auth.metria.no
-handle @auth {
-    basicauth {
-        user $hashed_pass
-    }
-    reverse_proxy localhost:5173
-}
-```
-
----
-
 ## SSH Security
 
 | Feature | slipp only | needs nor-auth |
@@ -44,72 +13,6 @@ handle @auth {
 **slipp:** `ssh-keygen -t ed25519-sk` + `slipp bootstrap account`
 
 **nor-auth:** Simple HTTP API for cert issuance, no SDK needed
-
----
-
-## Config Refactor: Merge runs.yaml into slipp.yaml
-
-### Problem
-
-Run profiles currently live in `.slipp/runs.yaml` (hidden directory), but they're useful to share with team via git.
-
-```
-project/
-├── slipp.yaml              # Project config (tracked)
-├── .slipp/
-│   ├── runs.yaml           # Run profiles (hidden, but useful to share!)
-│   └── logs/               # Logs (untracked)
-```
-
-### Goal
-
-Single config file, git trackable, secrets stay in vaults.
-
-```yaml
-# slipp.yaml - single source of truth
-name: nor-auth
-inventory: inventory/hosts
-vault: inventory/vault.yml
-
-runs:
-  dev:
-    cmd: npm run dev
-    vaults: [mdad]              # Secrets from vault, not inline
-    env:
-      - VITE_DEV_HOST=auth.metria.no
-      - NORAUTH_ISSUER_URL=https://auth.metria.no
-    tunnels:
-      out: [5173:auth.metria.no@mdad]
-
-  46dev:
-    extends: dev                # Inherit from dev profile
-    vaults: [mdad, nor-auth]    # Multiple vaults support
-```
-
-### Directory Structure
-
-```
-project/
-├── slipp.yaml              # Config + runs (tracked)
-├── .slipp/                 # Local-only, .gitignore'd
-│   ├── logs/               # Command logs
-│   ├── cache/              # Temp files
-│   └── runs.local.yaml     # Personal overrides (optional)
-```
-
-### Features
-
-| Feature | Description |
-|---------|-------------|
-| `extends` | Inherit from another profile |
-| Multiple vaults | `vaults: [mdad, nor-auth]` |
-| `runs.local.yaml` | Personal overrides, not tracked |
-
-### Migration
-
-1. Move `runs:` section into `slipp.yaml`
-2. `.slipp/` becomes untracked-only (logs, cache, local overrides)
-3. Deprecate `.slipp/runs.yaml` with warning
 
 ---
 
@@ -161,12 +64,12 @@ network/routing it's exposed through.
 - [x] Multiple vaults support (`vaults: [mdad, nor-auth]`) - run config already supported, added to `secrets list`
 - [x] Secret encoding options (`--encoding hex|base64|ulid`) for `secrets add` and `secrets sync`
 - [x] Role management refactor: `roles` → `roles_path`, added `galaxy_path` for ansible-galaxy
-- [ ] Config refactor: merge runs.yaml into slipp.yaml
-- [ ] Run profile inheritance (`extends: dev`)
+- [x] Config refactor: merge runs.yaml into slipp.yaml
+- [x] Run profile inheritance (`extends: dev`)
 - [x] slipp run progress output
 - [ ] slipp deploy progress output (ansible buffering - use `stdbuf -o0`)
 - [ ] JSON output (`-o json`) for all plural commands
-- [ ] Tunnel auth (`--tunnel-auth user:pass`)
+- [x] Tunnel auth (`--tunnel-auth user:pass`)
 - [ ] `slipp bootstrap auth` - SSH CA + TOTP setup (requires nor-auth)
 - [ ] Provider integrations (Gigahost, Cloudflare)
 

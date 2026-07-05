@@ -24,10 +24,11 @@ class LocalConfig(BaseModel):
         runtime: Container runtime (docker/podman), auto-detected if not set
         managed_roles: Role names for service filtering (auto-populated from roles dirs)
         tag_presets: Named tag presets (name -> ansible args like "--tags setup-all")
+        runs: Run profiles (name -> profile dict), see models.run.RunProfile
     """
 
     name: str = Field(..., min_length=1, description="Project identifier")
-    inventory: str = Field(..., description="Inventory file path")
+    inventory: str | None = Field(default=None, description="Inventory file path")
     playbook: str = Field(default="playbook.yml", description="Playbook file path")
     roles_path: list[str] = Field(
         default_factory=list, description="Role directories for ansible --roles-path"
@@ -45,6 +46,9 @@ class LocalConfig(BaseModel):
     )
     tag_presets: dict[str, str] = Field(
         default_factory=dict, description="Named tag presets (name -> ansible args)"
+    )
+    runs: dict[str, dict] = Field(
+        default_factory=dict, description="Run profiles (name -> profile dict)"
     )
 
     model_config = {"extra": "ignore"}

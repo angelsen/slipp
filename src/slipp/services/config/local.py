@@ -181,6 +181,8 @@ class LocalConfigService:
             data.pop("tag_presets", None)
         if not data.get("runtime"):
             data.pop("runtime", None)
+        if not data.get("runs"):
+            data.pop("runs", None)
 
         ordered_data: dict[str, Any] = {}
         field_order = [
@@ -193,6 +195,7 @@ class LocalConfigService:
             "runtime",
             "managed_roles",
             "tag_presets",
+            "runs",
         ]
         for field in field_order:
             if field in data:

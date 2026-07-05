@@ -268,7 +268,12 @@ class CaddyProxy:
         self.route_ids.append(route_id)
         return route_id
 
-    def add_route(self, domain: str, local_port: int) -> str:
+    def add_route(
+        self,
+        domain: str,
+        local_port: int,
+        auth: tuple[str, str] | None = None,
+    ) -> str:
         """Add a dev route to Caddy.
 
         Routes traffic for the domain to localhost:{local_port} where
@@ -277,6 +282,7 @@ class CaddyProxy:
         Args:
             domain: Domain to route (e.g., "app.example.com")
             local_port: Local port on server (SSH tunnel endpoint)
+            auth: Optional (username, bcrypt-hash) for HTTP basic auth
 
         Returns:
             Route ID for later removal
@@ -286,15 +292,32 @@ class CaddyProxy:
         """
         route_id = _domain_to_route_id(domain)
 
+        handle: list[dict] = []
+        if auth:
+            username, password_hash = auth
+            handle.append(
+                {
+                    "handler": "authentication",
+                    "providers": {
+                        "http_basic": {
+                            "accounts": [
+                                {"username": username, "password": password_hash}
+                            ]
+                        }
+                    },
+                }
+            )
+        handle.append(
+            {
+                "handler": "reverse_proxy",
+                "upstreams": [{"dial": f"localhost:{local_port}"}],
+            }
+        )
+
         route_config = {
             "@id": route_id,
             "match": [{"host": [domain]}],
-            "handle": [
-                {
-                    "handler": "reverse_proxy",
-                    "upstreams": [{"dial": f"localhost:{local_port}"}],
-                }
-            ],
+            "handle": handle,
             "terminal": True,
         }
 

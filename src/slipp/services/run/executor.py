@@ -207,12 +207,14 @@ class RunProfileExecutor:
         self,
         tunnel_out_specs: list[str],
         caddy_proxies: dict[str, CaddyProxy],
+        auth: tuple[str, str] | None = None,
     ) -> None:
         """Setup Caddy dev proxy routes for tunnel-out specs.
 
         Args:
             tunnel_out_specs: List of tunnel-out specs
             caddy_proxies: Dict to populate with CaddyProxy instances
+            auth: Optional (username, bcrypt-hash) for HTTP basic auth on all routes
 
         Raises:
             CaddyProxyError: If route setup fails
@@ -225,8 +227,9 @@ class RunProfileExecutor:
                 caddy_proxies[host.ansible_host] = CaddyProxy(host)
 
             proxy = caddy_proxies[host.ansible_host]
-            proxy.add_route(domain, local_port)
-            output.success(f"Route: {domain} → :{local_port}")
+            proxy.add_route(domain, local_port, auth=auth)
+            suffix = f" (auth: {auth[0]})" if auth else ""
+            output.success(f"Route: {domain} → :{local_port}{suffix}")
 
     def setup_proxy_routes(
         self,
@@ -303,7 +306,13 @@ class RunProfileExecutor:
 
                 if profile.tunnels.out:
                     output.info("Adding Caddy routes...")
-                    self.setup_caddy_routes(profile.tunnels.out, caddy_proxies)
+                    auth = None
+                    if profile.tunnels.auth:
+                        username, password_hash = profile.tunnels.auth.split(":", 1)
+                        auth = (username, password_hash)
+                    self.setup_caddy_routes(
+                        profile.tunnels.out, caddy_proxies, auth=auth
+                    )
 
             if profile.proxy:
                 output.info("Adding proxy routes...")

@@ -7,12 +7,14 @@ Profile management is in runs.py.
 import shlex
 from typing import Annotated
 
+import bcrypt
 import typer
 
 from slipp import output
 from slipp.models.run import ProxyRoute, RunProfile, TunnelConfig
 from slipp.services.run import RunProfileExecutor, RunProfileService
 from slipp.services.run.proxy import parse_proxy_spec
+from slipp.utils.errors import ConfigError
 
 
 RUN_CONTEXT_SETTINGS = {"allow_extra_args": True, "ignore_unknown_options": True}
@@ -37,6 +39,12 @@ def run_command(
     proxy: Annotated[
         list[str], typer.Option("--proxy", help="Proxy route (from@host -> to)")
     ] = [],
+    tunnel_auth: Annotated[
+        str | None,
+        typer.Option(
+            "--tunnel-auth", help="HTTP basic auth for tunnel-out routes (user:pass)"
+        ),
+    ] = None,
 ) -> None:
     """Execute a run profile.
 
@@ -52,6 +60,7 @@ def run_command(
         tunnel_out: Reverse tunnels to add (local_port:domain@host).
         tunnel_in: Forward tunnels to add (service:port@host).
         proxy: Proxy routes to add (from@host -> to).
+        tunnel_auth: HTTP basic auth for tunnel-out Caddy routes (user:pass).
 
     Raises:
         typer.Exit: If profile not found and --cmd not provided.
@@ -61,7 +70,13 @@ def run_command(
 
     if cmd:
         profile = _build_profile(
-            cmd, list(env), list(vault), list(tunnel_out), list(tunnel_in), list(proxy)
+            cmd,
+            list(env),
+            list(vault),
+            list(tunnel_out),
+            list(tunnel_in),
+            list(proxy),
+            tunnel_auth,
         )
         _save_profile(name, profile)
         _execute_profile(executor, profile)
@@ -75,6 +90,7 @@ def run_command(
             list(tunnel_out),
             list(tunnel_in),
             list(proxy),
+            tunnel_auth,
         )
 
         if ctx.args:
@@ -98,6 +114,31 @@ def _execute_profile(executor: RunProfileExecutor, profile: RunProfile) -> None:
         raise typer.Exit(result.exit_code)
 
 
+def _hash_tunnel_auth(spec: str) -> str:
+    """Parse a user:pass spec and bcrypt-hash the password.
+
+    Args:
+        spec: Auth spec in user:pass format.
+
+    Returns:
+        "user:<bcrypt-hash>" - safe to persist in a git-tracked slipp.yaml.
+
+    Raises:
+        ConfigError: If spec is malformed.
+    """
+    if ":" not in spec:
+        raise ConfigError(
+            f"Invalid --tunnel-auth format: '{spec}' (expected user:pass)"
+        )
+    user, password = spec.split(":", 1)
+    if not user or not password:
+        raise ConfigError(
+            "Invalid --tunnel-auth format: user and password cannot be empty"
+        )
+    hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+    return f"{user}:{hashed}"
+
+
 def _build_profile(
     cmd: str,
     env: list[str],
@@ -105,11 +146,17 @@ def _build_profile(
     tunnel_out: list[str],
     tunnel_in: list[str],
     proxy: list[str],
+    tunnel_auth: str | None = None,
 ) -> RunProfile:
     """Build a RunProfile from command options."""
     tunnels = None
     if tunnel_out or tunnel_in:
-        tunnels = TunnelConfig.model_validate({"out": tunnel_out, "in": tunnel_in})
+        auth = _hash_tunnel_auth(tunnel_auth) if tunnel_auth else None
+        tunnels = TunnelConfig.model_validate(
+            {"out": tunnel_out, "in": tunnel_in, "auth": auth}
+        )
+    elif tunnel_auth:
+        raise ConfigError("--tunnel-auth requires --tunnel-out")
 
     proxy_routes = []
     for spec in proxy:
@@ -142,6 +189,7 @@ def _merge_runtime_options(
     tunnel_out: list[str],
     tunnel_in: list[str],
     proxy: list[str],
+    tunnel_auth: str | None = None,
 ) -> RunProfile:
     """Merge runtime options with saved profile (not persisted).
 
@@ -150,21 +198,32 @@ def _merge_runtime_options(
     - vault: Added if not already present
     - tunnels: Added to existing tunnels
     - proxy: Added to existing proxy routes
+    - tunnel_auth: Replaces existing auth (requires an existing or new tunnel-out)
     """
-    if not any([env, vault, tunnel_out, tunnel_in, proxy]):
+    if not any([env, vault, tunnel_out, tunnel_in, proxy, tunnel_auth]):
         return profile
 
     merged_env = list(profile.env) + list(env)
     merged_vaults = list(profile.vaults) + [v for v in vault if v not in profile.vaults]
 
     merged_tunnels = profile.tunnels
-    if tunnel_out or tunnel_in:
+    if tunnel_out or tunnel_in or tunnel_auth:
         existing_out = merged_tunnels.out if merged_tunnels else []
         existing_in = merged_tunnels.in_ if merged_tunnels else []
+        existing_auth = merged_tunnels.auth if merged_tunnels else None
+
+        if tunnel_auth and not (existing_out or tunnel_out):
+            raise ConfigError(
+                "--tunnel-auth requires a tunnel-out (existing or via --tunnel-out)"
+            )
+
         merged_tunnels = TunnelConfig.model_validate(
             {
                 "out": list(existing_out) + list(tunnel_out),
                 "in": list(existing_in) + list(tunnel_in),
+                "auth": _hash_tunnel_auth(tunnel_auth)
+                if tunnel_auth
+                else existing_auth,
             }
         )
 

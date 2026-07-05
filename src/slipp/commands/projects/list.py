@@ -19,7 +19,7 @@ def _load_hosts_for_project(project_path: Path) -> list[dict[str, str | int]]:
     from slipp.services.config import InventoryService, LocalConfigService
 
     local_config = LocalConfigService.load(project_path)
-    if not local_config:
+    if not local_config or not local_config.inventory:
         return []
 
     inventory_path = project_path / local_config.inventory

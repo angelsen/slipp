@@ -1173,6 +1173,7 @@ source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
     { name = "ansible-runner" },
+    { name = "bcrypt" },
     { name = "cryptography" },
     { name = "httpx" },
     { name = "jinja2" },
@@ -1191,6 +1192,7 @@ dependencies = [
 requires-dist = [
     { name = "aiohttp", specifier = ">=3.13.2" },
     { name = "ansible-runner", specifier = ">=2.4.2" },
+    { name = "bcrypt", specifier = ">=5.0.0" },
     { name = "cryptography", specifier = ">=46.0.3" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "jinja2", specifier = ">=3.1.6" },

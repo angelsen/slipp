@@ -1,7 +1,7 @@
 """Run profile models for dev environment orchestration.
 
 This module provides Pydantic models for run profiles stored in
-slipp.yaml under run_profiles.
+slipp.yaml under `runs:`.
 """
 
 from pydantic import BaseModel, Field
@@ -51,10 +51,14 @@ class TunnelConfig(BaseModel):
     Attributes:
         out: Reverse tunnels (expose local to remote) - format: local_port:domain@host
         in_: Forward tunnels (pull remote to local) - format: service:port@host
+        auth: HTTP basic auth for tunnel-out Caddy routes - format: user:<bcrypt-hash>
     """
 
     out: list[str] = Field(default_factory=list)
     in_: list[str] = Field(default_factory=list, alias="in")
+    auth: str | None = Field(
+        default=None, description="HTTP basic auth as user:<bcrypt-hash>"
+    )
 
     model_config = {"populate_by_name": True}
 

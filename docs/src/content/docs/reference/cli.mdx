@@ -212,6 +212,7 @@ slipp run <name> [OPTIONS] [-- ARGS]
 | `--tunnel-out` | Reverse tunnel `local_port:domain@host` |
 | `--tunnel-in` | Forward tunnel `service:port@host` |
 | `--proxy` | Proxy route `from@host -> to` (repeatable) |
+| `--tunnel-auth` | HTTP basic auth for tunnel-out routes `user:pass` (bcrypt-hashed before saving) |
 
 <Tabs>
 <TabItem label="Create Profile">
@@ -246,6 +247,26 @@ See [Local Development Guide](/guides/local-development) for tunnel concepts.
 ### runs
 
 Manage saved run profiles.
+
+Profiles are stored in `slipp.yaml` under `runs:` (git-tracked). A profile can
+inherit from another with `extends`, and personal overrides can live in the
+untracked `.slipp/runs.local.yaml` (same name shadows the tracked profile
+entirely — not merged field-by-field):
+
+```yaml
+runs:
+  dev:
+    cmd: npm run dev
+    tunnels:
+      out: [5173:app.example.com@myserver]
+  dev-staging:
+    extends: dev # inherits cmd/tunnels, overrides below
+    env:
+      - VITE_ENV=staging
+```
+
+The legacy `.slipp/runs.yaml` is still read (with a deprecation warning) if
+present — move its entries into `slipp.yaml` under `runs:`.
 
 #### runs list
 

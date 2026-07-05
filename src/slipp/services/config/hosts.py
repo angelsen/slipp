@@ -45,6 +45,8 @@ class HostResolver:
         local_config = LocalConfigService.load(project_path)
         if not local_config:
             raise HostNotFoundError(f"No slipp.yaml found in {project_path}")
+        if not local_config.inventory:
+            raise HostNotFoundError(f"No inventory configured in {project_path}")
 
         inventory_path = project_path / local_config.inventory
         if not inventory_path.exists():

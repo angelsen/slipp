@@ -60,7 +60,7 @@ class RuntimeDetector:
             "docker" or "podman" if detected unambiguously, None otherwise.
         """
         config = LocalConfigService.load(self.project_root)
-        if not config:
+        if not config or not config.inventory:
             return None
 
         playbook = self.project_root / config.playbook

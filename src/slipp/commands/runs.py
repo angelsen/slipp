@@ -61,8 +61,8 @@ def remove_profile(
     try:
         service.delete_profile(name)
         output.success(f"Removed profile '{name}'")
-    except ProfileNotFoundError:
-        output.error(f"Profile '{name}' not found")
+    except ProfileNotFoundError as e:
+        output.error(str(e))
         profiles = service.list_profiles()
         if profiles:
             output.hint(f"Available profiles: {', '.join(profiles.keys())}")

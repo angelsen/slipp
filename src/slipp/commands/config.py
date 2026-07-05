@@ -34,7 +34,7 @@ def _load_hosts_for_project(project_path: Path) -> list[dict[str, str | int]]:
     from slipp.services.config import InventoryService
 
     local_config = LocalConfigService.load(project_path)
-    if not local_config:
+    if not local_config or not local_config.inventory:
         return []
 
     inventory_path = project_path / local_config.inventory
@@ -76,7 +76,7 @@ def _show_table(project_root: Path) -> None:
 
     rows = [
         {"setting": "name", "value": local_config.name},
-        {"setting": "inventory", "value": local_config.inventory},
+        {"setting": "inventory", "value": local_config.inventory or "(none)"},
         {"setting": "playbook", "value": local_config.playbook},
         {
             "setting": "roles_path",
