@@ -1,42 +1,5 @@
 # slipp TODO
 
-## slipp run Progress Output
-
-### Problem
-
-After Phase 2 refactor, `slipp run` lost progress feedback:
-```
-ℹ Updated profile 'dev'
-<command runs immediately, no pipeline visibility>
-```
-
-### Goal
-
-Show pipeline steps:
-```
-ℹ Loading vault secrets...
-✓ Loaded 5 env vars from mdad
-ℹ Setting up tunnels...
-✓ Tunnel: localhost:5173 → auth.metria.no
-ℹ Adding Caddy routes...
-✓ Route: auth.metria.no → :5173
-```
-
-### Approach
-
-Executor already has separate methods returning results:
-- `load_vault_secrets()` → `VaultLoadResult`
-- `setup_tunnels()` → `TunnelSetupResult`
-- `setup_caddy_routes()` → `CaddyRouteResult`
-
-Options:
-1. Command calls methods individually (quick, some duplication)
-2. Add progress callback to `execute()` (cleaner)
-
----
-
----
-
 ## Tunnel Auth
 
 ### Goal
@@ -150,6 +113,44 @@ project/
 
 ---
 
+## Bulletins/Prelo integration (first real consumer)
+
+Bulletins (`~/Projects/work/bulletins/bulletins-chat`, SvelteKit) is about to
+become slipp's first real deployment target — two apps (`bulletins-chat`
+public, `bulletins-admin` WG-only) on VPS infra already managed by
+[`wg-deploy`](~/Projects/private/wg-deploy) (WireGuard mesh, internal DNS,
+Caddy). See that repo's own TODO for the matching asks — the two projects
+are meant to interoperate: slipp deploys the app, wg-manage owns the
+network/routing it's exposed through.
+
+- **Native (non-container) app role.** `roles/app/templates/systemd.service.j2`
+  currently only generates `ExecStart=/usr/bin/{{ container_runtime }} run ...`
+  — there is no path for a plain built binary/process. Bulletins runs via
+  `npm run build` + systemd directly, no Docker/Podman anywhere in its stack.
+  Need a role variant where `ExecStart` runs the app directly (e.g. `node
+  build/index.js` for a SvelteKit `adapter-node` output, with
+  `WorkingDirectory`/`Environment` set from scanned config) — same shape as
+  today's role, no container runtime required. This decides whether
+  Bulletins gets Dockerized just to fit slipp, or slipp grows to fit
+  Bulletins' actual (systemd-native) deploy shape — leaning toward the
+  latter, since wg-deploy's own target host is bare Ubuntu with no
+  container runtime installed at all.
+- **Delegate exposure to wg-manage instead of templating Caddy.** Where the
+  target host already runs wg-deploy's `wg-manage` (source of truth for
+  Caddy via `/etc/wg-services.json`), slipp's `caddy` role should stop
+  generating its own Caddyfile and instead shell out over the existing SSH
+  connection: `wg-manage service add <name> <target> --https|--public`
+  (idempotent create-or-update — see the matching ask in wg-deploy's TODO).
+  Keeps exactly one owner of Caddy state instead of two tools racing to
+  regenerate the same file. Bulletins-admin needs *no* exposure step at all
+  (binds directly to the WG IP, no Caddy route) — the smallest possible
+  first test of the native app role, before attempting bulletins-chat
+  (public, needs Caddy + DNS).
+- **Provider integrations below are bigger than first scoped** — see
+  updated Gigahost section.
+
+---
+
 ## Backlog
 
 - [x] Output primitives refactor (stdout/stderr separation)
@@ -162,7 +163,7 @@ project/
 - [x] Role management refactor: `roles` → `roles_path`, added `galaxy_path` for ansible-galaxy
 - [ ] Config refactor: merge runs.yaml into slipp.yaml
 - [ ] Run profile inheritance (`extends: dev`)
-- [ ] slipp run progress output
+- [x] slipp run progress output
 - [ ] slipp deploy progress output (ansible buffering - use `stdbuf -o0`)
 - [ ] JSON output (`-o json`) for all plural commands
 - [ ] Tunnel auth (`--tunnel-auth user:pass`)
@@ -197,7 +198,12 @@ slipp deploy
 
 ### Minimal Clients
 
-**Gigahost** (Server + DNS + Registrar):
+**Gigahost** (Server + DNS + Registrar) — confirmed against
+https://gigahost.no/en/api-dokumentasjon (base `https://api.gigahost.no/api/v0`,
+Bearer token via `/authenticate`). Full DNS zone/record CRUD exists (TTL,
+priority, DNSSEC, PTR, redirects) — more than enough for `dns sync`. Server
+API also goes further than originally scoped: full ordering/provisioning,
+not just management of existing servers:
 ```
 GET  /servers                      # List VPS with IPs
 GET  /servers/{id}                 # Server details
@@ -205,8 +211,29 @@ GET  /servers/{id}/powerstate      # Power status
 GET  /servers/{id}/reboot          # Reboot
 PUT  /servers/{id}/reverse         # Reverse DNS
 GET  /dns/zones                    # List domains
+GET  /dns/zones/{id}/records       # List records (needed before create/update)
 POST /dns/zones/{id}/records       # Create DNS record
+PUT  /dns/zones/{id}/records/{rid} # Update DNS record
+DELETE /dns/zones/{id}/records/{rid} # Delete DNS record
+
+# Provisioning — not in original scope, unlocks a real `slipp provision`:
+GET  /deploy/servers               # Orderable product catalog (region, price, stock)
+POST /deploy/servers               # Order a new VPS
+GET  /deploy/status?ids=           # Poll waitlist→deploying→installing→ready, returns IP (+ root pw)
 ```
+Regions are Norway-only (e.g. Oslo) — no multi-region equivalent to Fly's
+edge network, don't design for one.
+
+A `slipp provision <name> --region osl` command becomes possible: order via
+`/deploy/servers`, poll `/deploy/status` for the IP, hand it to
+`wg-manage add` so it joins the mesh immediately, `dns sync` the A record,
+then `slipp deploy` the app role. Bulletins' current plan doesn't actually
+call for a second VPS yet (`livekit-dev` is planned as a second systemd
+unit on the existing box) — but see the Bulletins-side TODO milestone
+"Prod/dev split + deployment hardening" in
+`~/Projects/work/bulletins/bulletins-chat/TODO` for the motivating
+use case, and the open question of whether real machine-level prod/dev
+separation is worth it once provisioning is this cheap.
 
 **Cloudflare** (DNS + Registrar):
 ```

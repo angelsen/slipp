@@ -9,6 +9,7 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from slipp import output
 from slipp.models.run import ProxyRoute, RunProfile, TunnelConfig
 from slipp.services.run.caddy import CaddyProxy
 from slipp.services.ssh import (
@@ -98,9 +99,6 @@ class RunProfileExecutor:
     3. Configuring Caddy dev proxy routes
     4. Running the command with proper signal handling
     5. Cleaning up resources on completion/failure
-
-    Note: This service does not produce output. It returns structured results
-    that callers can use to display appropriate messages.
     """
 
     def check_caddy_requirements(self, tunnel_out_specs: list[str]) -> CaddyCheckResult:
@@ -146,7 +144,9 @@ class RunProfileExecutor:
             VaultDecryptError: If vault decryption fails
         """
         with vault_password_file(confirm=False) as pw_file:
-            return merge_vault_envs(vaults, pw_file)
+            env = merge_vault_envs(vaults, pw_file)
+            output.success(f"Loaded {len(env)} env vars from {', '.join(vaults)}")
+            return env
 
     def setup_tunnels(self, tunnels: TunnelConfig) -> TunnelManager:
         """Setup SSH tunnels.
@@ -174,6 +174,7 @@ class RunProfileExecutor:
                 if tunnel_key not in created_tunnels:
                     tunnel_manager.start_tunnel_out(local_port, domain, host)
                     created_tunnels[tunnel_key] = domain
+                    output.success(f"Tunnel: localhost:{local_port} → {domain}")
 
             for spec in tunnels.in_:
                 container_spec = parse_container_tunnel_in(spec)
@@ -185,10 +186,16 @@ class RunProfileExecutor:
                     tunnel_manager.start_container_tunnel_in(
                         runtime, container, remote_port, local_port, host
                     )
+                    output.success(
+                        f"Tunnel: localhost:{local_port} ← {container}:{remote_port}@{host_spec}"
+                    )
                 else:
                     service, remote_port, host_spec = parse_tunnel_in(spec)
                     host = resolve_tunnel_host(host_spec)
                     tunnel_manager.start_tunnel_in(service, remote_port, host)
+                    output.success(
+                        f"Tunnel: localhost:{remote_port} ← {service}@{host_spec}"
+                    )
 
             return tunnel_manager
 
@@ -219,6 +226,7 @@ class RunProfileExecutor:
 
             proxy = caddy_proxies[host.ansible_host]
             proxy.add_route(domain, local_port)
+            output.success(f"Route: {domain} → :{local_port}")
 
     def setup_proxy_routes(
         self,
@@ -246,6 +254,9 @@ class RunProfileExecutor:
                 route.from_path,
                 route.to_host,
                 route.to_path,
+            )
+            output.success(
+                f"Route: {route.from_domain}{route.from_path} → {route.to_host}"
             )
 
     def execute(self, profile: RunProfile) -> ExecutionResult:
@@ -279,6 +290,7 @@ class RunProfileExecutor:
 
         try:
             if profile.vaults:
+                output.info("Loading vault secrets...")
                 env = self.load_vault_secrets(profile.vaults)
 
             if profile.env:
@@ -286,12 +298,15 @@ class RunProfileExecutor:
                 env = {**env, **cli_env}
 
             if profile.tunnels and (profile.tunnels.out or profile.tunnels.in_):
+                output.info("Setting up tunnels...")
                 tunnel_manager = self.setup_tunnels(profile.tunnels)
 
                 if profile.tunnels.out:
+                    output.info("Adding Caddy routes...")
                     self.setup_caddy_routes(profile.tunnels.out, caddy_proxies)
 
             if profile.proxy:
+                output.info("Adding proxy routes...")
                 self.setup_proxy_routes(profile.proxy, caddy_proxies)
 
             exit_code = run_command(profile.cmd, env=env)
