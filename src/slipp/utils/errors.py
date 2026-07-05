@@ -147,7 +147,7 @@ class ProjectNameRequiredError(ConfigError):
     def __init__(self) -> None:
         super().__init__(
             "No project name configured. "
-            "Use --name flag or run 'slipp register <name> -i <inventory>'"
+            "Use --name flag or run 'slipp projects add <name> -i <inventory>'"
         )
 
 

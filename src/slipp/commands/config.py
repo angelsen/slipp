@@ -62,7 +62,7 @@ def _show_table(project_root: Path) -> None:
 
     if not resolver.has_local_config:
         output.warning("No slipp.yaml found in current directory")
-        output.hint("Run 'slipp register <name> -i <inventory>' to create config")
+        output.hint("Run 'slipp projects add <name> -i <inventory>' to create config")
         output.hint(
             "Or 'slipp deploy --name <name> -i <inventory>' to deploy and save config"
         )
@@ -112,7 +112,7 @@ def _show_table(project_root: Path) -> None:
         output.success(f"Global registry: registered as '{project.name}'")
     else:
         output.warning("Not in global registry")
-        output.hint("Run 'slipp register' or 'slipp deploy' to register globally")
+        output.hint("Run 'slipp projects add' or 'slipp deploy' to register globally")
 
 
 def _show_json(project_root: Path) -> None:

@@ -321,7 +321,7 @@ class RunProfileExecutor:
             if not check_result.success:
                 raise ProfileExecutionError(
                     f"Dev proxy not installed on: {', '.join(check_result.missing_hosts)}\n"
-                    f"Run: ac bootstrap <host> run --email <email>"
+                    f"Run: slipp bootstrap <host> proxy --email <email>"
                 )
 
         env: dict[str, str] = {}

@@ -135,6 +135,56 @@ Now your local app:
 - Is accessible at `https://app.example.com`
 - Connects to remote Postgres at `localhost:5432`
 
+### Container Tunnels
+
+Tunnel directly to a container by name (instead of service).
+
+```bash
+--tunnel-in docker://postgres:5432:5432@myserver
+```
+
+| Part | Description |
+|------|-------------|
+| `docker://` | Container runtime (`docker://` or `podman://`) |
+| `postgres` | Container name |
+| `5432:5432` | `remote_port:local_port` |
+| `myserver` | SSH host |
+
+**Use case:** Access a container that isn't exposed as a systemd service.
+
+```bash
+slipp run dev \
+  --tunnel-in docker://matrix-synapse:8008:8008@myserver \
+  --cmd "npm run dev"
+```
+
+### Proxy Routes
+
+Route specific paths through Caddy without a tunnel.
+
+```bash
+--proxy "api.example.com/v1@myserver -> localhost:8080/api"
+```
+
+| Part | Description |
+|------|-------------|
+| `api.example.com/v1` | Source domain and path |
+| `myserver` | SSH host running Caddy |
+| `localhost:8080/api` | Target host and path |
+
+**Use case:** Route API paths to a local backend while frontend uses production.
+
+```bash
+slipp run dev \
+  --tunnel-out 3000:app.example.com@myserver \
+  --proxy "app.example.com/api@myserver -> localhost:8080" \
+  --cmd "npm run dev"
+```
+
+This routes:
+- `app.example.com` → local frontend (port 3000)
+- `app.example.com/api/*` → local backend (port 8080)
+
 ## Managing Profiles
 
 ### List saved profiles

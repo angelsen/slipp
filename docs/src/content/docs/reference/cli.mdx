@@ -211,6 +211,7 @@ slipp run <name> [OPTIONS] [-- ARGS]
 | `--vault` | Vault project(s) for secrets (repeatable) |
 | `--tunnel-out` | Reverse tunnel `local_port:domain@host` |
 | `--tunnel-in` | Forward tunnel `service:port@host` |
+| `--proxy` | Proxy route `from@host -> to` (repeatable) |
 
 <Tabs>
 <TabItem label="Create Profile">
@@ -438,6 +439,10 @@ slipp secrets list [target] [secret_name]
 
 List secrets in a vault, or show available vaults if no target specified.
 
+| Option | Description |
+|--------|-------------|
+| `-n, --name` | Get template string for secret name |
+
 <Tabs>
 <TabItem label="Examples">
 ```bash
@@ -463,6 +468,7 @@ slipp secrets add <name> [target] [OPTIONS]
 | Option | Description |
 |--------|-------------|
 | `-b, --bytes` | Bytes of entropy (default: 32) |
+| `-e, --encoding` | Output encoding: `hex` (default), `base64`, `ulid` |
 | `--jwk` | Generate RSA JWK keypair |
 | `--bits` | RSA key size for --jwk (default: 2048) |
 
@@ -492,6 +498,7 @@ Scan YAML for `{{ vault_* }}` references and auto-generate secrets.
 | Option | Description |
 |--------|-------------|
 | `-b, --bytes` | Bytes of entropy (default: 32) |
+| `-e, --encoding` | Output encoding: `hex` (default), `base64`, `ulid` |
 | `-f, --force` | Overwrite existing vault.yml |
 
 <Tabs>
@@ -508,6 +515,42 @@ Always encrypt vault files after creation:
 ```bash
 ansible-vault encrypt inventory/host_vars/myhost/vault.yml
 ```
+:::
+
+#### secrets pull
+
+```bash
+slipp secrets pull <source> [target] [OPTIONS]
+```
+
+Pull credentials from external source via browser approval flow.
+
+| Argument | Description |
+|----------|-------------|
+| `source` | Secret source (e.g., `nor-auth`) |
+| `target` | Target vault (project name or path) |
+
+| Option | Description |
+|--------|-------------|
+| `-t, --timeout` | Timeout in seconds (default: 300) |
+
+<Tabs>
+<TabItem label="Example">
+```bash
+# Pull from nor-auth to current project vault
+slipp secrets pull nor-auth
+
+# Pull to specific project
+slipp secrets pull nor-auth myproject
+
+# Custom timeout
+slipp secrets pull nor-auth --timeout 600
+```
+</TabItem>
+</Tabs>
+
+:::tip
+Available sources can be listed with `slipp secrets list` (shows sources section).
 :::
 
 ---

@@ -170,7 +170,7 @@ def deploy_command(
             f"Inventory file not found: {format_path(inventory_file, project_root)}"
         )
         if not resolver.has_local_config:
-            output.hint("Run 'slipp register <name> -i <inventory>' to configure project")
+            output.hint("Run 'slipp projects add <name> -i <inventory>' to configure project")
         raise typer.Exit(1)
 
     if not Path(playbook_file).exists():
@@ -283,7 +283,7 @@ def deploy_command(
             except ConfigParseError:
                 output.warning("Config flags ignored - no slipp.yaml exists")
                 output.hint(
-                    "Use --name to create config: ac deploy --name <name> -i <inventory>"
+                    "Use --name to create config: slipp deploy --name <name> -i <inventory>"
                 )
 
         try:

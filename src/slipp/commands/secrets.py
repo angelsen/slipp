@@ -188,7 +188,7 @@ def add_secret(
 
     if not vault_path:
         output.error("No vault configured")
-        output.hint("Specify project: ac secrets add <name> <project>")
+        output.hint("Specify project: slipp secrets add <name> <project>")
         output.hint("Or configure vault in slipp.yaml")
         raise typer.Exit(1)
 

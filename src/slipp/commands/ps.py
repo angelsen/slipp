@@ -136,7 +136,7 @@ def ps_command(
 
         if not hosts:
             output.warning("No projects registered")
-            output.info("Hint: Use 'slipp register' or 'slipp deploy' to register a project")
+            output.info("Hint: Use 'slipp projects add' or 'slipp deploy' to register a project")
             raise typer.Exit(0)
 
         from slipp.services.config import LocalConfigService

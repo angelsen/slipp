@@ -13,3 +13,4 @@ wheels/
 misc/
 *.local.*
 .env
+.claude/

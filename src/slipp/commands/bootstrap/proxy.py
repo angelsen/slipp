@@ -59,4 +59,4 @@ def proxy_command(
 
     output.blank()
     output.success("Dev proxy ready!")
-    output.hint(f"Now use: ac run <profile> --tunnel-out <port>:<domain>@{host}")
+    output.hint(f"Now use: slipp run <profile> --tunnel-out <port>:<domain>@{host}")

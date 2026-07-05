@@ -20,7 +20,7 @@ def list_presets() -> None:
 
     if not resolver.config:
         output.warning("No slipp.yaml found")
-        output.hint("Run 'slipp register' or 'slipp launch' first")
+        output.hint("Run 'slipp projects add' or 'slipp launch' first")
         return
 
     if not presets:
@@ -50,7 +50,7 @@ def add_preset(
 
     if not config:
         output.error("No slipp.yaml found")
-        output.hint("Run 'slipp register' or 'slipp launch' first")
+        output.hint("Run 'slipp projects add' or 'slipp launch' first")
         raise typer.Exit(1)
 
     if not tags and not skip_tags:

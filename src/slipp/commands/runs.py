@@ -26,7 +26,7 @@ def list_profiles() -> None:
 
     if not profiles:
         output.info("No profiles saved")
-        output.hint('Create one with: ac run <name> --cmd "..."')
+        output.hint('Create one with: slipp run <name> --cmd "..."')
         return
 
     output.blank()
