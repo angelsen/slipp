@@ -43,9 +43,7 @@ class Service(BaseModel):
         runtime: Service runtime (systemd, docker, podman)
         state: Runtime state (active, inactive, failed, unknown)
         projects: List of project names that own this service (can be multiple if host is shared)
-        pid: Optional process ID
         uptime: Optional uptime string
-        memory: Optional memory usage string
     """
 
     name: str = Field(..., min_length=1, description="Service name (e.g., 'api')")
@@ -65,9 +63,7 @@ class Service(BaseModel):
         default_factory=list, description="Project names that own this service"
     )
 
-    pid: int | None = Field(None, ge=1, description="Process ID")
     uptime: str | None = None
-    memory: str | None = None
 
     def __str__(self) -> str:
         """String representation of service."""

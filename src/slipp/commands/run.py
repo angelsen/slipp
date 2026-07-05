@@ -13,7 +13,6 @@ from slipp import output
 from slipp.models.run import ProxyRoute, RunProfile, TunnelConfig
 from slipp.services.run import RunProfileExecutor, RunProfileService
 from slipp.services.run.proxy import parse_proxy_spec
-from slipp.utils.errors import ConfigError
 
 
 RUN_CONTEXT_SETTINGS = {"allow_extra_args": True, "ignore_unknown_options": True}
@@ -65,12 +64,17 @@ def run_command(
             cmd, list(env), list(vault), list(tunnel_out), list(tunnel_in), list(proxy)
         )
         _save_profile(name, profile)
-        _execute_profile(executor, profile, name)
+        _execute_profile(executor, profile)
 
     elif service.profile_exists(name):
         profile = service.get_profile(name)
         merged = _merge_runtime_options(
-            profile, list(env), list(vault), list(tunnel_out), list(tunnel_in), list(proxy)
+            profile,
+            list(env),
+            list(vault),
+            list(tunnel_out),
+            list(tunnel_in),
+            list(proxy),
         )
 
         if ctx.args:
@@ -78,7 +82,7 @@ def run_command(
             extended_cmd = f"{merged.cmd} {' '.join(quoted_args)}"
             merged = merged.model_copy(update={"cmd": extended_cmd})
 
-        _execute_profile(executor, merged, name)
+        _execute_profile(executor, merged)
 
     else:
         output.error(f"Profile '{name}' not found")
@@ -87,15 +91,11 @@ def run_command(
         raise typer.Exit(1)
 
 
-def _execute_profile(
-    executor: RunProfileExecutor, profile: RunProfile, name: str
-) -> None:
-    """Execute profile with error handling."""
-    try:
-        executor.execute(profile, name)
-    except ConfigError as e:
-        output.error(str(e))
-        raise typer.Exit(1)
+def _execute_profile(executor: RunProfileExecutor, profile: RunProfile) -> None:
+    """Execute profile and propagate the command's exit code."""
+    result = executor.execute(profile)
+    if result.exit_code != 0:
+        raise typer.Exit(result.exit_code)
 
 
 def _build_profile(
@@ -114,9 +114,13 @@ def _build_profile(
     proxy_routes = []
     for spec in proxy:
         from_url, to_url, host = parse_proxy_spec(spec)
-        proxy_routes.append(ProxyRoute(**{"from": from_url, "to": to_url, "host": host}))
+        proxy_routes.append(
+            ProxyRoute(**{"from": from_url, "to": to_url, "host": host})
+        )
 
-    return RunProfile(cmd=cmd, env=env, vaults=vaults, tunnels=tunnels, proxy=proxy_routes)
+    return RunProfile(
+        cmd=cmd, env=env, vaults=vaults, tunnels=tunnels, proxy=proxy_routes
+    )
 
 
 def _save_profile(name: str, profile: RunProfile) -> None:
@@ -168,7 +172,9 @@ def _merge_runtime_options(
     if proxy:
         for spec in proxy:
             from_url, to_url, host = parse_proxy_spec(spec)
-            merged_proxy.append(ProxyRoute(**{"from": from_url, "to": to_url, "host": host}))
+            merged_proxy.append(
+                ProxyRoute(**{"from": from_url, "to": to_url, "host": host})
+            )
 
     return RunProfile(
         cmd=profile.cmd,

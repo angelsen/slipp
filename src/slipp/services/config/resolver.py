@@ -42,6 +42,30 @@ def resolve_project_name(cli_name: str | None = None) -> str:
     raise ProjectNameRequiredError()
 
 
+def resolve_vault_target(target: str | None) -> tuple["ConfigResolver", Path | None]:
+    """Resolve a vault target to (resolver, vault path).
+
+    Resolution order:
+    1. If target is an existing file path → that file directly (resolver bound to cwd)
+    2. If target is a project name → that project's configured vault
+    3. If target is None → cwd config's vault
+
+    Args:
+        target: Vault file path, project name, or None
+
+    Returns:
+        Tuple of (ConfigResolver for the project context, vault Path or None)
+
+    Raises:
+        ProjectNotFoundError: If target names an unregistered project
+    """
+    if target and Path(target).exists():
+        return ConfigResolver(), Path(target)
+
+    resolver = ConfigResolver.for_project(target) if target else ConfigResolver()
+    return resolver, resolver.resolve_vault()
+
+
 @dataclass
 class ResolvedConfig:
     """Resolved configuration with source tracking.
@@ -197,12 +221,7 @@ class ConfigResolver:
         else:
             galaxy_path = None
 
-        if cli_vault:
-            vault = Path(cli_vault)
-        elif self._local_config and self._local_config.vault:
-            vault = self.project_root / self._local_config.vault
-        else:
-            vault = None
+        vault = self.resolve_vault(cli_vault)
 
         managed_roles = self._local_config.managed_roles if self._local_config else []
 

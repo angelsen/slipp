@@ -190,16 +190,6 @@ class CaddySite(BaseModel):
     upstream_port: int = Field(description="Backend port")
     path_prefix: str = Field(default="/", description="Path routing")
 
-    def to_caddy_config(self) -> str:
-        """Generate Caddy config block.
-
-        Returns:
-            Caddy configuration string
-        """
-        if self.path_prefix == "/":
-            return f"{self.domain} {{\n    reverse_proxy {self.upstream_host}:{self.upstream_port}\n}}"
-        return f"{self.domain} {{\n    handle {self.path_prefix}* {{\n        reverse_proxy {self.upstream_host}:{self.upstream_port}\n    }}\n}}"
-
 
 class CaddyConfig(BaseModel):
     """Caddy role configuration.
@@ -209,14 +199,12 @@ class CaddyConfig(BaseModel):
     Attributes:
         sites: List of site configurations
         auto_https: Enable automatic HTTPS (default: True)
-        email: Let's Encrypt email (optional)
         sites_dir: Site configs directory (default: /etc/caddy/sites)
         staging: Use Let's Encrypt staging for testing (default: False)
     """
 
     sites: list[CaddySite] = Field(default_factory=list)
     auto_https: bool = Field(default=True, description="Enable automatic HTTPS")
-    email: str | None = Field(default=None, description="Let's Encrypt email")
     sites_dir: str = Field(
         default="/etc/caddy/sites", description="Site configs directory"
     )
@@ -297,24 +285,3 @@ class ComposeConfig(BaseModel):
             "project_name": self.project_name,
             "project_root": str(self.project_root),
         }
-
-
-class DeploymentResult(BaseModel):
-    """Result of Ansible playbook execution.
-
-    Contains the outcome of running an Ansible deployment, including
-    success status, statistics, and event data for debugging.
-
-    Attributes:
-        success: Whether deployment succeeded
-        status: Ansible runner status (successful, failed, timeout, canceled)
-        return_code: Exit code from ansible-playbook (0 = success)
-        stats: Ansible statistics (ok, changed, failures, unreachable)
-        events: List of event data for debugging (optional)
-    """
-
-    success: bool
-    status: str
-    return_code: int
-    stats: dict
-    events: list = Field(default_factory=list)

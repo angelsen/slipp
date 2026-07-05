@@ -8,6 +8,7 @@ from pathlib import Path
 import yaml
 
 from slipp.models.run import ProxyRoute, RunProfile, TunnelConfig
+from slipp.utils.files import atomic_write_text
 
 
 RUNS_FILENAME = ".slipp/runs.yaml"
@@ -63,8 +64,7 @@ class RunsConfigIO:
                     )
 
                 proxy_routes = [
-                    ProxyRoute.model_validate(r)
-                    for r in profile_data.get("proxy", [])
+                    ProxyRoute.model_validate(r) for r in profile_data.get("proxy", [])
                 ]
 
                 profiles[name] = RunProfile(
@@ -116,8 +116,7 @@ class RunsConfigIO:
 
             if profile.proxy:
                 profile_data["proxy"] = [
-                    {"from": r.from_, "to": r.to, "host": r.host}
-                    for r in profile.proxy
+                    {"from": r.from_, "to": r.to, "host": r.host} for r in profile.proxy
                 ]
 
             if profile.acme_email:
@@ -125,10 +124,12 @@ class RunsConfigIO:
 
             data[name] = profile_data
 
-        with open(path, "w") as f:
-            f.write("# Run profiles for slipp run\n")
-            f.write("# Edit manually or use 'slipp run <name> --cmd \"...\"'\n\n")
-            if data:
-                yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+        content = (
+            "# Run profiles for slipp run\n"
+            "# Edit manually or use 'slipp run <name> --cmd \"...\"'\n\n"
+        )
+        if data:
+            content += yaml.dump(data, default_flow_style=False, sort_keys=False)
+        atomic_write_text(path, content)
 
         return path

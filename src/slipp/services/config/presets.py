@@ -59,19 +59,6 @@ class PresetResolver:
             return {}
         return self.config.tag_presets.copy()
 
-    def has_preset(self, preset_name: str) -> bool:
-        """Check if a preset exists.
-
-        Args:
-            preset_name: Name of the preset to check
-
-        Returns:
-            True if preset exists
-        """
-        if not self.config:
-            return False
-        return preset_name in self.config.tag_presets
-
     def get_preset_args(self, preset_name: str) -> str | None:
         """Get the raw args string for a preset.
 

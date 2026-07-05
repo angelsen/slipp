@@ -6,7 +6,7 @@ import typer
 
 from slipp import output
 from slipp.output import format_path
-from slipp.services.config import ConfigResolver
+from slipp.services.config import ConfigResolver, resolve_vault_target
 from slipp.services.vault import (
     SecretSynchronizer,
     append_to_vault,
@@ -22,7 +22,6 @@ from slipp.utils.errors import (
     SourceNotFoundError,
     VaultError,
     VaultNotFoundError,
-    VaultSyncError,
 )
 
 
@@ -32,35 +31,24 @@ secrets_app = typer.Typer(
 )
 
 
-def _get_resolver(target: str | None) -> ConfigResolver:
-    """Get ConfigResolver for the appropriate project context.
-
-    Resolution order:
-    1. If target is a file path that exists, use cwd as project root
-    2. If target is a project name, use that project's root
-    3. If target is None, use cwd as project root
+def _resolve_vault_or_exit(target: str | None) -> tuple[ConfigResolver, Path | None]:
+    """Resolve vault target (path, project, or cwd), exiting if project unknown.
 
     Args:
         target: Project name, path to vault file, or None
 
     Returns:
-        ConfigResolver bound to the correct project root
+        Tuple of (ConfigResolver, vault Path or None)
 
     Raises:
         typer.Exit: If project not found
     """
-    if target and Path(target).exists():
-        return ConfigResolver()
-
-    if target:
-        try:
-            return ConfigResolver.for_project(target)
-        except ProjectNotFoundError:
-            output.error(f"Project '{target}' not found")
-            output.hint("Use 'slipp projects' to list registered projects")
-            raise typer.Exit(1)
-
-    return ConfigResolver()
+    try:
+        return resolve_vault_target(target)
+    except ProjectNotFoundError:
+        output.error(f"Project '{target}' not found")
+        output.hint("Use 'slipp projects' to list registered projects")
+        raise typer.Exit(1)
 
 
 def _list_available_vaults() -> None:
@@ -124,9 +112,7 @@ def list_secrets(
         if i > 0:
             output.blank()
 
-        resolver = _get_resolver(target)
-        cli_vault = target if Path(target).exists() else None
-        vault_path = resolver.resolve_vault(cli_vault=cli_vault)
+        resolver, vault_path = _resolve_vault_or_exit(target)
 
         if not vault_path:
             output.warning(f"No vault configured for '{target}'")
@@ -181,10 +167,7 @@ def add_secret(
         output.error(f"Invalid encoding '{encoding}'. Use: hex, base64, or ulid")
         raise typer.Exit(1)
 
-    resolver = _get_resolver(target)
-
-    cli_vault = target if target and Path(target).exists() else None
-    vault_path = resolver.resolve_vault(cli_vault=cli_vault)
+    resolver, vault_path = _resolve_vault_or_exit(target)
 
     if not vault_path:
         output.error("No vault configured")
@@ -281,11 +264,7 @@ def sync_secrets(
     for ref in sorted(refs):
         output.bullet(ref, indent=1)
 
-    try:
-        synchronizer.sync(path, vault_path, force=force)
-    except VaultSyncError as e:
-        output.error(str(e))
-        raise typer.Exit(1)
+    synchronizer.sync(path, vault_path, force=force)
 
     output.success(f"Created {format_path(vault_path, project_root)}")
     output.hint(

@@ -20,9 +20,7 @@ def parse_proxy_spec(spec: str) -> tuple[str, str, str]:
         ('matrix.example.com/api', 'localhost:5173/api', 'myserver')
     """
     if " -> " not in spec:
-        raise ProxyRouteError(
-            f"Invalid proxy spec: {spec}\nExpected: from@host -> to"
-        )
+        raise ProxyRouteError(f"Invalid proxy spec: {spec}\nExpected: from@host -> to")
 
     from_part, to_url = spec.split(" -> ", 1)
 

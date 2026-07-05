@@ -6,13 +6,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import typer
 
 from slipp import output
-from slipp.commands.common import display_services_table
+from slipp.commands.common import display_services_table, resolve_host_or_exit
 from slipp.constants import OutputFormat
 from slipp.models.host import AnsibleHost
 from slipp.models.service import Service
 from slipp.services.discovery import discover_and_enrich, filter_services
 from slipp.services.config import HostResolver
-from slipp.utils.errors import HostNotFoundError
 
 
 def _discover_on_host(
@@ -100,11 +99,7 @@ def ps_command(
     resolver = HostResolver()
 
     if project:
-        try:
-            ssh_config = resolver.by_project(project)
-        except HostNotFoundError as e:
-            output.error(str(e))
-            raise typer.Exit(1)
+        ssh_config = resolve_host_or_exit(project=project)
 
         from slipp.services.config import LocalConfigService
 
@@ -136,7 +131,9 @@ def ps_command(
 
         if not hosts:
             output.warning("No projects registered")
-            output.info("Hint: Use 'slipp projects add' or 'slipp deploy' to register a project")
+            output.info(
+                "Hint: Use 'slipp projects add' or 'slipp deploy' to register a project"
+            )
             raise typer.Exit(0)
 
         from slipp.services.config import LocalConfigService

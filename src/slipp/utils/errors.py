@@ -29,12 +29,6 @@ class TunnelError(SlippError):
     pass
 
 
-class UserResolutionError(SlippError):
-    """Failed to resolve SSH target user."""
-
-    pass
-
-
 class VaultError(SlippError):
     """Vault operation failed."""
 
@@ -169,12 +163,6 @@ class ProjectNotFoundError(SlippError):
     pass
 
 
-class RegistrationError(SlippError):
-    """Project registration failed."""
-
-    pass
-
-
 class ProfileNotFoundError(SlippError):
     """Run profile not found."""
 
@@ -211,12 +199,6 @@ class ProxyRouteError(SlippError):
     pass
 
 
-class DeploymentError(SlippError):
-    """Deployment failed."""
-
-    pass
-
-
 class SourceNotFoundError(SlippError):
     """Secret source not found."""
 
@@ -225,11 +207,5 @@ class SourceNotFoundError(SlippError):
 
 class PullTimeoutError(SlippError):
     """Timed out waiting for credentials."""
-
-    pass
-
-
-class PullCancelledError(SlippError):
-    """User cancelled the pull operation."""
 
     pass

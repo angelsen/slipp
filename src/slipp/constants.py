@@ -18,7 +18,6 @@ class OutputFormat(str, Enum):
 
 
 DEFAULT_ENV = "production"
-COMMON_ENVS = ["dev", "staging", "production", "qa", "uat"]
 
 
 def get_inventory_filename(environment: str) -> str:
@@ -50,13 +49,8 @@ def get_inventory_filename(environment: str) -> str:
 
 
 PLAYBOOK_FILENAME = "playbook.yml"
-LOCAL_CONFIG_FILENAME = "slipp.yaml"
-
-DEFAULT_CONTAINER_RUNTIME = "docker"
-VALID_CONTAINER_RUNTIMES = ["docker", "podman"]
 
 DEFAULT_SSH_PORT = 22
 DEFAULT_SSH_USER = "root"
 
-DEFAULT_PROXY = "caddy"
 VALID_PROXIES = ["caddy", "none"]

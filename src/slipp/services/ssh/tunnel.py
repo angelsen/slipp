@@ -10,7 +10,6 @@ import re
 import socket
 import subprocess
 import time
-from dataclasses import dataclass
 
 from slipp.models.host import AnsibleHost
 from slipp.services.config import HostResolver
@@ -18,19 +17,7 @@ from slipp.services.ssh.client import SSHService
 from slipp.utils.errors import HostNotFoundError, TunnelError
 
 # Pattern for container tunnel specs: docker://container:port:local@host
-CONTAINER_TUNNEL_PATTERN = re.compile(
-    r"^(docker|podman)://([^:]+):(\d+):(\d+)@(.+)$"
-)
-
-
-@dataclass
-class TunnelSpec:
-    """Parsed tunnel specification."""
-
-    local_port: int
-    remote_target: str  # domain for out, service for in
-    remote_port: int
-    host: AnsibleHost
+CONTAINER_TUNNEL_PATTERN = re.compile(r"^(docker|podman)://([^:]+):(\d+):(\d+)@(.+)$")
 
 
 def parse_tunnel_out(spec: str) -> tuple[int, str, str]:
@@ -144,7 +131,6 @@ class TunnelManager:
 
     def __init__(self) -> None:
         self.processes: list[subprocess.Popen[bytes]] = []
-        self._tunnel_info: list[str] = []  # For display
 
     def start_tunnel_out(self, local_port: int, domain: str, host: AnsibleHost) -> None:
         """Start reverse tunnel: expose local port to remote.
@@ -189,9 +175,6 @@ class TunnelManager:
             )
 
         self.processes.append(proc)
-        self._tunnel_info.append(
-            f"out: localhost:{local_port} → {host.ansible_host}:{local_port} ({domain})"
-        )
 
     def start_tunnel_in(
         self, service: str, remote_port: int, host: AnsibleHost
@@ -244,9 +227,6 @@ class TunnelManager:
             )
 
         self.processes.append(proc)
-        self._tunnel_info.append(
-            f"in: {service}:{remote_port} → localhost:{remote_port}"
-        )
 
     def start_container_tunnel_in(
         self,
@@ -280,9 +260,9 @@ class TunnelManager:
         # Add space separator to handle containers on multiple networks
         root_host = host.model_copy(update={"ansible_user": "root"})
         inspect_cmd = (
-            f'{runtime} inspect -f '
+            f"{runtime} inspect -f "
             f'"{{{{range.NetworkSettings.Networks}}}}{{{{.IPAddress}}}} {{{{end}}}}" '
-            f'{container}'
+            f"{container}"
         )
 
         try:
@@ -334,13 +314,6 @@ class TunnelManager:
             )
 
         self.processes.append(proc)
-        self._tunnel_info.append(
-            f"in: {runtime}://{container}:{remote_port} → localhost:{local_port}"
-        )
-
-    def get_tunnel_info(self) -> list[str]:
-        """Get human-readable tunnel info for display."""
-        return self._tunnel_info
 
     def cleanup(self) -> None:
         """Terminate all tunnel processes."""
@@ -354,7 +327,6 @@ class TunnelManager:
                     proc.wait()
 
         self.processes.clear()
-        self._tunnel_info.clear()
 
     def __enter__(self) -> "TunnelManager":
         return self

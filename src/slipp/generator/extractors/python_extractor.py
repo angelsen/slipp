@@ -99,12 +99,18 @@ class PythonVariableExtractor(VariableExtractor):
     def _detect_dependency_manager(self, service_path: Path) -> dict[str, bool]:
         """Detect Python dependency manager from marker files.
 
+        Detection matches the scanner's priority (uv → Poetry → Pipenv → PEP 621).
+        uv projects install via the pep621 template path — the flyctl Dockerfile
+        template has no uv-specific branch.
+
         Args:
             service_path: Path to service directory
 
         Returns:
             Dictionary with boolean flags for each manager
         """
+        from slipp.scanner.helpers import has_uv_project
+
         managers = {
             "poetry": False,
             "pipenv": False,
@@ -112,38 +118,25 @@ class PythonVariableExtractor(VariableExtractor):
             "pip": False,
         }
 
-        # Check for Poetry
-        if (service_path / "poetry.lock").exists():
+        if has_uv_project(service_path):
+            managers["pep621"] = True
+        elif (service_path / "poetry.lock").exists():
             managers["poetry"] = True
-
-        # Check for Pipenv
         elif (service_path / "Pipfile").exists():
             managers["pipenv"] = True
-
-        # Check for PEP 621 (pyproject.toml with [project] section)
         elif (service_path / "pyproject.toml").exists():
             try:
                 import tomllib
 
                 with open(service_path / "pyproject.toml", "rb") as f:
-                    data = tomllib.load(f)
-                    if "project" in data:
+                    if "project" in tomllib.load(f):
                         managers["pep621"] = True
-                    else:
-                        # pyproject.toml exists but no [project] section
-                        # Might be Poetry or other tool
-                        pass
-            except (ImportError, IOError, Exception):
+            except Exception:
                 pass
 
-        # Check for pip/requirements.txt (fallback)
+        # pip/requirements.txt fallback
         if (service_path / "requirements.txt").exists():
             managers["pip"] = True
-
-        # If no other manager detected but requirements.txt exists, mark pip as True
-        if not any([managers["poetry"], managers["pipenv"], managers["pep621"]]):
-            if (service_path / "requirements.txt").exists():
-                managers["pip"] = True
 
         return managers
 

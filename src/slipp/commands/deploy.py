@@ -24,7 +24,7 @@ from slipp.services.vault import (
     has_vault_content,
     vault_password_file as get_vault_password_file,
 )
-from slipp.utils.errors import AnsibleNotFoundError, ConfigParseError
+from slipp.utils.errors import ConfigParseError
 
 
 def deploy_command(
@@ -170,7 +170,9 @@ def deploy_command(
             f"Inventory file not found: {format_path(inventory_file, project_root)}"
         )
         if not resolver.has_local_config:
-            output.hint("Run 'slipp projects add <name> -i <inventory>' to configure project")
+            output.hint(
+                "Run 'slipp projects add <name> -i <inventory>' to configure project"
+            )
         raise typer.Exit(1)
 
     if not Path(playbook_file).exists():
@@ -247,9 +249,6 @@ def deploy_command(
             output.error("Running playbook failed")
             if result.log_path:
                 output.hint(f"See log: {result.log_path}")
-    except AnsibleNotFoundError as e:
-        output.error(str(e))
-        raise typer.Exit(1)
     finally:
         if vault_pw_context:
             vault_pw_context.__exit__(None, None, None)

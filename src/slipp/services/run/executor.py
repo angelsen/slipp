@@ -23,7 +23,6 @@ from slipp.services.vault import (
     vault_password_file,
 )
 from slipp.utils.errors import (
-    CaddyProxyError,
     ConfigError,
     ProfileExecutionError,
     TunnelError,
@@ -66,37 +65,10 @@ class CaddyCheckResult:
 
 
 @dataclass
-class VaultLoadResult:
-    """Result of vault secrets loading."""
-
-    env_vars: dict[str, str]
-    count: int
-
-
-@dataclass
-class TunnelSetupResult:
-    """Result of tunnel setup."""
-
-    tunnel_count: int
-    tunnel_out_details: list[tuple[int, str, str]]  # (local_port, domain, host)
-    tunnel_in_details: list[tuple[str, int, str]]  # (service, port, host)
-
-
-@dataclass
-class CaddyRouteResult:
-    """Result of Caddy route setup."""
-
-    route_count: int
-    routes: list[tuple[str, int]]  # (domain, local_port)
-
-
-@dataclass
 class ExecutionResult:
     """Result of profile execution."""
 
     exit_code: int
-    interrupted: bool = False
-    error: str | None = None
 
 
 def run_command(
@@ -160,40 +132,35 @@ class RunProfileExecutor:
             missing_hosts=missing,
         )
 
-    def load_vault_secrets(self, vaults: list[str]) -> VaultLoadResult:
+    def load_vault_secrets(self, vaults: list[str]) -> dict[str, str]:
         """Load secrets from vault(s) into environment dict.
 
         Args:
             vaults: List of vault project names
 
         Returns:
-            VaultLoadResult with environment variables
+            Environment variables from the vaults
 
         Raises:
             DuplicateEnvVarError: If duplicate env vars found across vaults
             VaultDecryptError: If vault decryption fails
         """
         with vault_password_file(confirm=False) as pw_file:
-            env = merge_vault_envs(vaults, pw_file)
-        return VaultLoadResult(env_vars=env, count=len(env))
+            return merge_vault_envs(vaults, pw_file)
 
-    def setup_tunnels(
-        self, tunnels: TunnelConfig
-    ) -> tuple[TunnelManager, TunnelSetupResult]:
+    def setup_tunnels(self, tunnels: TunnelConfig) -> TunnelManager:
         """Setup SSH tunnels.
 
         Args:
             tunnels: Tunnel configuration
 
         Returns:
-            Tuple of (TunnelManager, TunnelSetupResult)
+            TunnelManager owning the started tunnels
 
         Raises:
             TunnelError: If tunnel setup fails
         """
         tunnel_manager = TunnelManager()
-        tunnel_out_details: list[tuple[int, str, str]] = []
-        tunnel_in_details: list[tuple[str, int, str]] = []
 
         # Track created tunnels: (port, host) -> first domain (for logging)
         created_tunnels: dict[tuple[int, str], str] = {}
@@ -208,31 +175,22 @@ class RunProfileExecutor:
                     tunnel_manager.start_tunnel_out(local_port, domain, host)
                     created_tunnels[tunnel_key] = domain
 
-                tunnel_out_details.append((local_port, domain, host.ansible_host))
-
             for spec in tunnels.in_:
                 container_spec = parse_container_tunnel_in(spec)
                 if container_spec:
-                    runtime, container, remote_port, local_port, host_spec = container_spec
+                    runtime, container, remote_port, local_port, host_spec = (
+                        container_spec
+                    )
                     host = resolve_tunnel_host(host_spec)
                     tunnel_manager.start_container_tunnel_in(
                         runtime, container, remote_port, local_port, host
-                    )
-                    tunnel_in_details.append(
-                        (f"{runtime}://{container}", local_port, host.ansible_host)
                     )
                 else:
                     service, remote_port, host_spec = parse_tunnel_in(spec)
                     host = resolve_tunnel_host(host_spec)
                     tunnel_manager.start_tunnel_in(service, remote_port, host)
-                    tunnel_in_details.append((service, remote_port, host.ansible_host))
 
-            result = TunnelSetupResult(
-                tunnel_count=len(tunnel_manager.processes),
-                tunnel_out_details=tunnel_out_details,
-                tunnel_in_details=tunnel_in_details,
-            )
-            return tunnel_manager, result
+            return tunnel_manager
 
         except TunnelError:
             tunnel_manager.cleanup()
@@ -242,21 +200,16 @@ class RunProfileExecutor:
         self,
         tunnel_out_specs: list[str],
         caddy_proxies: dict[str, CaddyProxy],
-    ) -> CaddyRouteResult:
+    ) -> None:
         """Setup Caddy dev proxy routes for tunnel-out specs.
 
         Args:
             tunnel_out_specs: List of tunnel-out specs
             caddy_proxies: Dict to populate with CaddyProxy instances
 
-        Returns:
-            CaddyRouteResult with route details
-
         Raises:
             CaddyProxyError: If route setup fails
         """
-        routes: list[tuple[str, int]] = []
-
         for spec in tunnel_out_specs:
             local_port, domain, host_spec = parse_tunnel_out(spec)
             host = resolve_tunnel_host(host_spec)
@@ -266,9 +219,6 @@ class RunProfileExecutor:
 
             proxy = caddy_proxies[host.ansible_host]
             proxy.add_route(domain, local_port)
-            routes.append((domain, local_port))
-
-        return CaddyRouteResult(route_count=len(routes), routes=routes)
 
     def setup_proxy_routes(
         self,
@@ -298,12 +248,11 @@ class RunProfileExecutor:
                 route.to_path,
             )
 
-    def execute(self, profile: RunProfile, name: str) -> ExecutionResult:
+    def execute(self, profile: RunProfile) -> ExecutionResult:
         """Execute profile, return result.
 
         Args:
             profile: Run profile configuration
-            name: Profile name (for display)
 
         Returns:
             ExecutionResult with exit code and status
@@ -330,15 +279,14 @@ class RunProfileExecutor:
 
         try:
             if profile.vaults:
-                vault_result = self.load_vault_secrets(profile.vaults)
-                env = vault_result.env_vars
+                env = self.load_vault_secrets(profile.vaults)
 
             if profile.env:
                 cli_env = parse_env_vars(profile.env)
                 env = {**env, **cli_env}
 
             if profile.tunnels and (profile.tunnels.out or profile.tunnels.in_):
-                tunnel_manager, _ = self.setup_tunnels(profile.tunnels)
+                tunnel_manager = self.setup_tunnels(profile.tunnels)
 
                 if profile.tunnels.out:
                     self.setup_caddy_routes(profile.tunnels.out, caddy_proxies)
@@ -351,34 +299,10 @@ class RunProfileExecutor:
             return ExecutionResult(exit_code=exit_code)
 
         except KeyboardInterrupt:
-            return ExecutionResult(exit_code=130, interrupted=True)
-
-        except (TunnelError, CaddyProxyError):
-            for proxy in caddy_proxies.values():
-                proxy.cleanup()
-            if tunnel_manager:
-                tunnel_manager.cleanup()
-            raise
+            return ExecutionResult(exit_code=130)
 
         finally:
             for proxy in caddy_proxies.values():
                 proxy.cleanup()
             if tunnel_manager:
                 tunnel_manager.cleanup()
-
-    def cleanup(
-        self,
-        caddy_proxies: dict[str, CaddyProxy],
-        tunnel_manager: TunnelManager | None,
-    ) -> None:
-        """Cleanup Caddy routes and tunnels.
-
-        Args:
-            caddy_proxies: Dict of CaddyProxy instances to cleanup
-            tunnel_manager: TunnelManager to cleanup (if set)
-        """
-        for proxy in caddy_proxies.values():
-            proxy.cleanup()
-
-        if tunnel_manager:
-            tunnel_manager.cleanup()

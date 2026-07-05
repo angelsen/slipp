@@ -7,10 +7,9 @@ from typing import Annotated
 import typer
 
 from slipp import output
-from slipp.services.config import HostResolver, RuntimeDetectionError, RuntimeDetector
-from slipp.services.registry import ProjectRegistry
+from slipp.commands.common import get_project_root, resolve_host_or_exit
+from slipp.services.config import RuntimeDetectionError, RuntimeDetector
 from slipp.services.ssh import CommandBuilder, SSHService
-from slipp.utils.errors import HostNotFoundError
 
 image_app = typer.Typer(name="image", help="Container image operations")
 
@@ -26,18 +25,8 @@ def push_command(
     ] = None,
 ) -> None:
     """Push local container image to VPS via SSH."""
-    resolver = HostResolver()
-
-    try:
-        if host:
-            ssh_config = resolver.by_project(host)
-            project_root = _get_project_root(host)
-        else:
-            ssh_config = resolver.current()
-            project_root = Path.cwd()
-    except HostNotFoundError as e:
-        output.error(str(e))
-        raise typer.Exit(1)
+    ssh_config = resolve_host_or_exit(project=host)
+    project_root = get_project_root(host) if host else Path.cwd()
 
     local_runtime = _detect_local_runtime(image)
     if not local_runtime:
@@ -127,12 +116,3 @@ def _detect_local_runtime(image: str) -> str | None:
         return "docker"
 
     return None
-
-
-def _get_project_root(project_name: str) -> Path:
-    """Get project root path from registry."""
-    registry = ProjectRegistry()
-    project = registry.get(project_name)
-    if project:
-        return project.project_path
-    return Path.cwd()

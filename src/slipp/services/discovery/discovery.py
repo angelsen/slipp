@@ -10,6 +10,7 @@ from slipp.models.host import AnsibleHost
 from slipp.models.service import Runtime, Service, ServiceState
 from slipp.services.ssh import SSHService
 from slipp.utils.cache import Cache
+from slipp.utils.identifiers import parse_service_identifier
 
 
 class DiscoveryService:
@@ -373,7 +374,6 @@ class DiscoveryService:
                     unit_name=unit_name,
                     runtime=runtime,
                     state=state,
-                    pid=None,
                     uptime=uptime,
                 )
             )
@@ -509,11 +509,8 @@ def extract_service_name(service_identifier: str) -> str:
         >>> extract_service_name("PoC:poc-backend")
         'poc-backend'
     """
-    if "@" in service_identifier:
-        return service_identifier.split("@", 1)[0]
-    elif ":" in service_identifier:
-        return service_identifier.split(":", 1)[1]
-    return service_identifier
+    service_name, _, _ = parse_service_identifier(service_identifier)
+    return service_name
 
 
 def find_service(
@@ -544,14 +541,9 @@ def find_service(
         >>> # Project-qualified lookup (checks if project is in service.projects)
         >>> svc = find_service(services, "PoC:poc-backend")
     """
-    service_name = extract_service_name(service_identifier)
-    host_filter = None
-    project_filter = None
-
-    if "@" in service_identifier:
-        _, host_filter = service_identifier.split("@", 1)
-    elif ":" in service_identifier:
-        project_filter, _ = service_identifier.split(":", 1)
+    service_name, host_filter, project_filter = parse_service_identifier(
+        service_identifier
+    )
 
     matches = [s for s in services if s.name == service_name]
 

@@ -9,6 +9,12 @@ load_dotenv()
 
 def main() -> None:
     """Run the slipp CLI application."""
+    from slipp import output
     from slipp.cli import app
+    from slipp.utils.errors import SlippError
 
-    app()
+    try:
+        app()
+    except SlippError as e:
+        output.error(str(e))
+        raise SystemExit(1)

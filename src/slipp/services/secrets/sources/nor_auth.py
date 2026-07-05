@@ -2,7 +2,11 @@
 
 import os
 
-from slipp.services.secrets.sources.base import PullSession, SecretSource, register_source
+from slipp.services.secrets.sources.base import (
+    PullSession,
+    SecretSource,
+    register_source,
+)
 
 
 @register_source

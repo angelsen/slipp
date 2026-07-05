@@ -89,18 +89,6 @@ def syntax_check(playbook: Path) -> bool:
     return result.returncode == 0
 
 
-def validate_inventory(inventory_path: Path) -> bool:
-    """Validate inventory file is parseable.
-
-    Returns True if valid, False otherwise.
-    """
-    try:
-        run_inventory(inventory_path)
-        return True
-    except AnsibleError:
-        return False
-
-
 def get_host_group(playbook_path: Path) -> str:
     """Extract host group pattern from playbook.
 

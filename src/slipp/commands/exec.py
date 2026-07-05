@@ -7,15 +7,10 @@ Business logic delegated to UserResolver and CommandBuilder services.
 import typer
 
 from slipp import output
+from slipp.commands.common import find_service_or_exit, resolve_host_or_exit
 from slipp.models.service import Runtime
 from slipp.services.discovery import ServiceLocator
-from slipp.services.config import HostResolver
 from slipp.services.ssh import CommandBuilder, SSHService, UserResolver
-from slipp.utils.errors import (
-    AmbiguousServiceError,
-    HostNotFoundError,
-    ServiceNotFoundError,
-)
 
 
 def exec_command(
@@ -45,31 +40,13 @@ def exec_command(
     else:
         service_name, command = first, second
 
-    host_resolver = HostResolver()
-
-    try:
-        if service_name:
-            ssh_config = host_resolver.by_service(service_name)
-        else:
-            ssh_config = host_resolver.current()
-    except HostNotFoundError as e:
-        output.error(str(e))
-        raise typer.Exit(1)
-    except AmbiguousServiceError as e:
-        output.error(str(e))
-        output.suggestions("Specify target:", e.get_suggestions(command="exec"))
-        raise typer.Exit(1)
+    ssh_config = resolve_host_or_exit(service=service_name, command="exec")
 
     with SSHService(ssh_config) as ssh:
         service = None
         if service_name:
             locator = ServiceLocator(ssh_config, include_system=False)
-            try:
-                service = locator.find_one(service_name)
-            except ServiceNotFoundError as e:
-                output.error(str(e))
-                output.info("Hint: Use 'slipp ps' to see available services")
-                raise typer.Exit(1)
+            service = find_service_or_exit(locator, service_name)
 
         user_resolver = UserResolver(ssh)
         resolution = user_resolver.resolve(service, user, ssh_config.ansible_user)

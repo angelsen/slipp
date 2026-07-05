@@ -5,7 +5,6 @@ Provides methods for starting interactive SSH and container sessions.
 """
 
 import subprocess
-import sys
 
 from slipp.models.host import AnsibleHost
 
@@ -117,13 +116,3 @@ class InteractiveSessionManager:
             return result.returncode
         except KeyboardInterrupt:
             return 130
-
-    def exit_with_code(self, code: int) -> None:
-        """Exit the process with the given code.
-
-        Separated for testing purposes.
-
-        Args:
-            code: Exit code to use
-        """
-        sys.exit(code)

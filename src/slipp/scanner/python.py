@@ -12,52 +12,11 @@ from slipp.scanner.helpers import (
     checks_pass,
     extract_python_dependencies,
     file_exists,
+    has_uv_project,
 )
 from slipp.scanner.models import ScannerConfig, SourceInfo
 
 PYTHON_TEMPLATE = "https://raw.githubusercontent.com/superfly/flyctl/master/scanner/templates/python-docker/Dockerfile"
-
-
-def _has_uv_project(source_dir: Path) -> bool:
-    """Check if directory is a uv project (internal helper).
-
-    Detection signals (priority order):
-    1. uv.lock exists (strongest signal - 95% confidence)
-    2. pyproject.toml with [tool.uv] section (90% confidence)
-    3. pyproject.toml with uv_build backend (100% confidence)
-    4. pyproject.toml with [dependency-groups] + .python-version (60% confidence)
-
-    Returns:
-        True if uv project detected, False otherwise
-    """
-    if (source_dir / "uv.lock").exists():
-        return True
-
-    pyproject = source_dir / "pyproject.toml"
-    if pyproject.exists():
-        try:
-            import tomllib
-
-            with open(pyproject, "rb") as f:
-                data = tomllib.load(f)
-
-            if "uv" in data.get("tool", {}):
-                return True
-
-            build_backend = data.get("build-system", {}).get("build-backend", "")
-            if build_backend == "uv_build":
-                return True
-
-            if (
-                "dependency-groups" in data
-                and (source_dir / ".python-version").exists()
-            ):
-                return True
-
-        except (ImportError, IOError, Exception):
-            pass
-
-    return False
 
 
 def _has_poetry_project(source_dir: Path) -> bool:
@@ -97,7 +56,7 @@ def configure_python(
         >>> info.port
         8080
     """
-    if _has_uv_project(source_dir):
+    if has_uv_project(source_dir):
         dependencies = extract_python_dependencies(source_dir)
         return SourceInfo(
             family="Python",

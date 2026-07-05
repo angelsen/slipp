@@ -3,16 +3,10 @@
 import typer
 
 from slipp import output
-from slipp.commands.common import show_service_not_found_error
+from slipp.commands.common import find_service_or_exit, resolve_host_or_exit
 from slipp.models.service import Runtime
-from slipp.services.config import HostResolver
 from slipp.services.discovery import ServiceLocator
 from slipp.services.ssh import SSHService
-from slipp.utils.errors import (
-    AmbiguousServiceError,
-    HostNotFoundError,
-    ServiceNotFoundError,
-)
 
 
 def logs_command(
@@ -41,26 +35,10 @@ def logs_command(
     Raises:
         typer.Exit: On resolution errors or service not found.
     """
-    resolver = HostResolver()
-
-    try:
-        ssh_config = resolver.by_service(service)
-    except HostNotFoundError as e:
-        output.error(str(e))
-        raise typer.Exit(1)
-    except AmbiguousServiceError as e:
-        output.error(str(e))
-        output.suggestions("Specify target:", e.get_suggestions(command="logs"))
-        raise typer.Exit(1)
+    ssh_config = resolve_host_or_exit(service=service, command="logs")
 
     locator = ServiceLocator(ssh_config, include_system=all_services)
-
-    try:
-        target_service = locator.find_one(service)
-    except ServiceNotFoundError:
-        services = locator.find_many()
-        show_service_not_found_error(service, ssh_config.ansible_host, services)
-        raise typer.Exit(1)
+    target_service = find_service_or_exit(locator, service)
 
     if Runtime(target_service.runtime).is_container() and not target_service.unit_name:
         cmd = f"sudo {target_service.runtime} logs --tail={lines}"

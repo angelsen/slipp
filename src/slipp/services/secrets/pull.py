@@ -8,7 +8,11 @@ from pathlib import Path
 
 from slipp import output
 from slipp.services.secrets.callback_server import CallbackServer
-from slipp.services.secrets.sources.base import PullSession, SecretSource, find_available_port
+from slipp.services.secrets.sources.base import (
+    PullSession,
+    SecretSource,
+    find_available_port,
+)
 from slipp.services.vault import append_to_vault, encrypt_string, vault_password_file
 from slipp.utils.errors import ProjectNotFoundError, PullTimeoutError, VaultError
 
@@ -95,27 +99,14 @@ class PullService:
         return variables
 
     def _resolve_vault_path(self, target: str | None) -> Path:
-        """Resolve vault path using ConfigResolver pattern.
+        """Resolve vault path (existing file → project vault → cwd config vault)."""
+        from slipp.services.config import resolve_vault_target
 
-        Resolution order (matches existing secrets commands):
-        1. If target is a .yml file path → use it directly
-        2. If target is a project name → use ConfigResolver.for_project()
-        3. If no target → use ConfigResolver() for cwd
-        """
-        from slipp.services.config import ConfigResolver
+        try:
+            _, vault_path = resolve_vault_target(target)
+        except ProjectNotFoundError:
+            raise VaultError(f"Project '{target}' not found")
 
-        if target and Path(target).suffix == ".yml":
-            return Path(target)
-
-        if target:
-            try:
-                resolver = ConfigResolver.for_project(target)
-            except ProjectNotFoundError:
-                raise VaultError(f"Project '{target}' not found")
-        else:
-            resolver = ConfigResolver()
-
-        vault_path = resolver.resolve_vault()
         if not vault_path:
             raise VaultError("No vault configured")
 

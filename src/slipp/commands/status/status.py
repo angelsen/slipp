@@ -9,11 +9,9 @@ import re
 import typer
 
 from slipp import output
-from slipp.commands.common import show_service_not_found_error
-from slipp.services.discovery import discover_and_enrich, find_service
-from slipp.services.config import HostResolver
+from slipp.commands.common import find_service_or_exit, resolve_host_or_exit
+from slipp.services.discovery import ServiceLocator
 from slipp.services.ssh import SSHService
-from slipp.utils.errors import AmbiguousServiceError, HostNotFoundError
 
 
 def status_command(
@@ -21,24 +19,10 @@ def status_command(
     service: str = typer.Argument(..., help="Service name to show status for"),
 ):
     """Display detailed service status (like systemctl status)."""
-    resolver = HostResolver()
+    ssh_config = resolve_host_or_exit(service=service, command="status")
 
-    try:
-        ssh_config = resolver.by_service(service)
-    except HostNotFoundError as e:
-        output.error(str(e))
-        raise typer.Exit(1)
-    except AmbiguousServiceError as e:
-        output.error(str(e))
-        output.suggestions("Specify target:", e.get_suggestions(command="status"))
-        raise typer.Exit(1)
-
-    services = discover_and_enrich(ssh_config, include_system=True)
-    target_service = find_service(services, service)
-
-    if not target_service:
-        show_service_not_found_error(service, ssh_config.ansible_host, services)
-        raise typer.Exit(1)
+    locator = ServiceLocator(ssh_config, include_system=True)
+    target_service = find_service_or_exit(locator, service)
 
     output.task(f"Status for {target_service.name}@{target_service.host}")
 
@@ -73,7 +57,9 @@ def status_command(
                 output.stdout(line)
 
             output.blank()
-            output.hint(f"Tip: Use 'slipp logs {target_service.name} -f' to follow logs")
+            output.hint(
+                f"Tip: Use 'slipp logs {target_service.name} -f' to follow logs"
+            )
 
         except Exception as e:
             output.error(f"Failed to get status: {e}")

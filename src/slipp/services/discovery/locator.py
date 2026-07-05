@@ -10,7 +10,7 @@ Philosophy:
 - Makes it easier to add caching/optimization later
 
 Usage:
-    from slipp.services.service_locator import ServiceLocator
+    from slipp.services.discovery import ServiceLocator
 
     # Find single service
     locator = ServiceLocator(ssh_config)

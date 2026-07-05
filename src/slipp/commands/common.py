@@ -4,9 +4,91 @@ This module contains display/formatting functions shared across commands.
 Business logic (filtering, discovery, lookups) is in services/discovery.py.
 """
 
+from pathlib import Path
+
+import typer
+
 from slipp import output
+from slipp.models.host import AnsibleHost
 from slipp.models.service import Service
-from slipp.services.discovery import extract_service_name
+from slipp.services.discovery import ServiceLocator, extract_service_name
+from slipp.utils.errors import (
+    AmbiguousServiceError,
+    HostNotFoundError,
+    ServiceNotFoundError,
+)
+
+
+def resolve_host_or_exit(
+    service: str | None = None,
+    project: str | None = None,
+    *,
+    command: str = "exec",
+) -> AnsibleHost:
+    """Resolve host (service → project → cwd), printing errors and exiting on failure.
+
+    Args:
+        service: Optional service identifier
+        project: Optional project name
+        command: Command name used in disambiguation suggestions
+
+    Returns:
+        Resolved AnsibleHost
+
+    Raises:
+        typer.Exit: If resolution fails or is ambiguous
+    """
+    from slipp.services.config import HostResolver
+
+    try:
+        return HostResolver().resolve(service=service, project=project)
+    except HostNotFoundError as e:
+        output.error(str(e))
+        raise typer.Exit(1)
+    except AmbiguousServiceError as e:
+        output.error(str(e))
+        output.suggestions("Specify target:", e.get_suggestions(command=command))
+        raise typer.Exit(1)
+
+
+def find_service_or_exit(locator: ServiceLocator, identifier: str) -> Service:
+    """Find a service via locator, showing available services and exiting if not found.
+
+    Args:
+        locator: ServiceLocator bound to the target host
+        identifier: Service identifier to look up
+
+    Returns:
+        Matched Service
+
+    Raises:
+        typer.Exit: If the service is not found
+    """
+    try:
+        return locator.find_one(identifier)
+    except ServiceNotFoundError:
+        services = locator.find_many()
+        show_service_not_found_error(
+            identifier, locator.ssh_config.ansible_host, services
+        )
+        raise typer.Exit(1)
+
+
+def get_project_root(project_name: str) -> Path:
+    """Get project root path from registry, falling back to cwd.
+
+    Args:
+        project_name: Name of the project to look up
+
+    Returns:
+        Project root path from registry, or current working directory if not found
+    """
+    from slipp.services.registry import ProjectRegistry
+
+    project = ProjectRegistry().get(project_name)
+    if project:
+        return project.project_path
+    return Path.cwd()
 
 
 def display_services_table(

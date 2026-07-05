@@ -237,6 +237,8 @@ slipp run dev --env DEBUG=true
 </TabItem>
 </Tabs>
 
+`slipp run` exits with the wrapped command's exit code (130 on Ctrl+C), so it's safe to use in scripts and CI pipelines.
+
 :::tip
 See [Local Development Guide](/guides/local-development) for tunnel concepts.
 :::

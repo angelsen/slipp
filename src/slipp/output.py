@@ -14,7 +14,6 @@ Usage:
 
     # Data output (stdout - pipeable)
     output.stdout(f"{user}@{host}")           # Raw pipeable data
-    output.json_output({"services": [...]})   # Structured JSON
 
     # UI output (stderr - visible but doesn't pollute pipes)
     output.success("Operation completed")
@@ -27,7 +26,6 @@ Usage:
     # Structured display (stderr)
     output.kv("name", "value")                # key: value pair
     output.kv("name", "value", indent=1)      # indented
-    output.kv_block({"a": 1, "b": 2})         # auto-aligned block
     output.bullet("Item text")                # • bullet point
     output.table([{"col": "val"}])            # formatted table
 
@@ -45,12 +43,12 @@ Usage:
     name = output.prompt("Enter name", default="default")
 
 Available Primitives:
-    Data (stdout): stdout, json_output
+    Data (stdout): stdout
     UI (stderr): success, error, info, warning, task, hint, blank
-    Display (stderr): kv, kv_block, bullet, table, list_items, group, suggestions
+    Display (stderr): kv, bullet, table, list_items, group, suggestions
     Progress (stderr): status, spinner, progress
     Input: confirm, prompt
-    Logging: setup_file_logging, cleanup_file_logging, get_log_dir
+    Logging: get_log_dir
     Format: set_output_format, get_output_format
     Path: format_path
 """
@@ -102,33 +100,27 @@ LAUNCH_FRAMES = [
 
 _console = Console()
 _err_console = Console(stderr=True)
-_file_console: Console | None = None
-_log_file: Path | None = None
 
 _output_format: OutputFormat = OutputFormat.table
 
 
 def _print_ui(msg: str, style: str | None = None) -> None:
-    """Print UI/diagnostic output to stderr and file.
+    """Print UI/diagnostic output to stderr.
 
     Args:
         msg: Message to print.
         style: Rich style markup (e.g., "bold red"). Defaults to None.
     """
     _err_console.print(msg, style=style)
-    if _file_console:
-        _file_console.print(msg, style=None, markup=False)
 
 
 def _print_data(msg: str) -> None:
-    """Print data output to stdout and file.
+    """Print data output to stdout.
 
     Args:
         msg: Data to print (pipeable).
     """
     _console.print(msg)
-    if _file_console:
-        _file_console.print(msg, markup=False)
 
 
 def success(msg: str) -> None:
@@ -139,8 +131,6 @@ def success(msg: str) -> None:
 def error(msg: str) -> None:
     """✗ Error message (red). Outputs to stderr."""
     _err_console.print(f"[red]✗[/red] {msg}")
-    if _file_console:
-        _file_console.print(f"✗ {msg}")
 
 
 def info(msg: str) -> None:
@@ -173,36 +163,10 @@ def stdout(data: str) -> None:
     _print_data(data)
 
 
-def json_output(obj: Any) -> None:
-    """Write JSON to stdout for structured output."""
-    import json
-
-    _console.print(json.dumps(obj, indent=2, default=str), highlight=False)
-    if _file_console:
-        import json as json_mod
-
-        _file_console.print(json_mod.dumps(obj, indent=2, default=str), markup=False)
-
-
 def kv(key: str, value: Any, indent: int = 0) -> None:
     """Write key: value pair to stderr with alignment."""
     prefix = "  " * indent
     _err_console.print(f"{prefix}[dim]{key}:[/dim] {value}")
-    if _file_console:
-        _file_console.print(f"{prefix}{key}: {value}")
-
-
-def kv_block(data: dict[str, Any], indent: int = 0) -> None:
-    """Write multiple key-value pairs with auto-alignment."""
-    if not data:
-        return
-    max_key_len = max(len(k) for k in data.keys())
-    prefix = "  " * indent
-    for key, value in data.items():
-        padded_key = key.ljust(max_key_len)
-        _err_console.print(f"{prefix}[dim]{padded_key}:[/dim] {value}")
-        if _file_console:
-            _file_console.print(f"{prefix}{padded_key}: {value}")
 
 
 def bullet(msg: str, indent: int = 0) -> None:
@@ -250,8 +214,6 @@ def table(rows: list[dict[str, Any]]) -> None:
         tbl.add_row(*[str(v) for v in row.values()])
 
     _err_console.print(tbl)
-    if _file_console:
-        _file_console.print(tbl)
 
 
 def list_items(
@@ -285,8 +247,6 @@ def list_items(
         prefix = f"{i}." if numbered else bullet
         line = f"{indent_str}  {prefix} {item}"
         _err_console.print(line)
-        if _file_console:
-            _file_console.print(line)
 
 
 def group(name: str) -> None:
@@ -491,36 +451,6 @@ def prompt_password(question: str = "Password", confirm: bool = False) -> str:
             raise PasswordMismatchError("Passwords do not match")
 
     return password
-
-
-def setup_file_logging(log_path: Path) -> None:
-    """Enable file logging for verbose operations.
-
-    Creates .slipp/ directory if needed.
-    All subsequent output calls write to both terminal and file.
-
-    Args:
-        log_path: Path to log file (e.g., .slipp/launch-2025-11-21.log)
-    """
-    global _file_console, _log_file
-
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    _log_file = log_path
-
-    file_handle = log_path.open("w")
-    _file_console = Console(
-        file=file_handle, color_system=None, width=120, markup=False, emoji=False
-    )
-
-
-def cleanup_file_logging() -> None:
-    """Close file handle if open."""
-    global _file_console, _log_file
-
-    if _file_console and _file_console.file:
-        _file_console.file.close()
-        _file_console = None
-        _log_file = None
 
 
 def set_output_format(fmt: OutputFormat) -> None:

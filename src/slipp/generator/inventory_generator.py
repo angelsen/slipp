@@ -1,9 +1,8 @@
 """Ansible inventory generator for deployment targets."""
 
-from pathlib import Path
+from jinja2 import TemplateError
 
-from jinja2 import Environment, FileSystemLoader, TemplateError
-
+from slipp.generator.env import make_env
 from slipp.generator.errors import TemplateGenerationError
 from slipp.models.deployment import InventoryConfig
 
@@ -22,16 +21,7 @@ class InventoryGenerator:
 
     def __init__(self):
         """Initialize InventoryGenerator with Jinja2 environment."""
-        # Find templates directory relative to this module
-        template_dir = Path(__file__).parent / "templates"
-
-        # Setup Jinja2 environment
-        self.env = Environment(
-            loader=FileSystemLoader(str(template_dir)),
-            trim_blocks=True,
-            lstrip_blocks=True,
-            keep_trailing_newline=True,
-        )
+        self.env = make_env()
 
     def generate(self, config: InventoryConfig) -> str:
         """Generate inventory.yml content from configuration.

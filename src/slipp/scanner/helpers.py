@@ -5,7 +5,6 @@ helpers.go patterns. All checks are composable and return bool.
 """
 
 import json
-import re
 from pathlib import Path
 from typing import Callable
 
@@ -37,6 +36,51 @@ def checks_pass(source_dir: Path, *checks: CheckFn) -> bool:
     return False
 
 
+def has_uv_project(source_dir: Path) -> bool:
+    """Check if directory is a uv project.
+
+    Detection signals (priority order):
+    1. uv.lock exists (strongest signal)
+    2. pyproject.toml with [tool.uv] section
+    3. pyproject.toml with uv_build backend
+    4. pyproject.toml with [dependency-groups] + .python-version
+
+    Args:
+        source_dir: Directory to check
+
+    Returns:
+        True if uv project detected, False otherwise
+    """
+    if (source_dir / "uv.lock").exists():
+        return True
+
+    pyproject = source_dir / "pyproject.toml"
+    if pyproject.exists():
+        try:
+            import tomllib
+
+            with open(pyproject, "rb") as f:
+                data = tomllib.load(f)
+
+            if "uv" in data.get("tool", {}):
+                return True
+
+            build_backend = data.get("build-system", {}).get("build-backend", "")
+            if build_backend == "uv_build":
+                return True
+
+            if (
+                "dependency-groups" in data
+                and (source_dir / ".python-version").exists()
+            ):
+                return True
+
+        except Exception:
+            pass
+
+    return False
+
+
 def file_exists(*filenames: str) -> CheckFn:
     """Create check function for file existence.
 
@@ -57,68 +101,6 @@ def file_exists(*filenames: str) -> CheckFn:
         return any((source_dir / filename).exists() for filename in filenames)
 
     return check
-
-
-def dir_contains(filename: str, pattern: str) -> CheckFn:
-    """Create check function for pattern in file.
-
-    Mirrors flyctl's dirContains (helpers.go line 48).
-    Uses regex with case-insensitive flag by default.
-
-    Args:
-        filename: File to check (e.g., "requirements.txt")
-        pattern: Regex pattern to search for (e.g., "(?i)Flask")
-
-    Returns:
-        Check function that returns True if pattern found in file
-
-    Example:
-        >>> check = dir_contains("requirements.txt", "(?i)Flask")
-        >>> check(Path("/path/to/project"))  # True if Flask in requirements.txt
-    """
-
-    def check(source_dir: Path) -> bool:
-        file_path = source_dir / filename
-        if not file_path.exists():
-            return False
-
-        try:
-            content = file_path.read_text()
-            return re.search(pattern, content) is not None
-        except (IOError, UnicodeDecodeError):
-            return False
-
-    return check
-
-
-def is_in_virtual_env(file_path: Path) -> bool:
-    """Check if path is inside a virtual environment.
-
-    Filters out false positives from site-packages, .venv, etc.
-    Ported from .bak/detector.py.
-
-    Args:
-        file_path: Path to check
-
-    Returns:
-        True if path is in a virtual environment
-
-    Example:
-        >>> is_in_virtual_env(Path("/project/.venv/lib/python3.12/site-packages/django/wsgi.py"))
-        True
-    """
-    path_str = str(file_path)
-    return any(
-        venv_marker in path_str
-        for venv_marker in [
-            "site-packages",
-            ".venv",
-            "venv",
-            ".virtualenv",
-            "env",
-            ".tox",
-        ]
-    )
 
 
 def parse_dependency(dep: str) -> str:

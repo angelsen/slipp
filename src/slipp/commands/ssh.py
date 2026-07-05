@@ -9,15 +9,10 @@ import sys
 import typer
 
 from slipp import output
+from slipp.commands.common import find_service_or_exit, resolve_host_or_exit
 from slipp.models.service import Runtime
 from slipp.services.discovery import ServiceLocator
-from slipp.services.config import HostResolver
 from slipp.services.ssh import InteractiveSessionManager, SSHService, UserResolver
-from slipp.utils.errors import (
-    AmbiguousServiceError,
-    HostNotFoundError,
-    ServiceNotFoundError,
-)
 
 
 def ssh_command(
@@ -43,21 +38,8 @@ def ssh_command(
     Exits:
         1: If host or service cannot be resolved.
     """
-    host_resolver = HostResolver()
     session_manager = InteractiveSessionManager()
-
-    try:
-        if service:
-            ssh_config = host_resolver.by_service(service)
-        else:
-            ssh_config = host_resolver.current()
-    except HostNotFoundError as e:
-        output.error(str(e))
-        raise typer.Exit(1)
-    except AmbiguousServiceError as e:
-        output.error(str(e))
-        output.suggestions("Specify target:", e.get_suggestions(command="ssh"))
-        raise typer.Exit(1)
+    ssh_config = resolve_host_or_exit(service=service, command="ssh")
 
     if not service:
         target_user = user or ssh_config.ansible_user
@@ -71,13 +53,7 @@ def ssh_command(
 
     with SSHService(ssh_config) as ssh:
         locator = ServiceLocator(ssh_config, include_system=False)
-
-        try:
-            svc = locator.find_one(service)
-        except ServiceNotFoundError as e:
-            output.error(str(e))
-            output.info("Hint: Use 'slipp ps' to see available services")
-            raise typer.Exit(1)
+        svc = find_service_or_exit(locator, service)
 
         user_resolver = UserResolver(ssh)
         resolution = user_resolver.resolve_from_runtime(

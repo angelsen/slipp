@@ -6,10 +6,9 @@ from typing import Annotated
 import typer
 
 from slipp import output
-from slipp.services.config import HostResolver, RuntimeDetectionError, RuntimeDetector
-from slipp.services.registry import ProjectRegistry
+from slipp.commands.common import get_project_root, resolve_host_or_exit
+from slipp.services.config import RuntimeDetectionError, RuntimeDetector
 from slipp.services.ssh import CommandBuilder, SSHService
-from slipp.utils.errors import HostNotFoundError
 
 images_app = typer.Typer(name="images", help="Manage container images on VPS")
 
@@ -24,18 +23,8 @@ def list_command(
     ] = None,
 ) -> None:
     """List container images on VPS."""
-    resolver = HostResolver()
-
-    try:
-        if host:
-            ssh_config = resolver.by_project(host)
-            project_root = _get_project_root(host)
-        else:
-            ssh_config = resolver.current()
-            project_root = Path.cwd()
-    except HostNotFoundError as e:
-        output.error(str(e))
-        raise typer.Exit(1)
+    ssh_config = resolve_host_or_exit(project=host)
+    project_root = get_project_root(host) if host else Path.cwd()
 
     try:
         runtime = RuntimeDetector(project_root).detect()
@@ -73,19 +62,3 @@ def list_command(
             )
 
     output.table(rows)
-
-
-def _get_project_root(project_name: str) -> Path:
-    """Get project root path from registry.
-
-    Args:
-        project_name: Name of the project to look up.
-
-    Returns:
-        Project root path from registry, or current working directory if not found.
-    """
-    registry = ProjectRegistry()
-    project = registry.get(project_name)
-    if project:
-        return project.project_path
-    return Path.cwd()

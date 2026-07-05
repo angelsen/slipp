@@ -12,6 +12,7 @@ from pathlib import Path
 
 from slipp.models.host import AnsibleHost
 from slipp.utils.errors import HostNotFoundError
+from slipp.utils.identifiers import parse_service_identifier
 
 
 class HostResolver:
@@ -117,9 +118,7 @@ class HostResolver:
         """
         from slipp.services.discovery import ServiceRegistry
 
-        service_name, host_filter, project_filter = self._parse_service_identifier(
-            service
-        )
+        service_name, host_filter, project_filter = parse_service_identifier(service)
 
         host = ServiceRegistry().lookup_host_by_service(
             service_name, host=host_filter, project=project_filter
@@ -190,8 +189,8 @@ class HostResolver:
             "No host context found.\n"
             "Either:\n"
             "  - cd to project directory with slipp.yaml\n"
-            "  - Use service name: ac <cmd> <service>\n"
-            "  - Use project flag: ac <cmd> -p <project>"
+            "  - Use service name: slipp <cmd> <service>\n"
+            "  - Use project flag: slipp <cmd> -p <project>"
         )
 
     def resolve(
@@ -224,31 +223,3 @@ class HostResolver:
             return self.by_project(project)
 
         return self.current()
-
-    @staticmethod
-    def _parse_service_identifier(service: str) -> tuple[str, str | None, str | None]:
-        """Parse service identifier into components.
-
-        Supports syntax:
-        - "service" → (service, None, None)
-        - "service@host" → (service, host, None)
-        - "project:service" → (service, None, project)
-        - "project:service@host" → (service, host, project)
-
-        Args:
-            service: Service identifier string
-
-        Returns:
-            Tuple of (service_name, host_filter, project_filter)
-        """
-        project_filter = None
-        host_filter = None
-        service_name = service
-
-        if ":" in service:
-            project_filter, service_name = service.split(":", 1)
-
-        if "@" in service_name:
-            service_name, host_filter = service_name.split("@", 1)
-
-        return service_name, host_filter, project_filter
