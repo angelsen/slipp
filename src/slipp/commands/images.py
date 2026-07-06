@@ -1,5 +1,6 @@
 """Image listing commands (plural = management)."""
 
+import json
 from pathlib import Path
 from typing import Annotated
 
@@ -7,6 +8,7 @@ import typer
 
 from slipp import output
 from slipp.commands.common import get_project_root, resolve_host_or_exit
+from slipp.constants import OutputFormat
 from slipp.services.config import RuntimeDetectionError, RuntimeDetector
 from slipp.services.ssh import CommandBuilder, SSHService
 
@@ -60,5 +62,9 @@ def list_command(
                     "created": parts[2],
                 }
             )
+
+    if output.get_output_format() == OutputFormat.json:
+        output.stdout(json.dumps(rows, indent=2))
+        return
 
     output.table(rows)

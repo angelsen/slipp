@@ -68,7 +68,7 @@ network/routing it's exposed through.
 - [x] Run profile inheritance (`extends: dev`)
 - [x] slipp run progress output
 - [x] slipp deploy progress output
-- [ ] JSON output (`-o json`) for all plural commands
+- [x] JSON output (`-o json`) for all plural commands
 - [x] Tunnel auth (`--tunnel-auth user:pass`)
 - [ ] `slipp bootstrap auth` - SSH CA + TOTP setup (requires nor-auth)
 - [ ] Provider integrations (Gigahost, Cloudflare)

@@ -1,10 +1,12 @@
 """Vault secret management commands."""
 
+import json
 from pathlib import Path
 
 import typer
 
 from slipp import output
+from slipp.constants import OutputFormat
 from slipp.output import format_path
 from slipp.services.config import ConfigResolver, resolve_vault_target
 from slipp.services.vault import (
@@ -79,13 +81,32 @@ def _list_available_vaults() -> None:
                     }
                 )
 
+    sources = list_sources()
+
+    if output.get_output_format() == OutputFormat.json:
+        output.stdout(
+            json.dumps(
+                {
+                    "vaults": vaults_found,
+                    "sources": [
+                        {
+                            "name": name,
+                            "description": get_source(name).get_description(),
+                        }
+                        for name in sources
+                    ],
+                },
+                indent=2,
+            )
+        )
+        return
+
     if vaults_found:
         output.info("Available vaults:")
         output.table(vaults_found)
     else:
         output.warning("No vaults found in any registered project")
 
-    sources = list_sources()
     if sources:
         output.blank()
         output.info("Pull sources:")
@@ -106,6 +127,35 @@ def list_secrets(
     """List secrets in vault(s), or show available vaults."""
     if not targets:
         _list_available_vaults()
+        return
+
+    if output.get_output_format() == OutputFormat.json:
+        results: list[dict[str, object]] = []
+        for target in targets:
+            resolver, vault_path = _resolve_vault_or_exit(target)
+            entry: dict[str, object] = {"target": target}
+
+            if not vault_path:
+                entry["error"] = "no vault configured"
+                results.append(entry)
+                continue
+
+            entry["vault_path"] = str(vault_path)
+            try:
+                keys = list_keys(vault_path)
+            except FileNotFoundError:
+                entry["error"] = "vault file not found"
+                results.append(entry)
+                continue
+
+            if secret_name:
+                entry["secret_name"] = secret_name
+                entry["found"] = secret_name in keys
+            else:
+                entry["keys"] = keys
+            results.append(entry)
+
+        output.stdout(json.dumps(results, indent=2))
         return
 
     for i, target in enumerate(targets):

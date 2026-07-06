@@ -1,8 +1,11 @@
 """Manage tag presets for Ansible deployments."""
 
+import json
+
 import typer
 
 from slipp import output
+from slipp.constants import OutputFormat
 from slipp.services.config import LocalConfigService, PresetResolver
 
 
@@ -28,8 +31,13 @@ def list_presets() -> None:
         output.hint("Add preset: slipp tags add <name> --tags <tag>")
         return
 
-    output.info("Tag presets:")
     rows = [{"name": name, "args": args} for name, args in presets.items()]
+
+    if output.get_output_format() == OutputFormat.json:
+        output.stdout(json.dumps(rows, indent=2))
+        return
+
+    output.info("Tag presets:")
     output.table(rows)
     output.blank()
     output.hint("Use: slipp deploy <preset> or slipp deploy <env> <preset>")
