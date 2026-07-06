@@ -67,7 +67,7 @@ network/routing it's exposed through.
 - [x] Config refactor: merge runs.yaml into slipp.yaml
 - [x] Run profile inheritance (`extends: dev`)
 - [x] slipp run progress output
-- [ ] slipp deploy progress output (ansible buffering - use `stdbuf -o0`)
+- [x] slipp deploy progress output
 - [ ] JSON output (`-o json`) for all plural commands
 - [x] Tunnel auth (`--tunnel-auth user:pass`)
 - [ ] `slipp bootstrap auth` - SSH CA + TOTP setup (requires nor-auth)

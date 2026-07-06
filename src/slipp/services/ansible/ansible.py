@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -12,6 +13,27 @@ from typing import Any, Callable
 from slipp.utils.errors import AnsibleError, AnsibleNotFoundError
 
 ProgressCallback = Callable[[str], None]
+
+_PROGRESS_RE = re.compile(r"^(PLAY|TASK|RUNNING HANDLER) \[(.+?)\]")
+
+
+def parse_playbook_progress(line: str) -> str | None:
+    """Extract a clean progress label from an ansible-playbook output line.
+
+    Returns None for lines that shouldn't change the displayed status
+    (blank lines, per-host results, warnings, recap table rows).
+    """
+    if line.startswith("PLAY RECAP"):
+        return "finishing"
+
+    match = _PROGRESS_RE.match(line)
+    if not match:
+        return None
+
+    kind, name = match.group(1), match.group(2)
+    if kind == "PLAY":
+        return f"PLAY {name}"
+    return name
 
 
 @dataclass
@@ -277,7 +299,7 @@ def run_playbook(
             if log_handle:
                 log_handle.write(line)
             if on_progress:
-                on_progress(line.strip()[:60])
+                on_progress(line.strip())
 
         exit_code = proc.wait()
         return AnsibleResult(exit_code=exit_code, log_path=log_path)

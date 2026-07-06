@@ -10,6 +10,7 @@ from slipp.constants import DEFAULT_ENV
 from slipp.output import format_path
 from slipp.services.ansible import (
     install_requirements,
+    parse_playbook_progress,
     run_playbook,
 )
 from slipp.services.config import (
@@ -232,6 +233,12 @@ def deploy_command(
 
     try:
         with output.spinner("Running playbook", spinner_type="earth") as update:
+
+            def on_progress(line: str) -> None:
+                label = parse_playbook_progress(line)
+                if label:
+                    update(label[:60])
+
             result = run_playbook(
                 playbook_file,
                 inventory_file,
@@ -242,7 +249,7 @@ def deploy_command(
                 skip_tags=skip_tags,
                 roles_path=roles_paths if roles_paths else None,
                 log_dir=log_dir,
-                on_progress=update,
+                on_progress=on_progress,
             )
         returncode = result.exit_code
         if returncode != 0:
