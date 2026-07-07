@@ -59,8 +59,9 @@ class AppRolesStage(FileGenerationStage):
     """Generate app role files for all services.
 
     Creates role definitions for each service in the deployment,
-    determining role structure based on the container runtime.
-    Continues on role generation errors to process remaining services.
+    determining role structure based on the runtime (systemd, docker, or
+    podman). Continues on role generation errors to process remaining
+    services.
     """
 
     def __init__(self):
@@ -70,7 +71,7 @@ class AppRolesStage(FileGenerationStage):
         assert context.inventory_config is not None, "Inventory config must be loaded"
 
         first_host = list(context.inventory_config.hosts.values())[0]
-        runtime = first_host.container_runtime
+        runtime = first_host.runtime
         role_generator = RoleGenerator()
 
         all_files = {}

@@ -4,6 +4,7 @@ from jinja2 import TemplateError
 
 from slipp.generator.env import make_env
 from slipp.generator.errors import TemplateGenerationError
+from slipp.models.service import Runtime
 
 
 class RequirementsGenerator:
@@ -11,18 +12,19 @@ class RequirementsGenerator:
 
     Example:
         >>> generator = RequirementsGenerator()
-        >>> content = generator.generate("docker")
+        >>> content = generator.generate(Runtime.DOCKER)
     """
 
     def __init__(self):
         """Initialize RequirementsGenerator with Jinja2 environment."""
         self.env = make_env()
 
-    def generate(self, container_runtime: str) -> str:
-        """Generate requirements.yml content for the given container runtime.
+    def generate(self, runtime: Runtime) -> str:
+        """Generate requirements.yml content for the given runtime.
 
         Args:
-            container_runtime: "docker" or "podman"
+            runtime: How the app runs (systemd, docker, or podman) -- a
+                systemd project needs neither container collection
 
         Returns:
             Rendered requirements.yml content
@@ -32,7 +34,7 @@ class RequirementsGenerator:
         """
         try:
             template = self.env.get_template("requirements.yml.j2")
-            return template.render(container_runtime=container_runtime)
+            return template.render(runtime=runtime.value)
         except TemplateError as e:
             raise TemplateGenerationError(
                 f"Failed to render requirements.yml: {e}"

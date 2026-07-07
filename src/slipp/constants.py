@@ -56,6 +56,3 @@ DEFAULT_SSH_PORT = 22
 DEFAULT_SSH_USER = "root"
 
 VALID_PROXIES = ["caddy", "none"]
-
-VALID_CONTAINER_RUNTIMES = ["docker", "podman"]
-DEFAULT_CONTAINER_RUNTIME = "docker"

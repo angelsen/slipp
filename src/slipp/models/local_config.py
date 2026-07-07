@@ -21,7 +21,8 @@ class LocalConfig(BaseModel):
         roles_path: Role directories for ansible --roles-path
         galaxy_path: Install destination for ansible-galaxy (from requirements.yml)
         vault: Optional path to vault file
-        runtime: Container runtime (docker/podman), auto-detected if not set
+        runtime: How the app runs (systemd/docker/podman); docker/podman are
+            auto-detected if not set, systemd must be set explicitly
         managed_roles: Role names for service filtering (auto-populated from roles dirs)
         tag_presets: Named tag presets (name -> ansible args like "--tags setup-all")
         runs: Run profiles (name -> profile dict), see models.run.RunProfile
@@ -39,7 +40,7 @@ class LocalConfig(BaseModel):
     )
     vault: str | None = Field(default=None, description="Vault file path")
     runtime: str | None = Field(
-        default=None, description="Container runtime (docker/podman)"
+        default=None, description="How the app runs (systemd/docker/podman)"
     )
     managed_roles: list[str] = Field(
         default_factory=list, description="Role names for service filtering"

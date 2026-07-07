@@ -9,7 +9,7 @@ from pathlib import Path
 import typer
 
 from slipp import output
-from slipp.constants import DEFAULT_CONTAINER_RUNTIME
+from slipp.models.service import Runtime
 from slipp.services.launch import DockerfileContext, run_dockerfile_pipeline
 
 
@@ -35,7 +35,7 @@ def dockerfile_command(
         help="Reverse proxy: caddy, none",
     ),
     container_runtime: str = typer.Option(
-        DEFAULT_CONTAINER_RUNTIME,
+        Runtime.DOCKER.value,
         "--runtime",
         help="Container runtime: docker, podman",
     ),

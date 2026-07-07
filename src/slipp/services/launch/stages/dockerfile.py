@@ -5,6 +5,7 @@ from typing import Any
 
 from slipp import output
 from slipp.generator import TemplateGenerator
+from slipp.models.service import Runtime
 
 
 def _should_regenerate_dockerfile(dockerfile_path: Path) -> bool:
@@ -32,7 +33,8 @@ class DockerfileGenerationStage:
 
     Generates Dockerfile templates for each service in the configuration
     and writes them to disk, respecting customized files marked by the
-    slipp generation marker.
+    slipp generation marker. A no-op when the project's runtime is systemd
+    (native process, no container image).
 
     Attributes:
         generator: TemplateGenerator instance for rendering Dockerfile templates.
@@ -45,20 +47,24 @@ class DockerfileGenerationStage:
         """Generate and write Dockerfiles for all services.
 
         Iterates through services, generates their Dockerfiles based on
-        the first host's container runtime, and writes them to disk unless
-        in dry-run mode. Skips overwriting customized files.
+        the first host's runtime, and writes them to disk unless in
+        dry-run mode. Skips overwriting customized files.
 
         Args:
             context: Launch context containing services, inventory config,
                 and generation options.
         """
-        output.info("Generating Dockerfiles...")
-
         if context.inventory_config is not None:
             first_host = list(context.inventory_config.hosts.values())[0]
-            runtime = first_host.container_runtime
+            runtime = first_host.runtime
         else:
-            runtime = context.container_runtime
+            runtime = Runtime(context.container_runtime)
+
+        if runtime == Runtime.SYSTEMD:
+            output.info("Skipping Dockerfiles (systemd runtime, no container image)")
+            return
+
+        output.info("Generating Dockerfiles...")
 
         for service in context.services:
             try:
@@ -66,7 +72,7 @@ class DockerfileGenerationStage:
                     service=service,
                     output_dir=service.path,
                     force_refresh=False,
-                    container_runtime=runtime,
+                    container_runtime=runtime.value,
                 )
 
                 for file in files:

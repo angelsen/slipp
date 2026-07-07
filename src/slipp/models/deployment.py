@@ -7,11 +7,11 @@ All models use Pydantic v2 for validation and serialization.
 """
 
 from pathlib import Path
-from typing import Literal
 
 from pydantic import BaseModel, Field, field_serializer
 
 from slipp.models.host import AnsibleHost
+from slipp.models.service import Runtime
 
 
 class DetectedService(BaseModel):
@@ -58,7 +58,7 @@ class DeploymentHostConfig(AnsibleHost):
         name: Ansible host identifier (same as inventory_hostname, kept for template compatibility)
         app_domain: Domain for the application (used by Caddy). Optional for external projects.
         admin_email: Admin email for Let's Encrypt HTTPS certificates. Optional for external projects.
-        container_runtime: Container runtime (docker or podman, default: docker)
+        runtime: How the app runs (systemd, docker, podman; default: docker)
     """
 
     name: str = Field(..., min_length=1, description="Host identifier")
@@ -66,8 +66,8 @@ class DeploymentHostConfig(AnsibleHost):
     admin_email: str | None = Field(
         default=None, description="Admin email for HTTPS certs"
     )
-    container_runtime: Literal["docker", "podman"] = Field(
-        default="docker", description="Container runtime"
+    runtime: Runtime = Field(
+        default=Runtime.DOCKER, description="How the app runs (systemd, docker, podman)"
     )
 
 
@@ -96,7 +96,7 @@ class InventoryConfig(BaseModel):
               ansible_port: 22
               app_domain: example.com
               admin_email: admin@example.com
-              container_runtime: docker  # Optional, uses Pydantic default if missing
+              runtime: docker  # Optional, uses Pydantic default if missing (systemd/docker/podman)
 
         Args:
             data: Inventory data dict from YAML
@@ -276,7 +276,7 @@ class ProvisionConfig(BaseModel):
             "ssh_user": first_host.ansible_user,
             "ssh_port": first_host.ansible_port,
             "app_domain": first_host.app_domain or "",
-            "container_runtime": first_host.container_runtime,
+            "runtime": first_host.runtime,
         }
 
 

@@ -9,12 +9,14 @@
 - name: Provision and deploy {{ project_name }}
   hosts: all
   become: true
+{% if runtime != 'systemd' %}
 
   pre_tasks:
     - name: Install container runtime
       ansible.builtin.package:
-        name: "{{ container_runtime }}"
+        name: "{{ runtime }}"
         state: present
+{% endif %}
 
   roles:
     # Infrastructure

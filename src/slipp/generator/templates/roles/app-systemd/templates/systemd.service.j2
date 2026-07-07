@@ -1,0 +1,16 @@
+[Unit]
+Description={{ project_name }}-{{ service.name }}
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/{{ project_name }}-{{ service.name }}
+EnvironmentFile=-/opt/{{ project_name }}-{{ service.name }}/.env.production
+Environment=PORT={{ service.port }}
+ExecStart=/usr/bin/node build
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=10
+
+[Install]
+WantedBy=multi-user.target

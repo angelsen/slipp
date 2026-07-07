@@ -2,8 +2,8 @@
 # Installed automatically by `slipp deploy`
 collections:
   - name: ansible.posix
-{% if container_runtime == 'podman' %}
+{% if runtime == 'podman' %}
   - name: containers.podman
-{% else %}
+{% elif runtime == 'docker' %}
   - name: community.docker
 {% endif %}

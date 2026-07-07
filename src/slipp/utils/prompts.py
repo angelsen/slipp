@@ -8,6 +8,7 @@ from slipp import output
 from slipp.constants import DEFAULT_ENV, DEFAULT_SSH_PORT, DEFAULT_SSH_USER
 from slipp.models.deployment import DeploymentHostConfig, InventoryConfig
 from slipp.models.host import AnsibleHost
+from slipp.models.service import Runtime
 from slipp.services.ssh import SSHService
 from slipp.utils.errors import SSHAuthenticationError, SSHConnectionError
 
@@ -103,17 +104,19 @@ def get_inventory_config(
         default=f"admin@{app_domain}" if "@" not in app_domain else "",
     )
 
-    print("\nContainer Runtime")
-    print("Choose the container runtime for deployments:")
-    print("  docker - Recommended, broader compatibility")
-    print("  podman - Rootless, no daemon\n")
+    print("\nRuntime")
+    print("Choose how the app runs on the server:")
+    print("  docker  - Container, recommended, broader compatibility")
+    print("  podman  - Container, rootless, no daemon")
+    print("  systemd - Native process, no container runtime needed\n")
 
+    valid_runtimes = [r.value for r in Runtime]
     while True:
-        container_runtime = typer.prompt("Container runtime", default="docker")
-        if container_runtime in ["docker", "podman"]:
+        runtime = typer.prompt("Runtime", default=Runtime.DOCKER.value)
+        if runtime in valid_runtimes:
             break
         output.warning(
-            f"Invalid runtime '{container_runtime}'. Choose 'docker' or 'podman'"
+            f"Invalid runtime '{runtime}'. Choose one of: {', '.join(valid_runtimes)}"
         )
 
     try:
@@ -125,7 +128,7 @@ def get_inventory_config(
             ansible_port=ansible_port,
             app_domain=app_domain,
             admin_email=admin_email,
-            container_runtime=container_runtime,
+            runtime=Runtime(runtime),
         )
     except Exception as e:
         output.error(f"Invalid configuration: {e}")

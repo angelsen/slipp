@@ -24,6 +24,10 @@ def list_command(
     ssh_config = resolve_host_or_exit(project=host)
     _, runtime = resolve_runtime(host)
 
+    if not runtime.is_container():
+        output.error(f"Project runtime is '{runtime}' -- no container images to list")
+        raise typer.Exit(1)
+
     fmt = "{{.Repository}}:{{.Tag}}\t{{.Size}}\t{{.CreatedSince}}"
     if filter_pattern:
         base_cmd = (

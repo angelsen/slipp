@@ -46,6 +46,6 @@ class RequirementsFileStage(FileGenerationStage):
                 return {}
 
         first_host = list(context.inventory_config.hosts.values())[0]
-        content = self.generator.generate(first_host.container_runtime)
+        content = self.generator.generate(first_host.runtime)
 
         return {requirements_path: content}

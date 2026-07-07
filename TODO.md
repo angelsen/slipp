@@ -172,18 +172,49 @@ Caddy). See that repo's own TODO for the matching asks — the two projects
 are meant to interoperate: slipp deploys the app, wg-manage owns the
 network/routing it's exposed through.
 
-- **Native (non-container) app role.** `roles/app/templates/systemd.service.j2`
-  currently only generates `ExecStart=/usr/bin/{{ container_runtime }} run ...`
-  — there is no path for a plain built binary/process. Bulletins runs via
-  `npm run build` + systemd directly, no Docker/Podman anywhere in its stack.
-  Need a role variant where `ExecStart` runs the app directly (e.g. `node
-  build/index.js` for a SvelteKit `adapter-node` output, with
-  `WorkingDirectory`/`Environment` set from scanned config) — same shape as
-  today's role, no container runtime required. This decides whether
-  Bulletins gets Dockerized just to fit slipp, or slipp grows to fit
-  Bulletins' actual (systemd-native) deploy shape — leaning toward the
-  latter, since wg-deploy's own target host is bare Ubuntu with no
-  container runtime installed at all.
+- **Native (non-container) app role — done (2026-07-07).** `slipp launch`
+  now supports a `systemd` runtime alongside `docker`/`podman`. Reused the
+  existing `Runtime` enum (`models/service.py`, previously only used for
+  *discovered* services) as the single source of truth for the
+  *generation-time* config too, renaming `container_runtime` → `runtime`
+  throughout (models, CLI prompts, templates) to converge with `slipp.yaml`'s
+  existing `runtime:` key and drop the old two-item lists scattered across
+  ~20 call sites (`constants.py`, `RuntimeDetector`, the launch pipeline's
+  `ValidationStage`, etc.).
+
+  New template set `generator/templates/roles/app-systemd/` (selected by
+  `RoleGenerator._template_dir()`, not conditionals inside the container
+  templates — the build step is a genuinely different operation): installs
+  Node.js, syncs source, `npm ci && npm run build`, writes a persistent
+  `.env.production` placeholder (never overwritten, `EnvironmentFile=-` so a
+  missing/empty file doesn't block startup), templates a systemd unit with
+  `ExecStart=/usr/bin/node build` — directly matching the shape of
+  Bulletins' own hand-written `deploy/bulletins-chat.service` and
+  `admin/deploy/bulletins-admin.service`. Dockerfile/compose generation and
+  the docker/podman Galaxy collection are skipped project-wide when
+  `runtime: systemd`.
+
+  Known gaps, deliberately out of scope for this pass: no per-project
+  `After=`/`Requires=` systemd dependency declaration (ships as
+  `After=network.target` only — Bulletins' real
+  `Requires=postgresql.service livekit.service` needs a manual edit to the
+  generated unit); Node.js install is a plain distro package, not
+  version-pinned to `.nvmrc`/`engines.node` (that data isn't threaded into
+  `RoleGenerator` yet); one runtime per project, not per-service.
+
+  Verified end-to-end in a termtap pane: a scratch SvelteKit-shaped project
+  with `runtime: systemd` in `inventory.yml` generates a syntax-valid
+  playbook, the correct native role, no Dockerfile/compose/docker-podman
+  collection; the same scan with `runtime: docker` still produces
+  byte-equivalent container output (regression check). Along the way, found
+  and fixed a real pre-existing gap: `slipp launch`'s `RegistrationStage`
+  never persisted `runtime:` into the generated `slipp.yaml` at all — for
+  docker/podman this was silently masked by `RuntimeDetector`'s fragile
+  auto-detect heuristic accidentally matching the substring "docker" inside
+  the task name "Copy **Docker**file", but a systemd project has no such
+  lucky coincidence and hard-failed "Could not detect runtime" on any
+  `slipp images`/`slipp image push` call. Now persisted explicitly at
+  registration time.
 - **Delegate exposure to wg-manage instead of templating Caddy.** Where the
   target host already runs wg-deploy's `wg-manage` (source of truth for
   Caddy via `/etc/wg-services.json`), slipp's `caddy` role should stop

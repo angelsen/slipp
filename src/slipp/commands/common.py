@@ -10,7 +10,7 @@ import typer
 
 from slipp import output
 from slipp.models.host import AnsibleHost
-from slipp.models.service import Service
+from slipp.models.service import Runtime, Service
 from slipp.services.discovery import discover_and_enrich, filter_services, find_service
 from slipp.utils.errors import AmbiguousServiceError, HostNotFoundError
 from slipp.utils.identifiers import parse_service_identifier
@@ -98,8 +98,8 @@ def get_project_root(project_name: str) -> Path:
     return LocalConfigService.resolve_root()
 
 
-def resolve_runtime(host: str | None) -> tuple[Path, str]:
-    """Resolve project root and detect its container runtime.
+def resolve_runtime(host: str | None) -> tuple[Path, Runtime]:
+    """Resolve project root and detect its runtime.
 
     Args:
         host: Optional project name (defaults to cwd if not given)

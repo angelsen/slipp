@@ -25,7 +25,7 @@
       - "--exclude=.git"
 
 - name: Build container image
-{% if container_runtime == 'podman' %}
+{% if runtime == 'podman' %}
   containers.podman.podman_image:
     name: "{{ project_name }}-{{ service.name }}"
     path: "/tmp/{{ project_name }}-{{ service.name }}"

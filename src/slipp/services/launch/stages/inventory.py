@@ -9,6 +9,7 @@ from slipp import output
 from slipp.constants import get_inventory_filename
 from slipp.generator.inventory_generator import InventoryGenerator
 from slipp.models.deployment import DeploymentHostConfig, InventoryConfig
+from slipp.models.service import Runtime
 from slipp.services.launch.stages.common import FileGenerationStage
 from slipp.utils.errors import LaunchError
 from slipp.utils.prompts import get_inventory_config
@@ -56,7 +57,7 @@ class InventoryLoadStage:
                         ansible_port=22,
                         app_domain="example.com",
                         admin_email="admin@example.com",
-                        container_runtime="docker",
+                        runtime=Runtime.DOCKER,
                     )
                 }
             )

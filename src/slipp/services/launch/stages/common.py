@@ -8,7 +8,8 @@ from pathlib import Path
 from typing import Any
 
 from slipp import output
-from slipp.constants import VALID_CONTAINER_RUNTIMES, VALID_PROXIES
+from slipp.constants import VALID_PROXIES
+from slipp.models.service import Runtime
 from slipp.utils.errors import LaunchError
 
 
@@ -68,10 +69,10 @@ class FileGenerationStage:
 
 
 class ValidationStage:
-    """Validate proxy choice, container runtime, and set skip_caddy flag."""
+    """Validate proxy choice, runtime, and set skip_caddy flag."""
 
     def execute(self, context: Any) -> None:
-        """Validate proxy and container runtime configuration.
+        """Validate proxy and runtime configuration.
 
         Checks that proxy choice is in VALID_PROXIES list and sets
         skip_caddy flag to True when proxy is "none". Also validates
@@ -83,7 +84,7 @@ class ValidationStage:
             context: Stage execution context with proxy setting.
 
         Raises:
-            LaunchError: If proxy or container runtime choice is invalid.
+            LaunchError: If proxy or runtime choice is invalid.
         """
         if context.proxy not in VALID_PROXIES:
             raise LaunchError(
@@ -93,11 +94,13 @@ class ValidationStage:
 
         context.skip_caddy = context.proxy == "none"
 
+        # Only DockerfileContext carries this field, and it's inherently
+        # container-only (no Dockerfile to generate for a systemd deploy) --
+        # so this deliberately doesn't accept the full Runtime enum.
         container_runtime = getattr(context, "container_runtime", None)
-        if container_runtime is not None and container_runtime not in (
-            VALID_CONTAINER_RUNTIMES
-        ):
+        valid_runtimes = [Runtime.DOCKER.value, Runtime.PODMAN.value]
+        if container_runtime is not None and container_runtime not in valid_runtimes:
             raise LaunchError(
                 f"Invalid container runtime: {container_runtime}\n"
-                f"Valid options: {', '.join(VALID_CONTAINER_RUNTIMES)}"
+                f"Valid options: {', '.join(valid_runtimes)}"
             )

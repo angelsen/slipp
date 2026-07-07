@@ -9,5 +9,5 @@ all:
       ansible_port: {{ host.ansible_port }}
       app_domain: {{ host.app_domain | tojson }}
       admin_email: {{ host.admin_email | tojson }}
-      container_runtime: {{ host.container_runtime | tojson }}
+      runtime: {{ host.runtime | tojson }}
 {% endfor %}

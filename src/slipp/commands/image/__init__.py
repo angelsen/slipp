@@ -33,6 +33,12 @@ def push_command(
 
     _, remote_runtime = resolve_runtime(host)
 
+    if not remote_runtime.is_container():
+        output.error(
+            f"Project runtime is '{remote_runtime}' -- no container images to push to"
+        )
+        raise typer.Exit(1)
+
     target_name = name or image
     target = f"{ssh_config.ansible_user}@{ssh_config.ansible_host}"
 

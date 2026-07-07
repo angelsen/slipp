@@ -130,6 +130,7 @@ class LocalConfigService:
         roles_path: list[str] | None = None,
         galaxy_path: str | None = None,
         vault_path: str | None = None,
+        runtime: str | None = None,
         project_root: Path | None = None,
     ) -> LocalConfig:
         """Create a new local config.
@@ -145,6 +146,7 @@ class LocalConfigService:
             roles_path: Role directories for ansible --roles-path
             galaxy_path: Install path for ansible-galaxy
             vault_path: Optional vault file path
+            runtime: How the app runs (systemd/docker/podman), if known
             project_root: Project root (defaults to cwd)
 
         Returns:
@@ -168,6 +170,7 @@ class LocalConfigService:
             roles_path=roles_list,
             galaxy_path=galaxy_path,
             vault=vault_path,
+            runtime=runtime,
             managed_roles=managed_roles,
         )
 

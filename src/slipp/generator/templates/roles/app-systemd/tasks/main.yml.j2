@@ -1,0 +1,62 @@
+---
+# Deploy {{ service.name }} service as a native systemd process (no container)
+
+- name: Install Node.js
+  ansible.builtin.package:
+    name:
+      - nodejs
+      - npm
+    state: present
+
+- name: Create app directory
+  ansible.builtin.file:
+    path: "/opt/{{ project_name }}-{{ service.name }}"
+    state: directory
+    mode: '0755'
+
+- name: Sync source code
+  ansible.posix.synchronize:
+    src: "{{ service.path }}/"
+    dest: "/opt/{{ project_name }}-{{ service.name }}/"
+    delete: true
+    rsync_opts:
+      - "--exclude=node_modules"
+      - "--exclude=.venv"
+      - "--exclude=__pycache__"
+      - "--exclude=.git"
+      - "--exclude=.env.production"
+
+- name: Install dependencies
+  ansible.builtin.command: npm ci
+  args:
+    chdir: "/opt/{{ project_name }}-{{ service.name }}"
+  notify: Restart {{ project_name }}-{{ service.name }}
+
+- name: Build application
+  ansible.builtin.command: npm run build
+  args:
+    chdir: "/opt/{{ project_name }}-{{ service.name }}"
+  notify: Restart {{ project_name }}-{{ service.name }}
+
+- name: Ensure environment file exists
+  ansible.builtin.copy:
+    content: ""
+    dest: "/opt/{{ project_name }}-{{ service.name }}/.env.production"
+    mode: '0600'
+    force: false
+
+- name: Deploy systemd service
+  ansible.builtin.template:
+    src: systemd.service.j2
+    dest: "/etc/systemd/system/{{ project_name }}-{{ service.name }}.service"
+    mode: '0644'
+  notify:
+    - Reload systemd
+    - Restart {{ project_name }}-{{ service.name }}
+
+- name: Enable and start service
+  ansible.builtin.systemd:
+    name: "{{ project_name }}-{{ service.name }}.service"
+    enabled: true
+    state: started
+    daemon_reload: true

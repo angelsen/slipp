@@ -4,6 +4,7 @@ from typing import Any
 
 from slipp import output
 from slipp.constants import get_inventory_filename
+from slipp.models.service import Runtime
 from slipp.services.config import LocalConfigService
 from slipp.services.registry import ProjectRegistry
 
@@ -25,10 +26,12 @@ class RegistrationStage:
 
         try:
             inventory_filename = get_inventory_filename(context.environment)
+            first_host = list(context.inventory_config.hosts.values())[0]
             LocalConfigService.create(
                 name=context.project_name,
                 inventory_path=inventory_filename,
                 playbook_path="playbook.yml",
+                runtime=first_host.runtime.value,
                 project_root=context.output_dir,
             )
             output.success(f"Created slipp.yaml with name '{context.project_name}'")
@@ -66,31 +69,32 @@ class SummaryStage:
                 "Would generate 20+ files including inventory, playbook, roles, and Dockerfiles"
             )
         else:
+            is_systemd = first_host.runtime == Runtime.SYSTEMD
+
             output.success("Launch complete!")
             output.blank()
             output.stdout(f"Generated {len(context.generated_files)} files:")
-            output.list_items(
-                [
-                    "inventory.yml",
-                    "playbook.yml",
-                    "group_vars/all.yml",
-                    "roles/caddy/ (5 files)",
-                    f"roles/app-{{service}}/ ({len(context.services)} services, 3 files each)",
+            summary_items = [
+                "inventory.yml",
+                "playbook.yml",
+                "group_vars/all.yml",
+                "roles/caddy/ (5 files)",
+                f"roles/app-{{service}}/ ({len(context.services)} services, 3 files each)",
+            ]
+            if not is_systemd:
+                summary_items += [
                     f"Dockerfiles ({len(context.services)} services)",
                     "docker-compose.yml",
                 ]
-            )
+            output.list_items(summary_items)
 
             output.blank()
             output.stdout("Next steps:")
-            output.list_items(
-                [
-                    "Review generated files",
-                    "Test locally: docker compose up",
-                    "Deploy to VPS: slipp deploy",
-                ],
-                numbered=True,
-            )
+            next_steps = ["Review generated files"]
+            if not is_systemd:
+                next_steps.append("Test locally: docker compose up")
+            next_steps.append("Deploy to VPS: slipp deploy")
+            output.list_items(next_steps, numbered=True)
 
             output.blank()
             output.stdout("Your app will be available at:")

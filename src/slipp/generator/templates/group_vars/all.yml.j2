@@ -13,8 +13,10 @@ services:
   - name: {{ service.name | tojson }}
     framework: {{ service.framework | tojson }}
     port: {{ service.port }}
+{% if runtime != 'systemd' %}
     image: {{ (project_name ~ "-" ~ service.name) | tojson }}
     container_name: {{ (project_name ~ "-" ~ service.name) | tojson }}
+{% endif %}
 {% endfor %}
 
 # Caddy configuration
