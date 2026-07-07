@@ -1,41 +1,95 @@
 # slipp TODO
 
-## Next session: manual QA pass — try to break it
+## Manual QA pass — done (2026-07-07)
 
-No automated tests yet (deliberate for now, project isn't in production),
-but today's cleanup session found 4 real bugs just from manual hands-on testing:
-`generate dockerfile` completely broken (hard assert on data its own
-pipeline never populates), `caddy_generator.py` silently omitting
-`project_name` from a rendered path, `pyyaml` missing as a direct
-dependency (would've broken on a fresh install), and a generated Ansible
-task using a `docker_image` module parameter (`force_rm`) that doesn't
-actually exist on the installed collection. That hit rate suggests there
-are more latent bugs than one session surfaced.
+Ran the planned break-it session against scratch projects under `/tmp/`.
+Found and fixed 3 real bugs (commit `fae298b`):
 
-Before Bulletins becomes the first real deployment target, spend a session
-just trying to break slipp against a handful of scratch projects under
-`/tmp/`:
+- **`slipp generate scaffold` never registered the project.** No `--name`
+  flag existed, so `project_name` was always empty; pydantic validation
+  failed, was swallowed as a warning, and the command still printed
+  "Scaffold complete!" while never writing `slipp.yaml`. Fixed: `--name`
+  (defaults to the playbook's parent dir name), registration failures now
+  hard-fail instead of being silently swallowed, and re-running scaffold
+  no longer overwrites an existing `vault.yml`.
+- **`slipp deploy` reported false success on a malformed/empty inventory.**
+  `ansible-playbook`/`ansible-inventory` exit 0 when inventory fails to
+  parse (warn + no-op), and slipp only checked the exit code. Fixed: a
+  preflight rejects empty-parsed inventories, plus a post-run backstop
+  catches "playbook matched no hosts" even when ansible exits 0 clean.
+- **Multi-host inventories silently used only the first host** in
+  `host`/`exec`/`ssh`/`logs`/`status`/`ps --project`/`images` — confirmed
+  this was in fact silently wrong, not expected behavior. Fixed: these
+  commands now warn on stderr which host they picked and which were
+  ignored (stdout stays clean for piping).
 
-- Run the full `launch` → `deploy --dry-run` loop against project types the
-  scanner doesn't explicitly support (plain static site, a Go binary, a
-  Rails app) and see what happens — scanner currently only detects
-  Flask/generic-Python/Node/SvelteKit, everything else silently produces
-  zero services.
-- Multi-host inventories — most of the generator code takes
-  `list(inventory.hosts.values())[0]` and only ever uses the first host;
-  poke at what a second host actually gets (nothing, probably worth
-  confirming that's expected rather than silently wrong).
-- Flag combinations nobody's tried: `--reconfigure` after switching
-  `container_runtime` docker↔podman, `--force-requirements`, `--roles`
-  combined with an auto-generated `requirements.yml`, running `deploy`
-  twice in a row, running commands from a subdirectory instead of project
-  root.
-- Error paths specifically — pull the network cable / rename a binary off
-  PATH / feed malformed YAML into `inventory.yml` and see whether the
-  failure is a clean `SlippError` message or a raw traceback slipping
-  through.
-- Whatever `slipp generate scaffold` does end to end against a real
-  existing (non-slipp) Ansible project — least-tested path today.
+Also fixed a prerequisite model bug (`from_ansible_inventory_json` dropped
+hosts with no host-specific vars) and, caught during verification, a
+self-introduced nondeterminism bug (used a `set` for host ordering, whose
+iteration order depends on Python's per-process hash seed — switched to
+`dict.fromkeys()`).
+
+**Confirmed correct, no bugs:** unsupported project types (clean
+`LaunchError`, not silent zero-services as originally suspected),
+`--reconfigure` docker↔podman, `--force-requirements`, `--roles` +
+auto-generated `requirements.yml`, running `deploy` twice, missing-binary
+error path.
+
+**Left for later, not bugs but worth knowing:**
+
+- **Subdirectory config discovery.** Running commands from a subdirectory
+  (instead of project root) fails cleanly but doesn't walk up to find
+  `slipp.yaml` like git/npm/cargo do. Scoped this out (2026-07-07) — it's a
+  coordinated multi-file change, not a one-function fix:
+  - Callers that already delegate to `LocalConfigService` with
+    `project_root=None` (would auto-benefit from an upward walk added to
+    `get_config_path`): `HostResolver.current()` (the cwd-fallback path for
+    `slipp host`/`exec`/`ssh`/`logs`/`status` when invoked without `-p`/a
+    service — the registry-backed paths already work fine), `slipp tags
+    add/remove`, `PresetResolver`, `resolve_project_name()`.
+  - Callers that hardcode `Path.cwd()` themselves before ever reaching
+    `LocalConfigService` — need separate explicit changes:
+    `ConfigResolver.__init__` (backs `slipp deploy` and `slipp config`),
+    and `commands/config.py`'s `config_command()` (hardcodes
+    `project_root = Path.cwd()` directly, no override at all).
+  - **Footgun to resolve first:** `LocalConfigService.exists()`/`load()`
+    also gate "is a project already configured here" checks (e.g. `slipp
+    projects add`). A blind upward walk could make `projects add` in a
+    subdirectory of an already-slipp-managed parent wrongly think a nested
+    project is already configured, or write into the wrong project's
+    `slipp.yaml`. Needs the walk scoped to read-only resolution paths, not
+    create/write-gating checks — not yet traced whether `projects add`
+    shares the same `exists()` call.
+
+## `slipp generate scaffold` + external roles is fully broken (found 2026-07-07)
+
+Tested the previously-untested `requirements.yml` + `--roles-path` branch of
+`ScaffoldValidationStage` — built a scratch project with a fake git-hosted
+role, a `requirements.yml` referencing it, and a playbook using it.
+
+Role install succeeds (`ansible-galaxy role install` correctly populates
+`roles/galaxy/fakerole/`), but the very next step — playbook syntax
+validation — always fails with "Playbook syntax check failed", blocking
+scaffold entirely.
+
+**Root cause:** `syntax_check()` (`services/ansible/ansible.py:95-109`) runs
+`ansible-playbook --syntax-check` as a bare subprocess and never sets
+`ANSIBLE_ROLES_PATH` (unlike `run_playbook()`, which does). It also has no
+parameter to accept a roles path at all. Confirmed by hand: running
+`ANSIBLE_ROLES_PATH=roles/galaxy ansible-playbook setup.yml --syntax-check`
+directly succeeds (exit 0); slipp's own invocation, missing that env var,
+fails every time.
+
+**Impact:** this breaks `slipp generate scaffold` for any pre-existing
+Ansible project that has external Galaxy role dependencies — precisely the
+scenario `--roles-path` exists to support, and precisely the kind of
+"real existing (non-slipp) Ansible project" this whole QA pass was aimed at
+covering.
+
+**Fix scope:** single caller (`ScaffoldValidationStage`, `stages/scaffold.py:64`).
+Add a `roles_path: list[str] | None` param to `syntax_check()`, set
+`ANSIBLE_ROLES_PATH` in its subprocess env when given (mirroring
+`run_playbook`), and pass `context.roles_path` through from the stage.
 
 ## SSH Security
 
