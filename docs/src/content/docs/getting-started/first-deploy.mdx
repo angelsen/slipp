@@ -120,21 +120,19 @@ A complete guide from zero to deployed application, including VPS setup.
 
 <Steps>
 
-1. **Install Ansible roles** (if requirements.yml exists)
-
-   ```bash
-   ansible-galaxy install -r requirements.yml
-   ```
-
-2. **Run deployment**
+1. **Run deployment**
 
    ```bash
    slipp deploy
    ```
 
+   `slipp launch` generates a `requirements.yml` listing the Ansible collections
+   your project needs, and `slipp deploy` installs them automatically before
+   running the playbook — no manual `ansible-galaxy` step required.
+
    Enter your vault password when prompted.
 
-3. **Verify deployment**
+2. **Verify deployment**
 
    ```bash
    slipp ps

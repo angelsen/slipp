@@ -99,13 +99,19 @@ Default: `[]` (Ansible default)
 
 ### galaxy_path
 
-Install directory for roles from `requirements.yml`. Automatically added to `roles_path` at runtime.
+Install directory for external roles from `requirements.yml`. Automatically added to `roles_path` at runtime.
 
 ```yaml
 galaxy_path: roles/galaxy
 ```
 
-When `requirements.yml` exists, slipp runs `ansible-galaxy install` to this directory before deployment.
+Default: `roles/galaxy` (used automatically if not set — no need to configure this
+unless you want a different path).
+
+`slipp launch` generates a `requirements.yml` listing the Ansible collections your
+project needs (e.g. `community.docker` or `containers.podman`, depending on your
+container runtime). When `requirements.yml` exists, `slipp deploy` installs both
+roles and collections from it automatically before running the playbook.
 
 ### vault
 

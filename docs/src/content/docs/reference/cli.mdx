@@ -326,7 +326,8 @@ Generate specific Ansible project files.
 slipp generate dockerfile [OPTIONS]
 ```
 
-Generate only Dockerfiles for detected services.
+Generate only Dockerfiles for detected services. Use `--runtime docker|podman`
+(default: `docker`) to select the target container runtime.
 
 #### generate scaffold
 
@@ -810,8 +811,8 @@ slipp deploy [target] [preset] [OPTIONS]
 | `--vault` | Path to vault file |
 | `-r, --requirements` | Path to requirements.yml |
 | `--roles` | Role search directories (repeatable) |
-| `--galaxy-path` | Install path for external roles |
-| `--force-requirements` | Force reinstall roles |
+| `--galaxy-path` | Install path for external roles (default: `roles/galaxy`) |
+| `--force-requirements` | Force reinstall roles/collections |
 | `-t, --tags` | Ansible tags to run |
 | `--skip-tags` | Ansible tags to skip |
 
