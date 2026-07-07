@@ -61,35 +61,51 @@ error path.
     create/write-gating checks — not yet traced whether `projects add`
     shares the same `exists()` call.
 
-## `slipp generate scaffold` + external roles is fully broken (found 2026-07-07)
+## `slipp generate scaffold` + external roles — fixed (2026-07-07)
 
-Tested the previously-untested `requirements.yml` + `--roles-path` branch of
-`ScaffoldValidationStage` — built a scratch project with a fake git-hosted
-role, a `requirements.yml` referencing it, and a playbook using it.
+Was fully broken: tested the previously-untested `requirements.yml` +
+`--roles-path` branch of `ScaffoldValidationStage` with a scratch project
+(fake git-hosted role, `requirements.yml` referencing it, playbook using it).
+Role install succeeded but the next step — playbook syntax validation —
+always failed with "Playbook syntax check failed", blocking scaffold
+entirely.
 
-Role install succeeds (`ansible-galaxy role install` correctly populates
-`roles/galaxy/fakerole/`), but the very next step — playbook syntax
-validation — always fails with "Playbook syntax check failed", blocking
-scaffold entirely.
+**Root cause:** `syntax_check()` (`services/ansible/ansible.py:95-109`) ran
+`ansible-playbook --syntax-check` as a bare subprocess and never set
+`ANSIBLE_ROLES_PATH` (unlike `run_playbook()`, which does), and had no
+parameter to accept a roles path at all.
 
-**Root cause:** `syntax_check()` (`services/ansible/ansible.py:95-109`) runs
-`ansible-playbook --syntax-check` as a bare subprocess and never sets
-`ANSIBLE_ROLES_PATH` (unlike `run_playbook()`, which does). It also has no
-parameter to accept a roles path at all. Confirmed by hand: running
-`ANSIBLE_ROLES_PATH=roles/galaxy ansible-playbook setup.yml --syntax-check`
-directly succeeds (exit 0); slipp's own invocation, missing that env var,
-fails every time.
+**Fixed:** `syntax_check()` and `get_host_group()` (`services/ansible/ansible.py`)
+both now take a `roles_path: list[str] | None` param and set
+`ANSIBLE_ROLES_PATH` in their subprocess env when given, mirroring
+`run_playbook()`. `ScaffoldValidationStage` (`services/launch/stages/scaffold.py`)
+passes `context.roles_path` through to both.
 
-**Impact:** this breaks `slipp generate scaffold` for any pre-existing
-Ansible project that has external Galaxy role dependencies — precisely the
-scenario `--roles-path` exists to support, and precisely the kind of
-"real existing (non-slipp) Ansible project" this whole QA pass was aimed at
-covering.
+Caught two adjacent bugs in the same flow while fixing:
 
-**Fix scope:** single caller (`ScaffoldValidationStage`, `stages/scaffold.py:64`).
-Add a `roles_path: list[str] | None` param to `syntax_check()`, set
-`ANSIBLE_ROLES_PATH` in its subprocess env when given (mirroring
-`run_playbook`), and pass `context.roles_path` through from the stage.
+- **`get_host_group()` silently fell back to `"servers"`** whenever role
+  resolution failed (which, before this fix, was every scaffold with
+  external roles) — it never checked the subprocess exit code. A scaffold
+  could silently write the wrong `[servers]` host group into `inventory/hosts`
+  instead of the playbook's real group. Confirmed fixed: a test playbook
+  targeting `webservers` now correctly detects and writes `[webservers]`.
+- **`ScaffoldRegistrationStage` never persisted `galaxy_path`** into
+  `slipp.yaml`, so a scaffolded external-roles project only deployed
+  correctly by coincidence (matching `DEFAULT_GALAXY_PATH`). Now passes
+  `galaxy_path` through to `LocalConfigService.create()` (not as
+  `roles_path=`, to avoid polluting `managed_roles` with externally-installed
+  Galaxy roles).
+
+Verified end-to-end in a termtap pane: rebuilt the scratch project (fake
+git-hosted role installed via local `git init` repo, `requirements.yml`,
+`setup.yml` targeting `webservers`), ran
+`slipp generate scaffold -p setup.yml --roles-path roles/galaxy` — syntax
+check passed, host group detected as `webservers`, `slipp.yaml` got
+`galaxy_path: roles/galaxy`. Followed with `slipp deploy --dry-run`: got past
+inventory/vault parsing and role resolution (no "role not found" error),
+reached the actual play and failed only on SSH connect timeout to the
+RFC5737 test IP used — confirms the whole scaffold→deploy round-trip
+resolves roles correctly.
 
 ## SSH Security
 

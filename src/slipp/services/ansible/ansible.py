@@ -92,12 +92,20 @@ def run_list_tasks(playbook: Path, inventory: Path | None = None) -> str:
     return result.stdout
 
 
-def syntax_check(playbook: Path) -> bool:
+def syntax_check(playbook: Path, roles_path: list[str] | None = None) -> bool:
     """Validate playbook syntax without executing.
+
+    Args:
+        playbook: Path to playbook file
+        roles_path: Optional list of role directories (sets ANSIBLE_ROLES_PATH)
 
     Returns True if valid, False otherwise.
     """
     check_tool_installed("ansible-playbook", AnsibleNotFoundError)
+
+    env = os.environ.copy()
+    if roles_path:
+        env["ANSIBLE_ROLES_PATH"] = ":".join(roles_path)
 
     result = subprocess.run(
         ["ansible-playbook", str(playbook), "--syntax-check"],
@@ -105,20 +113,26 @@ def syntax_check(playbook: Path) -> bool:
         text=True,
         check=False,
         cwd=playbook.parent,
+        env=env,
     )
     return result.returncode == 0
 
 
-def get_host_group(playbook_path: Path) -> str:
+def get_host_group(playbook_path: Path, roles_path: list[str] | None = None) -> str:
     """Extract host group pattern from playbook.
 
     Args:
         playbook_path: Path to playbook file
+        roles_path: Optional list of role directories (sets ANSIBLE_ROLES_PATH)
 
     Returns:
         Host group name (default: 'servers' if not detected)
     """
     check_tool_installed("ansible-playbook", AnsibleNotFoundError)
+
+    env = os.environ.copy()
+    if roles_path:
+        env["ANSIBLE_ROLES_PATH"] = ":".join(roles_path)
 
     result = subprocess.run(
         ["ansible-playbook", "--list-hosts", str(playbook_path)],
@@ -126,6 +140,7 @@ def get_host_group(playbook_path: Path) -> str:
         text=True,
         check=False,
         cwd=playbook_path.parent,
+        env=env,
     )
 
     for line in result.stdout.splitlines():

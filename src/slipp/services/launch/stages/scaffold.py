@@ -1,5 +1,6 @@
 """Scaffold stages for existing Ansible projects."""
 
+from pathlib import Path
 from typing import Any
 
 import typer
@@ -61,7 +62,9 @@ class ScaffoldValidationStage:
             f"Validating {format_path(context.playbook_path, context.output_dir)}..."
         )
 
-        if not syntax_check(context.playbook_path):
+        roles = [context.roles_path] if context.roles_path else None
+
+        if not syntax_check(context.playbook_path, roles_path=roles):
             raise LaunchError(
                 f"Playbook syntax check failed: {format_path(context.playbook_path, context.output_dir)}\n"
                 f"Run: ansible-playbook --syntax-check "
@@ -72,7 +75,7 @@ class ScaffoldValidationStage:
             f"Playbook valid: {format_path(context.playbook_path, context.output_dir)}"
         )
 
-        context.host_group = get_host_group(context.playbook_path)
+        context.host_group = get_host_group(context.playbook_path, roles_path=roles)
         output.info(f"Detected host group: {context.host_group}")
 
 
@@ -194,6 +197,15 @@ class ScaffoldRegistrationStage:
 
         from slipp.services.config import LocalConfigService
 
+        galaxy_path: str | None = None
+        if context.roles_path:
+            roles_path_obj = Path(context.roles_path)
+            galaxy_path = (
+                str(roles_path_obj.relative_to(context.output_dir))
+                if roles_path_obj.is_absolute()
+                else str(roles_path_obj)
+            )
+
         try:
             LocalConfigService.create(
                 name=context.project_name,
@@ -201,6 +213,7 @@ class ScaffoldRegistrationStage:
                 playbook_path=str(
                     context.playbook_path.relative_to(context.output_dir)
                 ),
+                galaxy_path=galaxy_path,
                 vault_path=str(
                     context.inventory_dir.relative_to(context.output_dir) / "vault.yml"
                 ),
