@@ -42,6 +42,11 @@ class AnsibleResult:
 
     exit_code: int
     log_path: Path | None = None
+    no_hosts_matched: bool = False
+
+
+_NO_HOSTS_SKIP_RE = re.compile(r"skipping: no hosts matched")
+_RECAP_HOST_ROW_RE = re.compile(r"^\S+\s*:\s*ok=\d+")
 
 
 def run_inventory(inventory_path: Path) -> dict[str, Any]:
@@ -315,16 +320,33 @@ def run_playbook(
         env=env,
     )
 
+    saw_no_hosts_skip = False
+    saw_recap_host_row = False
+
     try:
         assert proc.stdout is not None
         for line in proc.stdout:
             if log_handle:
                 log_handle.write(line)
+            stripped = line.strip()
             if on_progress:
-                on_progress(line.strip())
+                on_progress(stripped)
+            if _NO_HOSTS_SKIP_RE.search(stripped):
+                saw_no_hosts_skip = True
+            elif _RECAP_HOST_ROW_RE.match(stripped):
+                saw_recap_host_row = True
 
         exit_code = proc.wait()
-        return AnsibleResult(exit_code=exit_code, log_path=log_path)
+        return AnsibleResult(
+            exit_code=exit_code,
+            log_path=log_path,
+            # A playbook whose `hosts:` pattern matches nothing still exits
+            # 0 (ansible treats "no hosts matched" as a no-op, not a
+            # failure). The recap-row guard avoids flagging a multi-play
+            # playbook where only one play legitimately targets an empty
+            # group while others ran normally.
+            no_hosts_matched=saw_no_hosts_skip and not saw_recap_host_row,
+        )
 
     finally:
         if log_handle:

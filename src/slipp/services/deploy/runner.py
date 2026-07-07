@@ -12,10 +12,10 @@ from slipp.services.ansible import (
     parse_playbook_progress,
     run_playbook,
 )
-from slipp.services.config import ConfigResolver, ResolvedConfig
+from slipp.services.config import ConfigResolver, InventoryService, ResolvedConfig
 from slipp.services.vault import has_vault_content
 from slipp.services.vault import vault_password_file as get_vault_password_file
-from slipp.utils.errors import ConfigError, DeployError
+from slipp.utils.errors import ConfigError, DeployError, InventoryParseError
 
 
 def validate_deploy_files(
@@ -64,6 +64,23 @@ def validate_deploy_files(
     if not Path(playbook_file).exists():
         raise ConfigError(
             f"Playbook file not found: {format_path(playbook_file, project_root)}"
+        )
+
+    try:
+        parsed_inventory = InventoryService.parse(Path(inventory_file))
+    except InventoryParseError as e:
+        # ansible-inventory can legitimately fail without a password on
+        # whole-file-vault-encrypted host_vars/group_vars, so a parse
+        # failure here is a warning, not a hard stop -- the real check is
+        # the empty-hosts case below, which is what a malformed inventory
+        # file actually produces (ansible-playbook silently no-ops on it).
+        output.warning(f"Could not pre-validate inventory: {e}")
+        parsed_inventory = None
+
+    if parsed_inventory is not None and not parsed_inventory.hosts:
+        raise ConfigError(
+            f"Inventory contains no hosts: {format_path(inventory_file, project_root)}\n"
+            f"The file may be malformed. Check: ansible-inventory -i {inventory_file} --list"
         )
 
     inventory_dir = Path(inventory_file).parent

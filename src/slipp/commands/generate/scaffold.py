@@ -4,6 +4,7 @@ from pathlib import Path
 
 import typer
 
+from slipp import output
 from slipp.services.launch import ScaffoldContext, run_scaffold_pipeline
 
 
@@ -17,6 +18,12 @@ def scaffold_command(
         file_okay=True,
         dir_okay=False,
         resolve_path=True,
+    ),
+    name: str = typer.Option(
+        None,
+        "--name",
+        "-n",
+        help="Project name (default: playbook's parent directory name)",
     ),
     inventory: Path = typer.Option(
         None,
@@ -51,6 +58,10 @@ def scaffold_command(
         if default_reqs.exists():
             reqs_path = default_reqs
 
+    project_name = name or output_dir.name
+    if not name:
+        output.info(f"Project name: '{project_name}' (from playbook directory)")
+
     context = ScaffoldContext(
         output_dir=output_dir,
         environment="production",
@@ -59,6 +70,7 @@ def scaffold_command(
         inventory_path=inventory,
         requirements_path=reqs_path,
         roles_path=roles_path,
+        project_name=project_name,
     )
 
     run_scaffold_pipeline(context)

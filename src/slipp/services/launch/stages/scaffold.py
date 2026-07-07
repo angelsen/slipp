@@ -132,24 +132,43 @@ class ScaffoldInventoryStage:
         hosts_content = f"""[{host_group}]
 {context.hostname} ansible_host={context.host_ip} ansible_user=slipp ansible_become=true ansible_become_user=root
 """
-        hosts_path.write_text(hosts_content)
-        output.list_items(
-            [str(hosts_path.relative_to(context.output_dir))], bullet=output.ICON_CHECK
-        )
-        context.generated_files.append(hosts_path)
+        if hosts_path.exists():
+            output.info(
+                f"Already exists, not overwriting: {hosts_path.relative_to(context.output_dir)}"
+            )
+        else:
+            hosts_path.write_text(hosts_content)
+            output.list_items(
+                [str(hosts_path.relative_to(context.output_dir))],
+                bullet=output.ICON_CHECK,
+            )
+            context.generated_files.append(hosts_path)
 
         vars_path = context.inventory_dir / "vars.yml"
         vars_content = """---
 # Add your host variables here
 # Reference vault secrets with: "{{ vault_secret_name }}"
 """
-        vars_path.write_text(vars_content)
-        output.list_items(
-            [str(vars_path.relative_to(context.output_dir))], bullet=output.ICON_CHECK
-        )
-        context.generated_files.append(vars_path)
+        if vars_path.exists():
+            output.info(
+                f"Already exists, not overwriting: {vars_path.relative_to(context.output_dir)}"
+            )
+        else:
+            vars_path.write_text(vars_content)
+            output.list_items(
+                [str(vars_path.relative_to(context.output_dir))],
+                bullet=output.ICON_CHECK,
+            )
+            context.generated_files.append(vars_path)
 
+        # Never overwrite an existing vault.yml -- it may hold real secrets
+        # from a prior scaffold run.
         vault_path = context.inventory_dir / "vault.yml"
+        if vault_path.exists():
+            output.info(
+                f"Already exists, not overwriting: {vault_path.relative_to(context.output_dir)}"
+            )
+            return
         vault_path.write_text("---\n# Add secrets with: slipp secrets add <name>\n")
         output.list_items(
             [str(vault_path.relative_to(context.output_dir))], bullet=output.ICON_CHECK
@@ -161,9 +180,14 @@ class ScaffoldRegistrationStage:
     """Write local config and register project in global registry."""
 
     def execute(self, context: Any) -> None:
-        """Create slipp.yaml and register project globally, with graceful error handling."""
+        """Create slipp.yaml and register project globally.
+
+        Raises LaunchError on failure (rather than warning and continuing)
+        so a broken registration can't be masked by a false "Scaffold
+        complete!" summary.
+        """
         if context.dry_run:
-            output.info("Dry run: would register project")
+            output.info(f"Dry run: would register project '{context.project_name}'")
             return
 
         assert context.inventory_dir is not None
@@ -184,16 +208,24 @@ class ScaffoldRegistrationStage:
             )
             output.success(f"Created slipp.yaml with name '{context.project_name}'")
         except Exception as e:
-            output.warning(f"Failed to create local config: {e}")
+            raise LaunchError(f"Failed to create local config: {e}") from e
+
+        registry = ProjectRegistry()
+        existing = registry.get(context.project_name)
+        if existing and existing.project_path != context.output_dir.resolve():
+            output.warning(
+                f"'{context.project_name}' was registered at {existing.project_path}; "
+                f"re-pointing to {context.output_dir}"
+            )
 
         try:
-            ProjectRegistry().register(
+            registry.register(
                 name=context.project_name,
                 project_path=context.output_dir,
             )
             output.info(f"Registered '{context.project_name}' in global registry")
         except Exception as e:
-            output.warning(f"Failed to register project: {e}")
+            raise LaunchError(f"Failed to register project: {e}") from e
 
 
 class ScaffoldSummaryStage:

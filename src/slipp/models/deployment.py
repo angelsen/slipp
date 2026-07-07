@@ -141,11 +141,26 @@ class InventoryConfig(BaseModel):
             - Extracts SSH connection info (host, user, port)
             - Sets app_domain and admin_email to None (external projects)
             - Works with MDAD and any Ansible inventory structure
+            - Hosts with no entry in _meta.hostvars (e.g. addressed only by
+              group membership, no host-specific vars) still get a
+              DeploymentHostConfig with defaulted connection info, so a
+              valid var-less-host inventory isn't reported as having zero
+              hosts.
         """
         hostvars = data.get("_meta", {}).get("hostvars", {})
 
+        # dict.fromkeys preserves first-seen order (unlike a set, whose
+        # iteration order depends on Python's per-process string hash seed
+        # and is therefore not stable across runs).
+        hostnames: dict[str, None] = dict.fromkeys(hostvars)
+        for group_name, group in data.items():
+            if group_name == "_meta":
+                continue
+            hostnames.update(dict.fromkeys(group.get("hosts", [])))
+
         hosts = {}
-        for hostname, vars in hostvars.items():
+        for hostname in hostnames:
+            vars = hostvars.get(hostname, {})
             user = vars.get("ansible_user") or vars.get("ansible_ssh_user") or "root"
 
             hosts[hostname] = DeploymentHostConfig(

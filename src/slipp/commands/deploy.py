@@ -118,6 +118,14 @@ def deploy_command(
         log_dir=log_dir,
     )
 
+    if result.exit_code == 0 and result.no_hosts_matched:
+        output.error(
+            "Playbook matched no hosts "
+            "(check the playbook's 'hosts:' pattern against your inventory groups)"
+        )
+        output.hint(f"See log: {format_path(log_dir, resolver.project_root)}")
+        raise typer.Exit(1)
+
     if result.exit_code == 0:
         output.success_animation("Deploy completed")
 

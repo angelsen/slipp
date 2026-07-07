@@ -10,6 +10,7 @@ Hosts are parsed on-demand from inventory files, not stored in the registry.
 
 from pathlib import Path
 
+from slipp import output
 from slipp.models.host import AnsibleHost
 from slipp.utils.errors import HostNotFoundError
 from slipp.utils.identifiers import parse_service_identifier
@@ -131,6 +132,22 @@ class HostResolver:
 
         return host
 
+    def _first_host(self, hosts: list[AnsibleHost], context_label: str) -> AnsibleHost:
+        """Return the first host, warning if others are being silently ignored.
+
+        Commands that resolve a single host (host, exec, ssh, logs, ...) have
+        no way to disambiguate between multiple hosts in one project's
+        inventory. Rather than silently picking one, surface the choice.
+        """
+        if len(hosts) > 1:
+            others = ", ".join(h.inventory_hostname for h in hosts[1:])
+            output.warning(
+                f"{context_label} has {len(hosts)} hosts; using "
+                f"'{hosts[0].inventory_hostname}' (first in inventory). "
+                f"Others: {others}"
+            )
+        return hosts[0]
+
     def by_project(self, project: str) -> AnsibleHost:
         """Resolve project name to host.
 
@@ -153,7 +170,7 @@ class HostResolver:
             raise HostNotFoundError(f"Project '{project}' not found in registry")
 
         hosts = self._load_hosts_for_project(project_obj.project_path)
-        return hosts[0]
+        return self._first_host(hosts, f"Project '{project}'")
 
     def current(self) -> AnsibleHost:
         """Resolve host from current working directory.
@@ -174,7 +191,8 @@ class HostResolver:
         local_config = LocalConfigService.load()
         if local_config:
             try:
-                return self._load_hosts_for_project(Path.cwd())[0]
+                hosts = self._load_hosts_for_project(Path.cwd())
+                return self._first_host(hosts, "Current project")
             except HostNotFoundError:
                 pass
 
@@ -183,7 +201,7 @@ class HostResolver:
                 if project_obj:
                     try:
                         hosts = self._load_hosts_for_project(project_obj.project_path)
-                        return hosts[0]
+                        return self._first_host(hosts, "Current project")
                     except HostNotFoundError:
                         pass
 
