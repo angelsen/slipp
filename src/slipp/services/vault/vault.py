@@ -10,7 +10,6 @@ Provides functions for:
 import base64
 import os
 import re
-import shutil
 import subprocess
 import tempfile
 from contextlib import contextmanager
@@ -19,6 +18,7 @@ from typing import Iterator
 
 import yaml
 
+from slipp.utils.cli_tools import check_tool_installed
 from slipp.utils.errors import (
     AnsibleVaultNotInstalledError,
     DuplicateEnvVarError,
@@ -39,13 +39,6 @@ def _vault_constructor(loader: yaml.Loader, node: yaml.Node) -> str:
 
 
 _VaultLoader.add_constructor("!vault", _vault_constructor)
-
-
-def _check_installed() -> None:
-    if not shutil.which("ansible-vault"):
-        raise AnsibleVaultNotInstalledError(
-            "'ansible-vault' not found. Install with: uv tool install ansible-core"
-        )
 
 
 @contextmanager
@@ -165,7 +158,7 @@ def encrypt_string(
           $ANSIBLE_VAULT;1.1;AES256
           61626364...
     """
-    _check_installed()
+    check_tool_installed("ansible-vault", AnsibleVaultNotInstalledError)
 
     cmd = ["ansible-vault", "encrypt_string", value, "--name", name]
     if password_file:
@@ -346,7 +339,7 @@ def decrypt_vault(vault_path: Path, password_file: Path) -> dict[str, str]:
         VaultDecryptError: If decryption fails
         FileNotFoundError: If vault file doesn't exist
     """
-    _check_installed()
+    check_tool_installed("ansible-vault", AnsibleVaultNotInstalledError)
 
     if not vault_path.exists():
         raise FileNotFoundError(f"Vault file not found: {vault_path}")

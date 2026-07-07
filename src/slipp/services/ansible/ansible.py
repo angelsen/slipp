@@ -3,13 +3,13 @@
 import json
 import os
 import re
-import shutil
 import subprocess
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import IO, Any, Callable
 
+from slipp.utils.cli_tools import check_tool_installed
 from slipp.utils.errors import AnsibleError, AnsibleNotFoundError
 
 ProgressCallback = Callable[[str], None]
@@ -44,16 +44,9 @@ class AnsibleResult:
     log_path: Path | None = None
 
 
-def _check_installed(tool: str) -> None:
-    if not shutil.which(tool):
-        raise AnsibleNotFoundError(
-            f"'{tool}' not found. Install with: uv tool install ansible-core"
-        )
-
-
 def run_inventory(inventory_path: Path) -> dict[str, Any]:
     """Run ansible-inventory --list, return parsed JSON."""
-    _check_installed("ansible-inventory")
+    check_tool_installed("ansible-inventory", AnsibleNotFoundError)
 
     result = subprocess.run(
         ["ansible-inventory", "-i", str(inventory_path), "--list"],
@@ -72,7 +65,7 @@ def run_inventory(inventory_path: Path) -> dict[str, Any]:
 
 def run_list_tasks(playbook: Path, inventory: Path | None = None) -> str:
     """Run ansible-playbook --list-tasks, return stdout."""
-    _check_installed("ansible-playbook")
+    check_tool_installed("ansible-playbook", AnsibleNotFoundError)
 
     cmd = ["ansible-playbook", str(playbook), "--list-tasks"]
     if inventory and inventory.exists():
@@ -99,7 +92,7 @@ def syntax_check(playbook: Path) -> bool:
 
     Returns True if valid, False otherwise.
     """
-    _check_installed("ansible-playbook")
+    check_tool_installed("ansible-playbook", AnsibleNotFoundError)
 
     result = subprocess.run(
         ["ansible-playbook", str(playbook), "--syntax-check"],
@@ -120,7 +113,7 @@ def get_host_group(playbook_path: Path) -> str:
     Returns:
         Host group name (default: 'servers' if not detected)
     """
-    _check_installed("ansible-playbook")
+    check_tool_installed("ansible-playbook", AnsibleNotFoundError)
 
     result = subprocess.run(
         ["ansible-playbook", "--list-hosts", str(playbook_path)],
@@ -205,7 +198,7 @@ def install_requirements(
 
     Note: Caller should check check_roles_installed() first if skip logic needed.
     """
-    _check_installed("ansible-galaxy")
+    check_tool_installed("ansible-galaxy", AnsibleNotFoundError)
 
     log_path: Path | None = None
     log_handle = None
@@ -283,7 +276,7 @@ def run_playbook(
     Returns:
         AnsibleResult with exit code and optional log path
     """
-    _check_installed("ansible-playbook")
+    check_tool_installed("ansible-playbook", AnsibleNotFoundError)
 
     cmd = ["ansible-playbook", playbook, "-i", inventory]
     if check:
