@@ -23,6 +23,9 @@
       - "--exclude=.venv"
       - "--exclude=__pycache__"
       - "--exclude=.git"
+{% for exclude in sync_excludes %}
+      - "--exclude={{ exclude }}"
+{% endfor %}
 
 - name: Build container image
 {% if runtime == 'podman' %}

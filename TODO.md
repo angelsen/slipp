@@ -215,6 +215,44 @@ network/routing it's exposed through.
   lucky coincidence and hard-failed "Could not detect runtime" on any
   `slipp images`/`slipp image push` call. Now persisted explicitly at
   registration time.
+
+  Source template dir renamed `roles/app` → `roles/app-container` (2026-07-07)
+  for symmetry with `roles/app-systemd` — docker and podman share one
+  template set because they're both containers, so naming it by that shared
+  property reads better than leaving one runtime as an unmarked "default".
+  Purely a source-template rename; generated role output is still always
+  `roles/app-{service}/` regardless of runtime.
+
+  **Monorepo sync-exclude bug — found and fixed (2026-07-07).** Discussed
+  applying this to Bulletins' actual repo shape (root = `bulletins-chat`
+  app, `admin/` = `bulletins-admin` app, both under one `slipp launch --dir .
+  --dir admin`) and found the generated sync task had no idea other
+  services or slipp's own generated files lived inside a service's own
+  directory. Two concrete failure modes, both now fixed via
+  `RoleGenerator._compute_sync_excludes()`: a "root is also an app" project
+  would rsync sibling services' full source trees into the wrong deploy
+  target, **and** — this one hits every single-app project too, not just
+  monorepos — would rsync slipp's own generated `playbook.yml`/`roles/`/
+  `inventory.yml`/etc. into `/opt/...` as if they were app source, since
+  `slipp launch` is normally run from the project's own root. Fix computes,
+  per service, which other detected services and which of slipp's own
+  generated top-level paths are nested inside *that* service's own
+  directory (siblings never overlap, so they're left alone) and adds
+  `--exclude=` entries for exactly those. Verified in a termtap pane against
+  both a real two-service monorepo layout and a plain single-service
+  project.
+
+  **Left for later, deliberately not built now:** `package.json`
+  `"workspaces"` auto-detection to suggest `--dir` candidates instead of
+  requiring the user to enumerate every app directory by hand. Scoped the
+  shape but didn't implement: workspace entries aren't automatically
+  "deployable services" (a shared package like `@bulletins/schema` would
+  show up in the array too — still needs the existing scan-and-skip-
+  non-matches behavior, not blind trust), and whether the workspace *root*
+  itself counts as a deployable app (true for Bulletins) or is just a
+  coordinator with no app of its own (common in Turborepo-style repos) isn't
+  inferable from `package.json` alone — needs a flag/prompt, not a silent
+  guess.
 - **Delegate exposure to wg-manage instead of templating Caddy.** Where the
   target host already runs wg-deploy's `wg-manage` (source of truth for
   Caddy via `/etc/wg-services.json`), slipp's `caddy` role should stop

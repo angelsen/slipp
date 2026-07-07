@@ -25,6 +25,9 @@
       - "--exclude=__pycache__"
       - "--exclude=.git"
       - "--exclude=.env.production"
+{% for exclude in sync_excludes %}
+      - "--exclude={{ exclude }}"
+{% endfor %}
 
 - name: Install dependencies
   ansible.builtin.command: npm ci

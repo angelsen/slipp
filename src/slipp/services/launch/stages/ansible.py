@@ -78,7 +78,11 @@ class AppRolesStage(FileGenerationStage):
         for service in context.services:
             try:
                 role_files = role_generator.generate_app_role(
-                    service, context.project_name, runtime
+                    service,
+                    context.project_name,
+                    runtime,
+                    all_services=context.services,
+                    project_root=context.output_dir,
                 )
 
                 for path, content in role_files.items():
