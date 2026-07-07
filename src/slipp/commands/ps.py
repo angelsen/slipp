@@ -35,6 +35,7 @@ def _discover_on_host(
         services = discover_and_enrich(host, include_system=include_system, force=force)
         return (project, services, None)
     except Exception as e:
+        # One unreachable host shouldn't abort discovery of the others.
         return (project, [], str(e))
 
 
@@ -76,6 +77,8 @@ def _discover_all_hosts_parallel(
                 else:
                     all_services.extend(services)
             except Exception as e:
+                # Thread pool surfaces arbitrary errors (e.g. timeout); one
+                # host's failure shouldn't abort discovery of the others.
                 errors.append(f"{project} ({host.ansible_host}): {e}")
 
     return all_services, errors

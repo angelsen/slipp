@@ -50,7 +50,9 @@ class CaddyGenerator:
 
         try:
             # Render all Caddy role files
-            files[Path("roles/caddy/tasks/main.yml")] = self._render_tasks(config)
+            files[Path("roles/caddy/tasks/main.yml")] = self._render_tasks(
+                config, project_name
+            )
             files[Path("roles/caddy/templates/Caddyfile.j2")] = (
                 self._render_main_caddyfile(config, app_domain, admin_email)
             )
@@ -68,10 +70,12 @@ class CaddyGenerator:
                 f"Unexpected error generating Caddy role: {e}"
             ) from e
 
-    def _render_tasks(self, config: CaddyConfig) -> str:
+    def _render_tasks(self, config: CaddyConfig, project_name: str) -> str:
         """Render tasks/main.yml template."""
         template = self.env.get_template("roles/caddy/tasks/main.yml.j2")
-        return template.render(caddy_sites_dir=config.sites_dir)
+        return template.render(
+            caddy_sites_dir=config.sites_dir, project_name=project_name
+        )
 
     def _render_main_caddyfile(
         self, config: CaddyConfig, app_domain: str, admin_email: str

@@ -11,7 +11,6 @@ import typer
 from slipp import output
 from slipp.commands.common import find_service_or_exit, resolve_host_or_exit
 from slipp.models.service import Runtime
-from slipp.services.discovery import ServiceLocator
 from slipp.services.ssh import InteractiveSessionManager, SSHService, UserResolver
 
 
@@ -24,20 +23,7 @@ def ssh_command(
         None, "--user", "-u", help="Override user (e.g., root, postgres)"
     ),
 ):
-    """Open interactive shell on VPS or container service.
-
-    If no service is specified, connects directly to the VPS.
-    If a service is specified, shells into the running container or connects
-    as the service user for systemd services.
-
-    Args:
-        ctx: Typer context (auto-injected).
-        service: Optional service name to shell into.
-        user: Optional override for the target user.
-
-    Exits:
-        1: If host or service cannot be resolved.
-    """
+    """Open interactive shell on VPS or container service."""
     session_manager = InteractiveSessionManager()
     ssh_config = resolve_host_or_exit(service=service, command="ssh")
 
@@ -52,8 +38,7 @@ def ssh_command(
         sys.exit(exit_code)
 
     with SSHService(ssh_config) as ssh:
-        locator = ServiceLocator(ssh_config, include_system=False)
-        svc = find_service_or_exit(locator, service)
+        svc = find_service_or_exit(ssh_config, service, include_system=False)
 
         user_resolver = UserResolver(ssh)
         resolution = user_resolver.resolve_from_runtime(

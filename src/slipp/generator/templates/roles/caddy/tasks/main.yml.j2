@@ -8,7 +8,7 @@
 
 - name: Ensure sites directory exists
   ansible.builtin.file:
-    path: {{ caddy_sites_dir }}
+    path: {{ caddy_sites_dir | tojson }}
     state: directory
     mode: '0755'
 
@@ -17,14 +17,14 @@
     src: Caddyfile.j2
     dest: /etc/caddy/Caddyfile
     mode: '0644'
-  notify: reload caddy
+  notify: Reload caddy
 
 - name: Deploy site configuration
   ansible.builtin.template:
     src: site.caddy.j2
-    dest: "{{ caddy_sites_dir }}/{{ project_name }}.caddy"
+    dest: {{ (caddy_sites_dir ~ "/" ~ project_name ~ ".caddy") | tojson }}
     mode: '0644'
-  notify: reload caddy
+  notify: Reload caddy
 
 - name: Validate complete Caddy configuration
   ansible.builtin.command:
@@ -34,5 +34,5 @@
 - name: Enable and start Caddy
   ansible.builtin.systemd:
     name: caddy
-    enabled: yes
+    enabled: true
     state: started

@@ -3,16 +3,15 @@
 from pathlib import Path
 from typing import Any
 
-import typer
 import yaml
 
 from slipp import output
 from slipp.constants import get_inventory_filename
 from slipp.generator.inventory_generator import InventoryGenerator
 from slipp.models.deployment import DeploymentHostConfig, InventoryConfig
+from slipp.services.launch.stages.common import FileGenerationStage
+from slipp.utils.errors import LaunchError
 from slipp.utils.prompts import get_inventory_config
-
-from .common import FileGenerationStage
 
 
 class InventoryLoadStage:
@@ -78,7 +77,7 @@ class InventoryValidationStage:
             context: Deployment context with loaded inventory config.
 
         Raises:
-            typer.Exit: If required fields are missing.
+            LaunchError: If required fields are missing.
         """
         assert context.inventory_config is not None, (
             "Inventory config must be loaded before validation"
@@ -87,14 +86,16 @@ class InventoryValidationStage:
         first_host = list(context.inventory_config.hosts.values())[0]
 
         if not first_host.app_domain:
-            output.error("Launch command requires app_domain in inventory")
-            output.error("For external projects, use 'slipp deploy -i/-p' instead")
-            raise typer.Exit(1)
+            raise LaunchError(
+                "Launch command requires app_domain in inventory\n"
+                "For external projects, use 'slipp deploy -i/-p' instead"
+            )
 
         if not first_host.admin_email:
-            output.error("Launch command requires admin_email in inventory")
-            output.error("For external projects, use 'slipp deploy -i/-p' instead")
-            raise typer.Exit(1)
+            raise LaunchError(
+                "Launch command requires admin_email in inventory\n"
+                "For external projects, use 'slipp deploy -i/-p' instead"
+            )
 
 
 class InventoryFileStage(FileGenerationStage):

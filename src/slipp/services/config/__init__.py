@@ -9,6 +9,7 @@ from slipp.services.config.local import LocalConfigService
 from slipp.services.config.presets import PresetResolver, parse_preset_args
 from slipp.services.config.resolver import (
     ConfigResolver,
+    ResolvedConfig,
     resolve_project_name,
     resolve_vault_target,
 )
@@ -18,6 +19,7 @@ __all__ = [
     "LocalConfigService",
     "InventoryService",
     "ConfigResolver",
+    "ResolvedConfig",
     "resolve_project_name",
     "resolve_vault_target",
     "PresetResolver",

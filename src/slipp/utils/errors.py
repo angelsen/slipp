@@ -35,8 +35,8 @@ class VaultError(SlippError):
     pass
 
 
-class VaultNotFoundError(VaultError):
-    """Vault file not found."""
+class AnsibleVaultNotInstalledError(VaultError):
+    """The 'ansible-vault' executable is not installed or not on PATH."""
 
     pass
 
@@ -207,5 +207,29 @@ class SourceNotFoundError(SlippError):
 
 class PullTimeoutError(SlippError):
     """Timed out waiting for credentials."""
+
+    pass
+
+
+class LaunchError(SlippError):
+    """Project launch/generation pipeline stage failed."""
+
+    pass
+
+
+class DeployError(SlippError):
+    """Deployment operation failed."""
+
+    pass
+
+
+class BootstrapError(SlippError):
+    """Account/host bootstrap provisioning failed."""
+
+    pass
+
+
+class ImageTransferError(SlippError):
+    """Container image transfer to remote host failed."""
 
     pass

@@ -20,10 +20,10 @@ from typing import Iterator
 import yaml
 
 from slipp.utils.errors import (
+    AnsibleVaultNotInstalledError,
     DuplicateEnvVarError,
     VaultDecryptError,
     VaultError,
-    VaultNotFoundError,
 )
 
 
@@ -43,7 +43,7 @@ _VaultLoader.add_constructor("!vault", _vault_constructor)
 
 def _check_installed() -> None:
     if not shutil.which("ansible-vault"):
-        raise VaultNotFoundError(
+        raise AnsibleVaultNotInstalledError(
             "'ansible-vault' not found. Install with: uv tool install ansible-core"
         )
 
@@ -156,7 +156,7 @@ def encrypt_string(
         Encrypted YAML snippet ready to append to vault file
 
     Raises:
-        VaultNotFoundError: If ansible-vault not installed
+        AnsibleVaultNotInstalledError: If ansible-vault not installed
         VaultError: If encryption fails
 
     Example:

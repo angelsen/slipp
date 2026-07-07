@@ -7,10 +7,9 @@ including file generation with dry-run support and configuration validation.
 from pathlib import Path
 from typing import Any
 
-import typer
-
 from slipp import output
-from slipp.constants import VALID_PROXIES
+from slipp.constants import VALID_CONTAINER_RUNTIMES, VALID_PROXIES
+from slipp.utils.errors import LaunchError
 
 
 class FileGenerationStage:
@@ -65,28 +64,40 @@ class FileGenerationStage:
                     context.generated_files.append(file_path)
 
         except Exception as e:
-            output.error(f"Failed to {self.description.lower()}: {e}")
-            raise typer.Exit(1)
+            raise LaunchError(f"Failed to {self.description.lower()}: {e}") from e
 
 
 class ValidationStage:
-    """Validate proxy choice and set skip_caddy flag."""
+    """Validate proxy choice, container runtime, and set skip_caddy flag."""
 
     def execute(self, context: Any) -> None:
-        """Validate proxy configuration and set caddy skip flag.
+        """Validate proxy and container runtime configuration.
 
         Checks that proxy choice is in VALID_PROXIES list and sets
-        skip_caddy flag to True when proxy is "none".
+        skip_caddy flag to True when proxy is "none". Also validates
+        context.container_runtime when the context carries that field
+        (only DockerfileContext does - contexts with a loaded inventory
+        get their runtime from there instead).
 
         Args:
             context: Stage execution context with proxy setting.
 
         Raises:
-            typer.Exit: If proxy choice is invalid.
+            LaunchError: If proxy or container runtime choice is invalid.
         """
         if context.proxy not in VALID_PROXIES:
-            output.error(f"Invalid proxy: {context.proxy}")
-            output.info(f"Valid options: {', '.join(VALID_PROXIES)}")
-            raise typer.Exit(1)
+            raise LaunchError(
+                f"Invalid proxy: {context.proxy}\n"
+                f"Valid options: {', '.join(VALID_PROXIES)}"
+            )
 
         context.skip_caddy = context.proxy == "none"
+
+        container_runtime = getattr(context, "container_runtime", None)
+        if container_runtime is not None and container_runtime not in (
+            VALID_CONTAINER_RUNTIMES
+        ):
+            raise LaunchError(
+                f"Invalid container runtime: {container_runtime}\n"
+                f"Valid options: {', '.join(VALID_CONTAINER_RUNTIMES)}"
+            )

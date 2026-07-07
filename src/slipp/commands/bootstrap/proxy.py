@@ -1,7 +1,7 @@
 """Setup dev proxy infrastructure for reverse tunneling.
 
 Configures Caddy reverse proxy on a remote host to enable local development
-with remote services via ac run --tunnel-out.
+with remote services via slipp run --tunnel-out.
 """
 
 import typer
@@ -25,7 +25,7 @@ def proxy_command(
         help="Port where existing service listens for HTTPS",
     ),
 ) -> None:
-    """Setup dev proxy infrastructure for ac run --tunnel-out."""
+    """Setup dev proxy infrastructure for slipp run --tunnel-out."""
     try:
         resolver = HostResolver()
         ansible_host = resolver.by_project(host)

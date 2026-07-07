@@ -10,11 +10,7 @@ def remove_command(
     ctx: typer.Context,
     project_name: str = typer.Argument(..., help="Project name to unregister"),
 ):
-    """Unregister a project from the global registry.
-
-    Args:
-        project_name: Name of the project to unregister.
-    """
+    """Unregister a project from the global registry."""
     project_registry = ProjectRegistry()
     removed = project_registry.unregister(project_name)
 

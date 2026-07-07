@@ -12,6 +12,7 @@ from slipp import output
 from slipp.constants import OutputFormat
 from slipp.services.config import ConfigResolver, LocalConfigService
 from slipp.services.registry import ProjectRegistry
+from slipp.utils.errors import InventoryParseError
 
 
 def config_command() -> None:
@@ -52,7 +53,8 @@ def _load_hosts_for_project(project_path: Path) -> list[dict[str, str | int]]:
             }
             for hostname, host in inventory_config.hosts.items()
         ]
-    except Exception:
+    except InventoryParseError:
+        # Unparsable inventory shouldn't block showing the rest of the config
         return []
 
 

@@ -6,10 +6,9 @@ services. Reports detected services or exits if none found.
 
 from typing import Any
 
-import typer
-
 from slipp import output
 from slipp.scanner import scan
+from slipp.utils.errors import LaunchError
 
 
 class ProjectScanStage:
@@ -20,7 +19,7 @@ class ProjectScanStage:
     Express/Next.js), and collects detected services.
 
     Raises:
-        typer.Exit: If no services are detected or scanning fails.
+        LaunchError: If no services are detected or scanning fails.
     """
 
     def execute(self, context: Any) -> None:
@@ -40,8 +39,7 @@ class ProjectScanStage:
                 if service:
                     context.services.append(service)
             except Exception as e:
-                output.error(f"Failed to scan {project_dir}: {e}")
-                raise typer.Exit(1)
+                raise LaunchError(f"Failed to scan {project_dir}: {e}") from e
 
         if not context.services:
             output.warning("No services detected")
@@ -54,7 +52,7 @@ class ProjectScanStage:
                 indent=2,
             )
             output.hint("Ensure your project has package.json or pyproject.toml")
-            raise typer.Exit(1)
+            raise LaunchError("No services detected")
 
         output.success(f"Detected {len(context.services)} service(s):")
         output.list_items(

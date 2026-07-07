@@ -7,9 +7,9 @@ Provides context dataclasses for each slipp launch pipeline:
 - ScaffoldContext: Inventory scaffolding for existing projects
 """
 
-from .base import BaseContext
-from .dockerfile import DockerfileContext
-from .full import FullContext
-from .scaffold import ScaffoldContext
+from slipp.services.launch.context.base import BaseContext
+from slipp.services.launch.context.dockerfile import DockerfileContext
+from slipp.services.launch.context.full import FullContext
+from slipp.services.launch.context.scaffold import ScaffoldContext
 
 __all__ = ["BaseContext", "DockerfileContext", "FullContext", "ScaffoldContext"]

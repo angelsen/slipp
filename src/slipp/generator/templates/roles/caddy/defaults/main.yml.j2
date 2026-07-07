@@ -1,5 +1,5 @@
 ---
 # Caddy role default variables
-caddy_auto_https: {{ caddy_auto_https | default(true) }}
-caddy_sites_dir: {{ caddy_sites_dir | default('/etc/caddy/sites') }}
-caddy_staging: {{ caddy_staging | default(false) }}
+caddy_auto_https: {{ caddy_auto_https | default(true) | tojson }}
+caddy_sites_dir: {{ caddy_sites_dir | default('/etc/caddy/sites') | tojson }}
+caddy_staging: {{ caddy_staging | default(false) | tojson }}

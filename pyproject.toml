@@ -9,7 +9,6 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "aiohttp>=3.13.2",
-    "ansible-runner>=2.4.2",
     "bcrypt>=5.0.0",
     "cryptography>=46.0.3",
     "httpx>=0.28.1",
@@ -19,6 +18,7 @@ dependencies = [
     "pydantic>=2.12.4",
     "python-dotenv>=1.2.1",
     "python-ulid>=3.1.0",
+    "pyyaml>=6.0.3",
     "rich>=14.2.0",
     "rich-pyfiglet>=1.0.0",
     "ruamel-yaml>=0.18.16",
@@ -32,8 +32,11 @@ slipp = "slipp:main"
 requires = ["uv_build>=0.9.7,<0.10.0"]
 build-backend = "uv_build"
 
-[tool.setuptools.package-data]
-slipp = ["playbooks/**/*"]
-
 [tool.basedpyright]
 typeCheckingMode = "standard"
+
+[tool.ruff.lint]
+extend-select = ["TID252"]
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"

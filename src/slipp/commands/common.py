@@ -11,12 +11,9 @@ import typer
 from slipp import output
 from slipp.models.host import AnsibleHost
 from slipp.models.service import Service
-from slipp.services.discovery import ServiceLocator, extract_service_name
-from slipp.utils.errors import (
-    AmbiguousServiceError,
-    HostNotFoundError,
-    ServiceNotFoundError,
-)
+from slipp.services.discovery import discover_and_enrich, filter_services, find_service
+from slipp.utils.errors import AmbiguousServiceError, HostNotFoundError
+from slipp.utils.identifiers import parse_service_identifier
 
 
 def resolve_host_or_exit(
@@ -51,12 +48,15 @@ def resolve_host_or_exit(
         raise typer.Exit(1)
 
 
-def find_service_or_exit(locator: ServiceLocator, identifier: str) -> Service:
-    """Find a service via locator, showing available services and exiting if not found.
+def find_service_or_exit(
+    ssh_config: AnsibleHost, identifier: str, *, include_system: bool = False
+) -> Service:
+    """Find a service on a host, showing available services and exiting if not found.
 
     Args:
-        locator: ServiceLocator bound to the target host
+        ssh_config: Host to discover services on
         identifier: Service identifier to look up
+        include_system: Include system services (systemd-*, getty@, etc.)
 
     Returns:
         Matched Service
@@ -64,14 +64,19 @@ def find_service_or_exit(locator: ServiceLocator, identifier: str) -> Service:
     Raises:
         typer.Exit: If the service is not found
     """
-    try:
-        return locator.find_one(identifier)
-    except ServiceNotFoundError:
-        services = locator.find_many()
+    services = discover_and_enrich(ssh_config, include_system=include_system)
+    filtered = filter_services(services, show_all=include_system)
+
+    service = find_service(filtered, identifier)
+    if not service:
         show_service_not_found_error(
-            identifier, locator.ssh_config.ansible_host, services
+            identifier,
+            ssh_config.ansible_host,
+            filter_services(services, show_all=True),
         )
         raise typer.Exit(1)
+
+    return service
 
 
 def get_project_root(project_name: str) -> Path:
@@ -89,6 +94,26 @@ def get_project_root(project_name: str) -> Path:
     if project:
         return project.project_path
     return Path.cwd()
+
+
+def resolve_runtime(host: str | None) -> tuple[Path, str]:
+    """Resolve project root and detect its container runtime.
+
+    Args:
+        host: Optional project name (defaults to cwd if not given)
+
+    Returns:
+        Tuple of (project_root, runtime)
+
+    Raises:
+        RuntimeDetectionError: If runtime detection fails
+    """
+    from slipp.services.config import RuntimeDetector
+
+    project_root = get_project_root(host) if host else Path.cwd()
+    runtime = RuntimeDetector(project_root).detect()
+
+    return project_root, runtime
 
 
 def display_services_table(
@@ -170,7 +195,7 @@ def show_service_not_found_error(
     """
     from slipp.utils.matching import get_suggestions
 
-    service_name = extract_service_name(service_identifier)
+    service_name, _, _ = parse_service_identifier(service_identifier)
     output.error(f"Service '{service_name}' not found on {host}")
 
     service_names = [s.name for s in available_services]

@@ -10,7 +10,6 @@ import typer
 
 from slipp import output
 from slipp.commands.common import find_service_or_exit, resolve_host_or_exit
-from slipp.services.discovery import ServiceLocator
 from slipp.services.ssh import SSHService
 
 
@@ -21,49 +20,39 @@ def status_command(
     """Display detailed service status (like systemctl status)."""
     ssh_config = resolve_host_or_exit(service=service, command="status")
 
-    locator = ServiceLocator(ssh_config, include_system=True)
-    target_service = find_service_or_exit(locator, service)
+    target_service = find_service_or_exit(ssh_config, service, include_system=True)
 
     output.task(f"Status for {target_service.name}@{target_service.host}")
 
     with SSHService(ssh_config) as ssh:
-        try:
-            cmd_output = ssh.execute(
-                f"sudo systemctl status {target_service.unit_name}"
-            )
-            details = _parse_systemctl_status(cmd_output)
+        cmd_output = ssh.execute(f"sudo systemctl status {target_service.unit_name}")
+        details = _parse_systemctl_status(cmd_output)
 
-            output.stdout(f"Service: {target_service.name}")
-            output.stdout(f"Unit: {target_service.unit_name}")
-            output.stdout(f"Runtime: {target_service.runtime}")
-            output.stdout(f"State: {target_service.state}")
+        output.stdout(f"Service: {target_service.name}")
+        output.stdout(f"Unit: {target_service.unit_name}")
+        output.stdout(f"Runtime: {target_service.runtime}")
+        output.stdout(f"State: {target_service.state}")
 
-            if details.get("loaded"):
-                output.stdout(f"Loaded: {details['loaded']}")
-            if details.get("active"):
-                output.stdout(f"Active: {details['active']}")
-            if details.get("pid"):
-                output.stdout(f"Main PID: {details['pid']}")
-            if details.get("memory"):
-                output.stdout(f"Memory: {details['memory']}")
-            if details.get("tasks"):
-                output.stdout(f"Tasks: {details['tasks']}")
+        if details.get("loaded"):
+            output.stdout(f"Loaded: {details['loaded']}")
+        if details.get("active"):
+            output.stdout(f"Active: {details['active']}")
+        if details.get("pid"):
+            output.stdout(f"Main PID: {details['pid']}")
+        if details.get("memory"):
+            output.stdout(f"Memory: {details['memory']}")
+        if details.get("tasks"):
+            output.stdout(f"Tasks: {details['tasks']}")
 
-            output.blank()
-            output.task("Recent logs")
+        output.blank()
+        output.task("Recent logs")
 
-            log_lines = _extract_log_lines(cmd_output)
-            for line in log_lines[-10:]:
-                output.stdout(line)
+        log_lines = _extract_log_lines(cmd_output)
+        for line in log_lines[-10:]:
+            output.stdout(line)
 
-            output.blank()
-            output.hint(
-                f"Tip: Use 'slipp logs {target_service.name} -f' to follow logs"
-            )
-
-        except Exception as e:
-            output.error(f"Failed to get status: {e}")
-            raise typer.Exit(1)
+        output.blank()
+        output.hint(f"Tip: Use 'slipp logs {target_service.name} -f' to follow logs")
 
 
 def _parse_systemctl_status(output_text: str) -> dict:

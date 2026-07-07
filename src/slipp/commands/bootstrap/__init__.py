@@ -6,9 +6,9 @@ including account setup and development proxy installation.
 
 import typer
 
-from .account import account_command
-from .proxy import proxy_command
-from .registry import registry_app
+from slipp.commands.bootstrap.account import account_command
+from slipp.commands.bootstrap.proxy import proxy_command
+from slipp.commands.bootstrap.registry import registry_app
 
 bootstrap_app = typer.Typer(name="bootstrap", help="VPS bootstrap operations")
 bootstrap_app.command(name="account")(account_command)

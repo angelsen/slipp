@@ -4,8 +4,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from slipp.models.deployment import DetectedService, InventoryConfig, ProvisionConfig
-
-from .base import BaseContext
+from slipp.services.launch.context.base import BaseContext
 
 
 @dataclass

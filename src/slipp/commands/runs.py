@@ -40,7 +40,7 @@ def list_profiles() -> None:
         return
 
     output.blank()
-    output.stdout("Saved profiles:")
+    output.task("Saved profiles")
     output.blank()
 
     for name, profile in profiles.items():

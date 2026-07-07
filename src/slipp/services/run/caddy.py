@@ -42,6 +42,39 @@ def _domain_to_route_id(domain: str) -> str:
     return f"dev-{safe_name}"
 
 
+def _push_route(host: AnsibleHost, route_config: dict, error_prefix: str) -> None:
+    """Prepend a route to Caddy's config via the admin API.
+
+    Args:
+        host: Remote host running Caddy
+        route_config: Caddy route object to prepend
+        error_prefix: Message prefix used if the push fails
+
+    Raises:
+        CaddyProxyError: If the route push fails
+    """
+    route_json = json.dumps(route_config)
+
+    add_cmd = (
+        f"curl -sf http://localhost:2019/config/apps/http/servers/srv1/routes | "
+        f"jq '[{route_json}] + .' | "
+        f"curl -sf -X PATCH 'http://localhost:2019/config/apps/http/servers/srv1/routes' "
+        f"-H 'Content-Type: application/json' -d @-"
+    )
+
+    try:
+        with SSHService(host) as ssh:
+            result = ssh.execute(add_cmd)
+
+            if result and "error" in result.lower():
+                raise CaddyProxyError(f"{error_prefix}: {result}")
+
+    except CaddyProxyError:
+        raise
+    except Exception as e:
+        raise CaddyProxyError(f"{error_prefix}: {e}") from e
+
+
 def _get_playbook_path() -> Path:
     """Get path to bundled caddy-dev playbook.
 
@@ -242,28 +275,11 @@ class CaddyProxy:
             "terminal": True,
         }
 
-        route_json = json.dumps(route_config)
-
-        add_cmd = (
-            f"curl -sf http://localhost:2019/config/apps/http/servers/srv1/routes | "
-            f"jq '[{route_json}] + .' | "
-            f"curl -sf -X PATCH 'http://localhost:2019/config/apps/http/servers/srv1/routes' "
-            f"-H 'Content-Type: application/json' -d @-"
+        _push_route(
+            self.host,
+            route_config,
+            f"Failed to add proxy route for {from_domain}{from_path}",
         )
-
-        try:
-            with SSHService(self.host) as ssh:
-                result = ssh.execute(add_cmd)
-
-                if result and "error" in result.lower():
-                    raise CaddyProxyError(f"Failed to add proxy route: {result}")
-
-        except CaddyProxyError:
-            raise
-        except Exception as e:
-            raise CaddyProxyError(
-                f"Failed to add proxy route for {from_domain}{from_path}: {e}"
-            ) from e
 
         self.route_ids.append(route_id)
         return route_id
@@ -322,26 +338,7 @@ class CaddyProxy:
         }
 
         # Prepend to routes so dev routes match before fallback (first match wins)
-        route_json = json.dumps(route_config)
-
-        add_cmd = (
-            f"curl -sf http://localhost:2019/config/apps/http/servers/srv1/routes | "
-            f"jq '[{route_json}] + .' | "
-            f"curl -sf -X PATCH 'http://localhost:2019/config/apps/http/servers/srv1/routes' "
-            f"-H 'Content-Type: application/json' -d @-"
-        )
-
-        try:
-            with SSHService(self.host) as ssh:
-                result = ssh.execute(add_cmd)
-
-                if result and "error" in result.lower():
-                    raise CaddyProxyError(f"Failed to add route: {result}")
-
-        except CaddyProxyError:
-            raise
-        except Exception as e:
-            raise CaddyProxyError(f"Failed to add route for {domain}: {e}") from e
+        _push_route(self.host, route_config, f"Failed to add route for {domain}")
 
         self.route_ids.append(route_id)
         return route_id

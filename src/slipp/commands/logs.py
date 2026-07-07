@@ -5,7 +5,6 @@ import typer
 from slipp import output
 from slipp.commands.common import find_service_or_exit, resolve_host_or_exit
 from slipp.models.service import Runtime
-from slipp.services.discovery import ServiceLocator
 from slipp.services.ssh import SSHService
 
 
@@ -20,25 +19,12 @@ def logs_command(
         False, "--all", help="Include system services in discovery"
     ),
 ):
-    """View service logs (journalctl or podman/docker logs).
-
-    Fetches logs from either journalctl (systemd-managed) or container
-    runtime (docker/podman). Supports following output with --follow.
-
-    Args:
-        ctx: Typer context.
-        service: Service name to fetch logs for (e.g., synapse or synapse@matrix).
-        follow: If True, continuously stream new log lines.
-        lines: Number of historical log lines to display.
-        all_services: If True, include system services in discovery.
-
-    Raises:
-        typer.Exit: On resolution errors or service not found.
-    """
+    """View service logs (journalctl or podman/docker logs)."""
     ssh_config = resolve_host_or_exit(service=service, command="logs")
 
-    locator = ServiceLocator(ssh_config, include_system=all_services)
-    target_service = find_service_or_exit(locator, service)
+    target_service = find_service_or_exit(
+        ssh_config, service, include_system=all_services
+    )
 
     if Runtime(target_service.runtime).is_container() and not target_service.unit_name:
         cmd = f"sudo {target_service.runtime} logs --tail={lines}"
@@ -57,10 +43,10 @@ def logs_command(
         try:
             if follow:
                 for line in ssh.execute_stream(cmd):
-                    print(line)
+                    output.stdout(line)
             else:
                 log_output = ssh.execute(cmd)
-                print(log_output)
+                output.stdout(log_output)
         except KeyboardInterrupt:
             output.success("Stopped following logs")
             raise typer.Exit(0)

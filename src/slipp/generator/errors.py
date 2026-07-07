@@ -1,7 +1,9 @@
 """Custom exceptions for template generator."""
 
+from slipp.utils.errors import SlippError
 
-class GeneratorError(Exception):
+
+class GeneratorError(SlippError):
     """Base exception for generator module."""
 
     pass

@@ -1,31 +1,26 @@
 """Execute Ansible playbooks to deploy services and manage infrastructure."""
 
 from pathlib import Path
-from typing import Any
 
 import typer
 
 from slipp import output
-from slipp.constants import DEFAULT_ENV
+from slipp.constants import DEFAULT_ENV, DEFAULT_GALAXY_PATH
 from slipp.output import format_path
-from slipp.services.ansible import (
-    install_requirements,
-    parse_playbook_progress,
-    run_playbook,
-)
 from slipp.services.config import (
     ConfigResolver,
     LocalConfigService,
-    PresetResolver,
-    parse_preset_args,
     resolve_project_name,
 )
-from slipp.services.registry import ProjectRegistry
-from slipp.services.vault import (
-    has_vault_content,
-    vault_password_file as get_vault_password_file,
+from slipp.services.deploy import (
+    ensure_local_config,
+    execute_playbook,
+    install_galaxy_requirements,
+    persist_config_updates,
+    register_project,
+    resolve_environment_and_tags,
+    validate_deploy_files,
 )
-from slipp.utils.errors import ConfigParseError
 
 
 def deploy_command(
@@ -73,67 +68,14 @@ def deploy_command(
         None, "--skip-tags", help="Ansible tags to skip (comma-separated)"
     ),
 ):
-    """Execute ansible-playbook to deploy services and manage infrastructure.
-
-    Supports tag presets, vault encryption, role installation, and dry-run mode.
-    """
+    """Execute ansible-playbook to deploy services and manage infrastructure."""
     if name and inventory:
-        project_root = Path.cwd()
-        inventory_path = Path(inventory)
-
-        if not inventory_path.exists():
-            output.error(
-                f"Inventory file not found: {format_path(inventory_path, project_root)}"
-            )
-            raise typer.Exit(1)
-
-        try:
-            if LocalConfigService.exists(project_root):
-                LocalConfigService.update(
-                    {"name": name, "inventory": inventory},
-                    project_root=project_root,
-                )
-                output.info(f"Updated slipp.yaml with name '{name}'")
-            else:
-                LocalConfigService.create(
-                    name=name,
-                    inventory_path=inventory,
-                    playbook_path=playbook or "playbook.yml",
-                    roles_path=roles if roles else None,
-                    vault_path=vault,
-                    project_root=project_root,
-                )
-                output.info(f"Created slipp.yaml with name '{name}'")
-        except Exception as e:
-            output.error(f"Failed to create config: {e}")
-            raise typer.Exit(1)
+        ensure_local_config(name, inventory, playbook, roles, vault, Path.cwd())
 
     project_name = resolve_project_name(cli_name=name)
-
-    preset_resolver = PresetResolver()
-    presets = preset_resolver.list_presets()
-
-    if preset:
-        environment = target
-        if preset not in presets:
-            output.error(f"Preset '{preset}' not found")
-            if presets:
-                output.hint(f"Available presets: {', '.join(presets.keys())}")
-            raise typer.Exit(1)
-        preset_tags, preset_skip_tags = parse_preset_args(presets[preset])
-        output.info(f"Using preset '{preset}': {presets[preset]}")
-    elif target != DEFAULT_ENV and target in presets:
-        environment = DEFAULT_ENV
-        preset_tags, preset_skip_tags = parse_preset_args(presets[target])
-        output.info(f"Using preset '{target}': {presets[target]}")
-    else:
-        environment = target
-        preset_tags, preset_skip_tags = None, None
-
-    if preset_tags and not tags:
-        tags = preset_tags
-    if preset_skip_tags and not skip_tags:
-        skip_tags = preset_skip_tags
+    environment, resolved_tags, resolved_skip_tags = resolve_environment_and_tags(
+        target, preset, tags, skip_tags
+    )
 
     resolver = ConfigResolver()
     roles_list = roles if roles else None
@@ -149,118 +91,34 @@ def deploy_command(
     playbook_file = str(config.playbook)
     roles_paths = [str(r) for r in config.roles_path]
 
-    galaxy_path = galaxy_path_flag or (
-        str(config.galaxy_path) if config.galaxy_path else None
+    galaxy_path = (
+        galaxy_path_flag
+        or (str(config.galaxy_path) if config.galaxy_path else None)
+        or DEFAULT_GALAXY_PATH
     )
-
-    if galaxy_path and galaxy_path not in roles_paths:
+    if galaxy_path not in roles_paths:
         roles_paths.append(galaxy_path)
 
-    project_root = resolver.project_root
-    if not inventory and config.inventory_source == "local":
-        output.info(
-            f"Using inventory from slipp.yaml: {format_path(inventory_file, project_root)}"
-        )
-    if not playbook and config.playbook_source == "local":
-        output.info(
-            f"Using playbook from slipp.yaml: {format_path(playbook_file, project_root)}"
-        )
-
-    if not Path(inventory_file).exists():
-        output.error(
-            f"Inventory file not found: {format_path(inventory_file, project_root)}"
-        )
-        if not resolver.has_local_config:
-            output.hint(
-                "Run 'slipp projects add <name> -i <inventory>' to configure project"
-            )
-        raise typer.Exit(1)
-
-    if not Path(playbook_file).exists():
-        output.error(
-            f"Playbook file not found: {format_path(playbook_file, project_root)}"
-        )
-        raise typer.Exit(1)
-
-    inventory_dir = Path(inventory_file).parent
-    needs_vault_password = has_vault_content(inventory_dir)
-
-    vault_file: str | None = None
-    if config.vault:
-        vault_path = config.vault
-        if vault_path.exists():
-            vault_file = str(vault_path)
-            needs_vault_password = True
-        else:
-            output.warning(
-                f"Vault file not found: {format_path(vault_path, project_root)}"
-            )
+    needs_vault_password, vault_file = validate_deploy_files(
+        config, resolver, inventory, playbook
+    )
 
     log_dir = output.get_log_dir()
-    reqs_file = requirements or "requirements.yml"
-    if Path(reqs_file).exists():
-        if not galaxy_path:
-            output.error("galaxy_path required when requirements.yml exists")
-            output.hint("Use: --galaxy-path roles/galaxy")
-            raise typer.Exit(1)
+    install_galaxy_requirements(requirements, galaxy_path, force_requirements, log_dir)
 
-        galaxy_dir = Path(galaxy_path)
-        if not force_requirements and galaxy_dir.exists() and any(galaxy_dir.iterdir()):
-            output.info(f"Roles already installed in {galaxy_path}")
-        else:
-            with output.spinner("Installing requirements") as update:
-                result = install_requirements(
-                    reqs_file,
-                    galaxy_path,
-                    log_dir=log_dir,
-                    force=force_requirements,
-                    on_progress=update,
-                )
-            if result.exit_code == 0:
-                output.success("Installing requirements")
-            else:
-                output.error("Installing requirements failed")
-                if result.log_path:
-                    output.hint(f"See log: {result.log_path}")
-                raise typer.Exit(1)
+    result = execute_playbook(
+        playbook_file,
+        inventory_file,
+        dry_run=dry_run,
+        vault_file=vault_file,
+        needs_vault_password=needs_vault_password,
+        tags=resolved_tags,
+        skip_tags=resolved_skip_tags,
+        roles_paths=roles_paths,
+        log_dir=log_dir,
+    )
 
-    # Collect vault password BEFORE starting spinner (prompt needs clean terminal)
-    vault_pw_context = None
-    vault_pw_file = None
-    if needs_vault_password:
-        vault_pw_context = get_vault_password_file(confirm=False)
-        vault_pw_file = vault_pw_context.__enter__()
-
-    try:
-        with output.spinner("Running playbook", spinner_type="earth") as update:
-
-            def on_progress(line: str) -> None:
-                label = parse_playbook_progress(line)
-                if label:
-                    update(label[:60])
-
-            result = run_playbook(
-                playbook_file,
-                inventory_file,
-                check=dry_run,
-                vault_file=vault_file,
-                vault_password_file=vault_pw_file,
-                tags=tags,
-                skip_tags=skip_tags,
-                roles_path=roles_paths if roles_paths else None,
-                log_dir=log_dir,
-                on_progress=on_progress,
-            )
-        returncode = result.exit_code
-        if returncode != 0:
-            output.error("Running playbook failed")
-            if result.log_path:
-                output.hint(f"See log: {result.log_path}")
-    finally:
-        if vault_pw_context:
-            vault_pw_context.__exit__(None, None, None)
-
-    if returncode == 0:
+    if result.exit_code == 0:
         output.success_animation("Deploy completed")
 
         if (
@@ -268,36 +126,12 @@ def deploy_command(
             and not dry_run
             and not name
         ):
-            changes: dict[str, Any] = {}
-            if inventory:
-                changes["inventory"] = inventory
-            if playbook:
-                changes["playbook"] = playbook
-            if roles_list:
-                merged_roles = list(roles_list)
-                if galaxy_path_flag and galaxy_path_flag not in merged_roles:
-                    merged_roles.append(galaxy_path_flag)
-                changes["roles_path"] = merged_roles
-            if galaxy_path_flag:
-                changes["galaxy_path"] = galaxy_path_flag
-            if vault:
-                changes["vault"] = vault
+            persist_config_updates(
+                inventory, playbook, roles_list, galaxy_path_flag, vault
+            )
 
-            try:
-                LocalConfigService.update(changes)
-                output.info("Updated slipp.yaml")
-            except ConfigParseError:
-                output.warning("Config flags ignored - no slipp.yaml exists")
-                output.hint(
-                    "Use --name to create config: slipp deploy --name <name> -i <inventory>"
-                )
-
-        try:
-            ProjectRegistry().register(name=project_name, project_path=Path.cwd())
-        except Exception:
-            pass
-
+        register_project(project_name)
         LocalConfigService.ensure_logs_gitignore()
     else:
-        output.hint(f"Review log: {format_path(log_dir, project_root)}")
-        raise typer.Exit(returncode)
+        output.hint(f"Review log: {format_path(log_dir, resolver.project_root)}")
+        raise typer.Exit(result.exit_code)

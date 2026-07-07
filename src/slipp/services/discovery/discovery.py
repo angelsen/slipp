@@ -2,8 +2,7 @@
 
 Provides low-level systemctl querying with caching (DiscoveryService) and
 business logic functions for filtering, lookup, and discovery pipeline.
-These are the single source of truth for service discovery logic used by
-both ServiceLocator and commands.
+These are the single source of truth for service discovery logic used by commands.
 """
 
 from slipp.models.host import AnsibleHost
@@ -28,14 +27,11 @@ class DiscoveryService:
         ...     print(f"{service.name}: {service.state}")
     """
 
-    def __init__(self, cache_ttl: int = 300):
-        """Initialize discovery service.
+    CACHE_TTL_SECONDS = 300
 
-        Args:
-            cache_ttl: Cache TTL in seconds (default: 300 = 5 minutes)
-        """
+    def __init__(self):
+        """Initialize discovery service."""
         self.cache = Cache()
-        self.cache_ttl = cache_ttl
 
     def discover(
         self,
@@ -59,23 +55,19 @@ class DiscoveryService:
         """
         cache_key = f"services:{host_config.ansible_host}"
 
+        services = None
         if not force:
             cached = self.cache.get(cache_key)
             if cached:
                 services = [Service.model_validate(svc) for svc in cached]
 
-                if not include_system:
-                    services = self._filter_system_services(services)
-
-                return services
-
-        services = self._query_systemctl_batch(host_config)
-
-        self.cache.set(
-            cache_key,
-            [svc.model_dump() for svc in services],
-            ttl_seconds=self.cache_ttl,
-        )
+        if services is None:
+            services = self._query_systemctl_batch(host_config)
+            self.cache.set(
+                cache_key,
+                [svc.model_dump() for svc in services],
+                ttl_seconds=self.CACHE_TTL_SECONDS,
+            )
 
         if not include_system:
             services = self._filter_system_services(services)
@@ -485,32 +477,6 @@ def filter_services(
         result = [s for s in result if s.projects]
 
     return result
-
-
-def extract_service_name(service_identifier: str) -> str:
-    """Extract bare service name from identifier.
-
-    Handles three syntax patterns:
-    1. Simple: "service" → "service"
-    2. Host-qualified: "service@host" → "service"
-    3. Project-qualified: "project:service" → "service"
-
-    Args:
-        service_identifier: Service identifier in one of the supported formats
-
-    Returns:
-        Bare service name without qualifiers
-
-    Example:
-        >>> extract_service_name("poc-backend")
-        'poc-backend'
-        >>> extract_service_name("poc-backend@production")
-        'poc-backend'
-        >>> extract_service_name("PoC:poc-backend")
-        'poc-backend'
-    """
-    service_name, _, _ = parse_service_identifier(service_identifier)
-    return service_name
 
 
 def find_service(

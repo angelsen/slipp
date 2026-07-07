@@ -4,7 +4,7 @@ from pathlib import Path
 
 from slipp.services.ansible import run_list_tasks
 from slipp.services.config.local import LocalConfigService
-from slipp.utils.errors import AnsibleError
+from slipp.utils.errors import AnsibleError, SlippError
 
 
 class RuntimeDetector:
@@ -86,7 +86,7 @@ class RuntimeDetector:
             return None
 
 
-class RuntimeDetectionError(Exception):
+class RuntimeDetectionError(SlippError):
     """Container runtime could not be determined."""
 
     pass

@@ -13,6 +13,7 @@ from slipp import output
 from slipp.output import format_path
 from slipp.services.config import LocalConfigService
 from slipp.services.registry import ProjectRegistry
+from slipp.utils.errors import ConfigError
 
 INVENTORY_PATTERNS = ["inventory/hosts", "inventory.yml", "hosts"]
 PLAYBOOK_PATTERNS = ["playbook.yml", "site.yml", "main.yml"]
@@ -124,14 +125,12 @@ def add_command(
             project_root=project_root,
         )
     except Exception as e:
-        output.error(f"Failed to create config: {e}")
-        raise typer.Exit(1)
+        raise ConfigError(f"Failed to create config: {e}") from e
 
     try:
         ProjectRegistry().register(name=name, project_path=project_root)
     except Exception as e:
-        output.error(f"Failed to register project: {e}")
-        raise typer.Exit(1)
+        raise ConfigError(f"Failed to register project: {e}") from e
 
     output.success(f"Registered '{name}'")
     output.kv("inventory", inventory_rel, indent=1)

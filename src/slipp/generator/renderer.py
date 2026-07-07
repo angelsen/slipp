@@ -3,7 +3,7 @@
 import re
 from typing import Any
 
-from jinja2 import Environment, TemplateError
+from jinja2 import Environment, StrictUndefined, TemplateError
 
 from slipp.generator.errors import TemplateRenderError
 
@@ -37,6 +37,7 @@ class GoTemplateRenderer:
             comment_end_string="#}",
             trim_blocks=True,  # Remove newline after block
             lstrip_blocks=True,  # Remove leading whitespace before block
+            undefined=StrictUndefined,
         )
 
     def render(self, template_content: str, variables: dict[str, Any]) -> str:

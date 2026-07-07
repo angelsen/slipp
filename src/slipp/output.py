@@ -38,16 +38,14 @@ Usage:
             update(line.strip()[:60])
 
     # User input
-    if output.confirm("Continue?", default=True):
-        proceed()
     name = output.prompt("Enter name", default="default")
 
 Available Primitives:
     Data (stdout): stdout
     UI (stderr): success, error, info, warning, task, hint, blank
     Display (stderr): kv, bullet, table, list_items, group, suggestions
-    Progress (stderr): status, spinner, progress
-    Input: confirm, prompt
+    Progress (stderr): status, spinner
+    Input: prompt, prompt_password
     Logging: get_log_dir
     Format: set_output_format, get_output_format
     Path: format_path
@@ -175,15 +173,8 @@ def bullet(msg: str, indent: int = 0) -> None:
     _print_ui(f"{prefix}• {msg}")
 
 
-def progress(current: int, total: int, label: str = "") -> None:
-    """Write progress fraction to stderr."""
-    pct = (current / total * 100) if total > 0 else 0
-    msg = f"{label} " if label else ""
-    _err_console.print(f"{msg}[{current}/{total}] {pct:.0f}%", end="\r")
-
-
 def table(rows: list[dict[str, Any]]) -> None:
-    """Display formatted table with auto-alignment.
+    """Display rows as a table, or as JSON when output format is json.
 
     Headers are uppercase. Numbers are right-aligned, text is left-aligned.
     Empty list produces no output.
@@ -192,6 +183,12 @@ def table(rows: list[dict[str, Any]]) -> None:
         rows: List of dicts where each dict is a row.
     """
     if not rows:
+        return
+
+    if _output_format == OutputFormat.json:
+        import json
+
+        stdout(json.dumps(rows, indent=2))
         return
 
     tbl = Table(
@@ -394,21 +391,6 @@ def format_path(path: Path | str, project_root: Path | None = None) -> str:
         except ValueError:
             pass  # Path not under project_root
     return str(path_obj)
-
-
-def confirm(question: str, default: bool = True) -> bool:
-    """Yes/no confirmation.
-
-    Args:
-        question: Question to ask user
-        default: Default answer (True = yes, False = no)
-
-    Returns:
-        User's response as boolean
-    """
-    import typer
-
-    return typer.confirm(question, default=default)
 
 
 def prompt(question: str, default: str | None = None) -> str:

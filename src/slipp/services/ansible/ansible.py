@@ -8,7 +8,7 @@ import subprocess
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import IO, Any, Callable
 
 from slipp.utils.errors import AnsibleError, AnsibleNotFoundError
 
@@ -154,6 +154,31 @@ def check_roles_installed(roles_path: str) -> bool:
     return roles_dir.exists() and any(roles_dir.iterdir())
 
 
+def _run_galaxy_command(
+    cmd: list[str],
+    env: dict[str, str],
+    log_handle: IO[str] | None,
+    on_progress: ProgressCallback | None,
+) -> int:
+    """Run one ansible-galaxy subprocess, streaming output to log/progress."""
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        env=env,
+    )
+
+    assert proc.stdout is not None
+    for line in proc.stdout:
+        if log_handle:
+            log_handle.write(line)
+        if on_progress:
+            on_progress(line.strip().removeprefix("- ")[:60])
+
+    return proc.wait()
+
+
 def install_requirements(
     requirements_file: str,
     roles_path: str = "roles",
@@ -161,32 +186,26 @@ def install_requirements(
     force: bool = False,
     on_progress: ProgressCallback | None = None,
 ) -> AnsibleResult:
-    """Run ansible-galaxy install, return result.
+    """Install roles and collections from requirements.yml via ansible-galaxy.
+
+    Runs two steps: `ansible-galaxy role install` (installed to roles_path)
+    and `ansible-galaxy collection install` (installed to the default
+    collections path). The collection step is a no-op if requirements_file
+    has no `collections:` block.
 
     Args:
         requirements_file: Path to requirements.yml file
         roles_path: Directory to install roles (default: roles/)
         log_dir: Directory for log file (optional)
-        force: Force reinstall even if roles exist
+        force: Force reinstall even if roles/collections exist
         on_progress: Optional callback for progress updates
 
     Returns:
-        AnsibleResult with exit code and optional log path
+        AnsibleResult with exit code (first non-zero step wins) and log path
 
     Note: Caller should check check_roles_installed() first if skip logic needed.
     """
     _check_installed("ansible-galaxy")
-
-    cmd = [
-        "ansible-galaxy",
-        "role",
-        "install",
-        "-r",
-        requirements_file,
-        "-p",
-        roles_path,
-        "--force",
-    ]
 
     log_path: Path | None = None
     log_handle = None
@@ -199,23 +218,33 @@ def install_requirements(
     env = os.environ.copy()
     env["PYTHONUNBUFFERED"] = "1"
 
-    proc = subprocess.Popen(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        env=env,
-    )
-
     try:
-        assert proc.stdout is not None
-        for line in proc.stdout:
-            if log_handle:
-                log_handle.write(line)
-            if on_progress:
-                on_progress(line.strip().removeprefix("- ")[:60])
+        roles_cmd = [
+            "ansible-galaxy",
+            "role",
+            "install",
+            "-r",
+            requirements_file,
+            "-p",
+            roles_path,
+            "--force",
+        ]
+        exit_code = _run_galaxy_command(roles_cmd, env, log_handle, on_progress)
 
-        exit_code = proc.wait()
+        if exit_code == 0:
+            collections_cmd = [
+                "ansible-galaxy",
+                "collection",
+                "install",
+                "-r",
+                requirements_file,
+            ]
+            if force:
+                collections_cmd.append("--force")
+            exit_code = _run_galaxy_command(
+                collections_cmd, env, log_handle, on_progress
+            )
+
         return AnsibleResult(exit_code=exit_code, log_path=log_path)
 
     finally:

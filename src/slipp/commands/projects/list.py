@@ -1,6 +1,6 @@
 """List all registered projects with their hosts and paths.
 
-Displays projects in table format by default or JSON with --json.
+Displays projects in table format by default or JSON with -o json.
 Loads host details from each project's inventory on-demand.
 """
 
@@ -12,6 +12,7 @@ import typer
 from slipp import output
 from slipp.constants import OutputFormat
 from slipp.services.registry import ProjectRegistry
+from slipp.utils.errors import InventoryParseError
 
 
 def _load_hosts_for_project(project_path: Path) -> list[dict[str, str | int]]:
@@ -37,7 +38,8 @@ def _load_hosts_for_project(project_path: Path) -> list[dict[str, str | int]]:
             }
             for hostname, host in inventory_config.hosts.items()
         ]
-    except Exception:
+    except InventoryParseError:
+        # Unparsable inventory shouldn't block listing the rest of the projects
         return []
 
 
@@ -53,18 +55,20 @@ def list_command(
         output.hint("Deploy a project with 'slipp deploy' to register it automatically")
         return
 
+    projects_with_hosts = [
+        (p, _load_hosts_for_project(p.project_path)) for p in projects
+    ]
+
     if output.get_output_format() == OutputFormat.json:
-        data = []
-        for p in projects:
-            hosts = _load_hosts_for_project(p.project_path)
-            data.append(
-                {
-                    "name": p.name,
-                    "hosts": hosts,
-                    "project_path": str(p.project_path),
-                    "registered_at": p.registered_at.isoformat(),
-                }
-            )
+        data = [
+            {
+                "name": p.name,
+                "hosts": hosts,
+                "project_path": str(p.project_path),
+                "registered_at": p.registered_at.isoformat(),
+            }
+            for p, hosts in projects_with_hosts
+        ]
         output.stdout(json.dumps(data, indent=2))
     else:
         output.blank()
@@ -73,8 +77,7 @@ def list_command(
 
         rows: list[dict[str, str]] = []
         total_hosts = 0
-        for p in projects:
-            hosts = _load_hosts_for_project(p.project_path)
+        for p, hosts in projects_with_hosts:
             total_hosts += len(hosts)
 
             if hosts:

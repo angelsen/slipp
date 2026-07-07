@@ -10,7 +10,7 @@ from enum import Enum
 class OutputFormat(str, Enum):
     """Output format for CLI commands.
 
-    Used as global option: ac -o json ps
+    Used as global option: slipp -o json ps
     """
 
     table = "table"
@@ -18,6 +18,8 @@ class OutputFormat(str, Enum):
 
 
 DEFAULT_ENV = "production"
+
+DEFAULT_GALAXY_PATH = "roles/galaxy"
 
 
 def get_inventory_filename(environment: str) -> str:
@@ -54,3 +56,6 @@ DEFAULT_SSH_PORT = 22
 DEFAULT_SSH_USER = "root"
 
 VALID_PROXIES = ["caddy", "none"]
+
+VALID_CONTAINER_RUNTIMES = ["docker", "podman"]
+DEFAULT_CONTAINER_RUNTIME = "docker"

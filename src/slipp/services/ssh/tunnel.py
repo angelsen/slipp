@@ -123,6 +123,50 @@ def is_port_in_use(port: int) -> bool:
         return s.connect_ex(("localhost", port)) == 0
 
 
+def _spawn_ssh_tunnel(
+    forward_args: list[str], host: AnsibleHost, error_context: str
+) -> subprocess.Popen[bytes]:
+    """Spawn a background SSH tunnel process and verify it started.
+
+    Args:
+        forward_args: SSH forwarding flags (e.g. ["-R", "5173:localhost:5173"])
+        host: Remote host to tunnel to
+        error_context: Description prefixed to the error if the tunnel fails to start
+
+    Returns:
+        The spawned subprocess
+
+    Raises:
+        TunnelError: If the tunnel process exits immediately
+    """
+    cmd = [
+        "ssh",
+        *forward_args,
+        "-N",
+        "-o",
+        "ExitOnForwardFailure=yes",
+        "-o",
+        "ServerAliveInterval=30",
+        f"{host.ansible_user}@{host.ansible_host}",
+    ]
+
+    if host.ansible_port != 22:
+        cmd.extend(["-p", str(host.ansible_port)])
+
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+    time.sleep(1.5)
+    if proc.poll() is not None:
+        stderr = proc.stderr.read().decode() if proc.stderr else ""
+        raise TunnelError(f"{error_context}\n{stderr}")
+
+    return proc
+
+
 class TunnelManager:
     """Manages SSH tunnel processes.
 
@@ -145,35 +189,11 @@ class TunnelManager:
         Raises:
             TunnelError: If tunnel fails to start
         """
-        cmd = [
-            "ssh",
-            "-R",
-            f"{local_port}:localhost:{local_port}",
-            "-N",
-            "-o",
-            "ExitOnForwardFailure=yes",
-            "-o",
-            "ServerAliveInterval=30",
-            f"{host.ansible_user}@{host.ansible_host}",
-        ]
-
-        if host.ansible_port != 22:
-            cmd.extend(["-p", str(host.ansible_port)])
-
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+        proc = _spawn_ssh_tunnel(
+            ["-R", f"{local_port}:localhost:{local_port}"],
+            host,
+            f"Tunnel-out failed to start: localhost:{local_port} → {host.ansible_host}",
         )
-
-        time.sleep(1.5)
-        if proc.poll() is not None:
-            stderr = proc.stderr.read().decode() if proc.stderr else ""
-            raise TunnelError(
-                f"Tunnel-out failed to start: localhost:{local_port} → {host.ansible_host}\n"
-                f"{stderr}"
-            )
-
         self.processes.append(proc)
 
     def start_tunnel_in(
@@ -197,35 +217,11 @@ class TunnelManager:
                 f"Hint: Stop the local service or use a different port"
             )
 
-        cmd = [
-            "ssh",
-            "-L",
-            f"{remote_port}:{service}:{remote_port}",
-            "-N",
-            "-o",
-            "ExitOnForwardFailure=yes",
-            "-o",
-            "ServerAliveInterval=30",
-            f"{host.ansible_user}@{host.ansible_host}",
-        ]
-
-        if host.ansible_port != 22:
-            cmd.extend(["-p", str(host.ansible_port)])
-
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+        proc = _spawn_ssh_tunnel(
+            ["-L", f"{remote_port}:{service}:{remote_port}"],
+            host,
+            f"Tunnel-in failed to start: {service}:{remote_port} via {host.ansible_host}",
         )
-
-        time.sleep(1.5)
-        if proc.poll() is not None:
-            stderr = proc.stderr.read().decode() if proc.stderr else ""
-            raise TunnelError(
-                f"Tunnel-in failed to start: {service}:{remote_port} via {host.ansible_host}\n"
-                f"{stderr}"
-            )
-
         self.processes.append(proc)
 
     def start_container_tunnel_in(
@@ -283,36 +279,12 @@ class TunnelManager:
             )
 
         # Start SSH forward to container IP
-        cmd = [
-            "ssh",
-            "-L",
-            f"{local_port}:{container_ip}:{remote_port}",
-            "-N",
-            "-o",
-            "ExitOnForwardFailure=yes",
-            "-o",
-            "ServerAliveInterval=30",
-            f"{host.ansible_user}@{host.ansible_host}",
-        ]
-
-        if host.ansible_port != 22:
-            cmd.extend(["-p", str(host.ansible_port)])
-
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+        proc = _spawn_ssh_tunnel(
+            ["-L", f"{local_port}:{container_ip}:{remote_port}"],
+            host,
+            f"Container tunnel failed to start: {container}:{remote_port} via {host.ansible_host}\n"
+            f"Container IP: {container_ip}",
         )
-
-        time.sleep(1.5)
-        if proc.poll() is not None:
-            stderr = proc.stderr.read().decode() if proc.stderr else ""
-            raise TunnelError(
-                f"Container tunnel failed to start: {container}:{remote_port} via {host.ansible_host}\n"
-                f"Container IP: {container_ip}\n"
-                f"{stderr}"
-            )
-
         self.processes.append(proc)
 
     def cleanup(self) -> None:

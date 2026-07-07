@@ -7,9 +7,9 @@ artifacts without full deployment configuration.
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from slipp.constants import DEFAULT_CONTAINER_RUNTIME
 from slipp.models.deployment import DetectedService, InventoryConfig
-
-from .base import BaseContext
+from slipp.services.launch.context.base import BaseContext
 
 
 @dataclass
@@ -23,7 +23,11 @@ class DockerfileContext(BaseContext):
         project_dirs: Directories containing project sources.
         proxy: HTTP reverse proxy type (default: caddy).
         services: Detected container services from project analysis.
-        inventory_config: Optional Ansible inventory configuration.
+        inventory_config: Optional Ansible inventory configuration. When set
+            (e.g. by a future stage), its first host's container_runtime
+            takes precedence over container_runtime below.
+        container_runtime: Container runtime to target when inventory_config
+            isn't available (this pipeline never loads one).
         skip_caddy: If True, exclude Caddy proxy setup.
     """
 
@@ -31,4 +35,5 @@ class DockerfileContext(BaseContext):
     proxy: str = "caddy"
     services: list[DetectedService] = field(default_factory=list)
     inventory_config: InventoryConfig | None = None
+    container_runtime: str = DEFAULT_CONTAINER_RUNTIME
     skip_caddy: bool = False

@@ -119,21 +119,6 @@ wheels = [
 ]
 
 [[package]]
-name = "ansible-runner"
-version = "2.4.2"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "packaging" },
-    { name = "pexpect" },
-    { name = "python-daemon" },
-    { name = "pyyaml" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/aa/db/65b9e058807d313c495a6f4365cc11234d0391c5843659ddc27cc4bf1677/ansible_runner-2.4.2.tar.gz", hash = "sha256:331d4da8d784e5a76aa9356981c0255f4bb1ba640736efe84b0bd7c73a4ca420", size = 152047, upload-time = "2025-10-14T19:10:50.159Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/a9/da/19512e72e9cf2b8e7e6345264baa6c7ac1bb0ab128eb19c73a58407c4566/ansible_runner-2.4.2-py3-none-any.whl", hash = "sha256:0bde6cb39224770ff49ccdc6027288f6a98f4ed2ea0c64688b31217033221893", size = 79758, upload-time = "2025-10-14T19:10:48.994Z" },
-]
-
-[[package]]
 name = "anyio"
 version = "4.12.0"
 source = { registry = "https://pypi.org/simple" }
@@ -534,15 +519,6 @@ wheels = [
 ]
 
 [[package]]
-name = "lockfile"
-version = "0.12.2"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/17/47/72cb04a58a35ec495f96984dddb48232b551aafb95bde614605b754fe6f7/lockfile-0.12.2.tar.gz", hash = "sha256:6aed02de03cba24efabcd600b30540140634fc06cfa603822d508d5361e9f799", size = 20874, upload-time = "2015-11-25T18:29:58.279Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/c8/22/9460e311f340cb62d26a38c419b1381b8593b0bb6b5d1f056938b086d362/lockfile-0.12.2-py2.py3-none-any.whl", hash = "sha256:6c3cb24f344923d30b2785d5ad75182c8ea7ac1b6171b08657258ec7429d50fa", size = 13564, upload-time = "2015-11-25T18:29:51.462Z" },
-]
-
-[[package]]
 name = "markdown-it-py"
 version = "4.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -726,15 +702,6 @@ wheels = [
 ]
 
 [[package]]
-name = "packaging"
-version = "25.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/a1/d4/1fc4078c65507b51b96ca8f8c3ba19e6a61c8253c72794544580a7b6c24d/packaging-25.0.tar.gz", hash = "sha256:d443872c98d677bf60f6a1f2f8c1cb748e8fe762d2bf9d3148b5599295b0fc4f", size = 165727, upload-time = "2025-04-19T11:48:59.673Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/20/12/38679034af332785aac8774540895e234f4d07f7545804097de4b666afd8/packaging-25.0-py3-none-any.whl", hash = "sha256:29572ef2b1f17581046b3a2227d5c611fb25ec70ca1ba8554b24b0e69331a484", size = 66469, upload-time = "2025-04-19T11:48:57.875Z" },
-]
-
-[[package]]
 name = "paramiko"
 version = "4.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -747,18 +714,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/1f/e7/81fdcbc7f190cdb058cffc9431587eb289833bdd633e2002455ca9bb13d4/paramiko-4.0.0.tar.gz", hash = "sha256:6a25f07b380cc9c9a88d2b920ad37167ac4667f8d9886ccebd8f90f654b5d69f", size = 1630743, upload-time = "2025-08-04T01:02:03.711Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a9/90/a744336f5af32c433bd09af7854599682a383b37cfd78f7de263de6ad6cb/paramiko-4.0.0-py3-none-any.whl", hash = "sha256:0e20e00ac666503bf0b4eda3b6d833465a2b7aff2e2b3d79a8bba5ef144ee3b9", size = 223932, upload-time = "2025-08-04T01:02:02.029Z" },
-]
-
-[[package]]
-name = "pexpect"
-version = "4.9.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "ptyprocess" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/42/92/cc564bf6381ff43ce1f4d06852fc19a2f11d180f23dc32d9588bee2f149d/pexpect-4.9.0.tar.gz", hash = "sha256:ee7d41123f3c9911050ea2c2dac107568dc43b2d3b0c7557a33212c398ead30f", size = 166450, upload-time = "2023-11-25T09:07:26.339Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/9e/c3/059298687310d527a58bb01f3b1965787ee3b40dce76752eda8b44e9a2c5/pexpect-4.9.0-py2.py3-none-any.whl", hash = "sha256:7236d1e080e4936be2dc3e326cec0af72acf9212a7e1d060210e70a47e253523", size = 63772, upload-time = "2023-11-25T06:56:14.81Z" },
 ]
 
 [[package]]
@@ -843,15 +798,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/cb/ef/3c6ecf8b317aa982f309835e8f96987466123c6e596646d4e6a1dfcd080f/propcache-0.4.1-cp314-cp314t-win_amd64.whl", hash = "sha256:990f6b3e2a27d683cb7602ed6c86f15ee6b43b1194736f9baaeb93d0016633b1", size = 46259, upload-time = "2025-10-08T19:48:34.226Z" },
     { url = "https://files.pythonhosted.org/packages/c4/2d/346e946d4951f37eca1e4f55be0f0174c52cd70720f84029b02f296f4a38/propcache-0.4.1-cp314-cp314t-win_arm64.whl", hash = "sha256:ecef2343af4cc68e05131e45024ba34f6095821988a9d0a02aa7c73fcc448aa9", size = 40428, upload-time = "2025-10-08T19:48:35.441Z" },
     { url = "https://files.pythonhosted.org/packages/5b/5a/bc7b4a4ef808fa59a816c17b20c4bef6884daebbdf627ff2a161da67da19/propcache-0.4.1-py3-none-any.whl", hash = "sha256:af2a6052aeb6cf17d3e46ee169099044fd8224cbaf75c76a2ef596e8163e2237", size = 13305, upload-time = "2025-10-08T19:49:00.792Z" },
-]
-
-[[package]]
-name = "ptyprocess"
-version = "0.7.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/20/e5/16ff212c1e452235a90aeb09066144d0c5a6a8c0834397e03f5224495c4e/ptyprocess-0.7.0.tar.gz", hash = "sha256:5c5d0a3b48ceee0b48485e0c26037c0acd7d29765ca3fbb5cb3831d347423220", size = 70762, upload-time = "2020-12-28T15:15:30.155Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/22/a6/858897256d0deac81a172289110f31629fc4cee19b6f01283303e18c8db3/ptyprocess-0.7.0-py2.py3-none-any.whl", hash = "sha256:4b41f3967fce3af57cc7e94b888626c18bf37a083e3651ca8feeb66d492fef35", size = 13993, upload-time = "2020-12-28T15:15:28.35Z" },
 ]
 
 [[package]]
@@ -1002,18 +948,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/dd/b6/63fd77264dae1087770a1bb414bc604470f58fbc21d83822fc9c76248076/pynacl-1.6.1-cp38-abi3-win32.whl", hash = "sha256:9fd1a4eb03caf8a2fe27b515a998d26923adb9ddb68db78e35ca2875a3830dde", size = 226585, upload-time = "2025-11-10T16:02:07.116Z" },
     { url = "https://files.pythonhosted.org/packages/12/c8/b419180f3fdb72ab4d45e1d88580761c267c7ca6eda9a20dcbcba254efe6/pynacl-1.6.1-cp38-abi3-win_amd64.whl", hash = "sha256:a569a4069a7855f963940040f35e87d8bc084cb2d6347428d5ad20550a0a1a21", size = 238923, upload-time = "2025-11-10T16:02:04.401Z" },
     { url = "https://files.pythonhosted.org/packages/35/76/c34426d532e4dce7ff36e4d92cb20f4cbbd94b619964b93d24e8f5b5510f/pynacl-1.6.1-cp38-abi3-win_arm64.whl", hash = "sha256:5953e8b8cfadb10889a6e7bd0f53041a745d1b3d30111386a1bb37af171e6daf", size = 183970, upload-time = "2025-11-10T16:02:05.786Z" },
-]
-
-[[package]]
-name = "python-daemon"
-version = "3.1.2"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "lockfile" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/3d/37/4f10e37bdabc058a32989da2daf29e57dc59dbc5395497f3d36d5f5e2694/python_daemon-3.1.2.tar.gz", hash = "sha256:f7b04335adc473de877f5117e26d5f1142f4c9f7cd765408f0877757be5afbf4", size = 71576, upload-time = "2024-12-03T08:41:07.843Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/45/3c/b88167e2d6785c0e781ee5d498b07472aeb9b6765da3b19e7cc9e0813841/python_daemon-3.1.2-py3-none-any.whl", hash = "sha256:b906833cef63502994ad48e2eab213259ed9bb18d54fa8774dcba2ff7864cec6", size = 30872, upload-time = "2024-12-03T08:41:03.322Z" },
 ]
 
 [[package]]
@@ -1172,7 +1106,6 @@ version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
-    { name = "ansible-runner" },
     { name = "bcrypt" },
     { name = "cryptography" },
     { name = "httpx" },
@@ -1182,6 +1115,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "python-dotenv" },
     { name = "python-ulid" },
+    { name = "pyyaml" },
     { name = "rich" },
     { name = "rich-pyfiglet" },
     { name = "ruamel-yaml" },
@@ -1191,7 +1125,6 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "aiohttp", specifier = ">=3.13.2" },
-    { name = "ansible-runner", specifier = ">=2.4.2" },
     { name = "bcrypt", specifier = ">=5.0.0" },
     { name = "cryptography", specifier = ">=46.0.3" },
     { name = "httpx", specifier = ">=0.28.1" },
@@ -1201,6 +1134,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.12.4" },
     { name = "python-dotenv", specifier = ">=1.2.1" },
     { name = "python-ulid", specifier = ">=3.1.0" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "rich", specifier = ">=14.2.0" },
     { name = "rich-pyfiglet", specifier = ">=1.0.0" },
     { name = "ruamel-yaml", specifier = ">=0.18.16" },

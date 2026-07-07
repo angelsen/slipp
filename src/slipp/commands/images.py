@@ -1,15 +1,11 @@
 """Image listing commands (plural = management)."""
 
-import json
-from pathlib import Path
 from typing import Annotated
 
 import typer
 
 from slipp import output
-from slipp.commands.common import get_project_root, resolve_host_or_exit
-from slipp.constants import OutputFormat
-from slipp.services.config import RuntimeDetectionError, RuntimeDetector
+from slipp.commands.common import resolve_host_or_exit, resolve_runtime
 from slipp.services.ssh import CommandBuilder, SSHService
 
 images_app = typer.Typer(name="images", help="Manage container images on VPS")
@@ -26,13 +22,7 @@ def list_command(
 ) -> None:
     """List container images on VPS."""
     ssh_config = resolve_host_or_exit(project=host)
-    project_root = get_project_root(host) if host else Path.cwd()
-
-    try:
-        runtime = RuntimeDetector(project_root).detect()
-    except RuntimeDetectionError as e:
-        output.error(str(e))
-        raise typer.Exit(1)
+    _, runtime = resolve_runtime(host)
 
     fmt = "{{.Repository}}:{{.Tag}}\t{{.Size}}\t{{.CreatedSince}}"
     if filter_pattern:
@@ -62,9 +52,5 @@ def list_command(
                     "created": parts[2],
                 }
             )
-
-    if output.get_output_format() == OutputFormat.json:
-        output.stdout(json.dumps(rows, indent=2))
-        return
 
     output.table(rows)

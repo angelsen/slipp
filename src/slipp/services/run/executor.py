@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from slipp import output
+from slipp.models.host import AnsibleHost
 from slipp.models.run import ProxyRoute, RunProfile, TunnelConfig
 from slipp.services.run.caddy import CaddyProxy
 from slipp.services.ssh import (
@@ -110,16 +111,15 @@ class RunProfileExecutor:
         Returns:
             CaddyCheckResult with check status
         """
-        hosts_to_check: dict[str, str] = {}
+        hosts_to_check: dict[str, tuple[str, AnsibleHost]] = {}
         for spec in tunnel_out_specs:
             _, _, host_spec = parse_tunnel_out(spec)
             host = resolve_tunnel_host(host_spec)
             if host.ansible_host not in hosts_to_check:
-                hosts_to_check[host.ansible_host] = host_spec
+                hosts_to_check[host.ansible_host] = (host_spec, host)
 
         missing: list[str] = []
-        for ansible_host, host_spec in hosts_to_check.items():
-            host = resolve_tunnel_host(host_spec)
+        for host_spec, host in hosts_to_check.values():
             proxy = CaddyProxy(host)
 
             if not proxy.is_installed():

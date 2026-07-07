@@ -2,9 +2,9 @@
 
 import typer
 
-from .add import add_command
-from .list import list_command
-from .remove import remove_command
+from slipp.commands.projects.add import add_command
+from slipp.commands.projects.list import list_command
+from slipp.commands.projects.remove import remove_command
 
 projects_app = typer.Typer(name="projects", help="Manage registered projects")
 projects_app.command(name="add")(add_command)

@@ -5,8 +5,7 @@ from typing import Any
 
 from slipp.generator.compose_generator import ComposeGenerator
 from slipp.models.deployment import ComposeConfig
-
-from .common import FileGenerationStage
+from slipp.services.launch.stages.common import FileGenerationStage
 
 
 class ComposeGenerationStage(FileGenerationStage):

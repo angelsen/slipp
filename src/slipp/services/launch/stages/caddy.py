@@ -10,8 +10,7 @@ from typing import Any
 from slipp import output
 from slipp.generator.caddy_generator import CaddyGenerator
 from slipp.models.deployment import CaddyConfig, ProvisionConfig
-
-from .common import FileGenerationStage
+from slipp.services.launch.stages.common import FileGenerationStage
 
 
 class CaddyConfigStage:

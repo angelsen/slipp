@@ -9,14 +9,8 @@ from pathlib import Path
 import typer
 
 from slipp import output
-from slipp.commands.launch.context import DockerfileContext
-from slipp.commands.launch.pipeline import LaunchPipeline
-from slipp.commands.launch.stages import (
-    DockerfileGenerationStage,
-    ProjectScanStage,
-    ValidationStage,
-)
-from slipp.generator import TemplateGenerator
+from slipp.constants import DEFAULT_CONTAINER_RUNTIME
+from slipp.services.launch import DockerfileContext, run_dockerfile_pipeline
 
 
 def dockerfile_command(
@@ -40,6 +34,11 @@ def dockerfile_command(
         "--proxy",
         help="Reverse proxy: caddy, none",
     ),
+    container_runtime: str = typer.Option(
+        DEFAULT_CONTAINER_RUNTIME,
+        "--runtime",
+        help="Container runtime: docker, podman",
+    ),
 ) -> None:
     """Generate Dockerfiles for specified projects."""
     dirs = project_dirs if project_dirs else [Path.cwd()]
@@ -51,18 +50,10 @@ def dockerfile_command(
         dry_run=dry_run,
         project_dirs=dirs,
         proxy=proxy,
+        container_runtime=container_runtime,
     )
 
-    stages = [
-        ValidationStage(),
-        ProjectScanStage(),
-        DockerfileGenerationStage(TemplateGenerator()),
-    ]
+    run_dockerfile_pipeline(context)
 
-    try:
-        LaunchPipeline(stages).execute(context)
-        if not dry_run:
-            output.success("Dockerfiles generated!")
-    except Exception as e:
-        output.error(f"Dockerfile generation failed: {e}")
-        raise typer.Exit(1)
+    if not dry_run:
+        output.success("Dockerfiles generated!")

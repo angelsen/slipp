@@ -9,8 +9,8 @@ import typer
 from slipp import output
 from slipp.commands.common import find_service_or_exit, resolve_host_or_exit
 from slipp.models.service import Runtime
-from slipp.services.discovery import ServiceLocator
 from slipp.services.ssh import CommandBuilder, SSHService, UserResolver
+from slipp.utils.errors import SlippError
 
 
 def exec_command(
@@ -23,18 +23,7 @@ def exec_command(
         None, "--user", "-u", help="Override user (e.g., root, postgres, www-data)"
     ),
 ):
-    """Execute a command on VPS or in a container.
-
-    Supports two argument forms:
-    - slipp exec "<command>": Execute on current host
-    - slipp exec <service> "<command>": Execute in container or service
-
-    Args:
-        ctx: Typer context.
-        first: Command (single arg) or service name (two args).
-        second: Command when service is specified.
-        user: Override target user for execution.
-    """
+    """Execute a command on VPS or in a container."""
     if second is None:
         command, service_name = first, None
     else:
@@ -45,8 +34,9 @@ def exec_command(
     with SSHService(ssh_config) as ssh:
         service = None
         if service_name:
-            locator = ServiceLocator(ssh_config, include_system=False)
-            service = find_service_or_exit(locator, service_name)
+            service = find_service_or_exit(
+                ssh_config, service_name, include_system=False
+            )
 
         user_resolver = UserResolver(ssh)
         resolution = user_resolver.resolve(service, user, ssh_config.ansible_user)
@@ -69,21 +59,21 @@ def exec_command(
         output.info(
             f"Executing on {ssh_config.ansible_host} ({context_msg}, as {resolution.user})"
         )
-        output.stdout(f"Command: {command}")
+        output.info(f"Command: {command}")
         output.blank()
 
         try:
             cmd_output = ssh.execute(exec_cmd)
 
             if cmd_output.strip():
-                print(cmd_output)  # Raw output for piping
+                output.stdout(cmd_output)
             else:
-                output.stdout("(no output)")
+                output.info("(no output)")
 
             output.blank()
             output.success("Command completed successfully")
 
-        except Exception as e:
+        except SlippError as e:
             output.blank()
             output.error("Command failed")
 

@@ -46,25 +46,7 @@ def run_command(
         ),
     ] = None,
 ) -> None:
-    """Execute a run profile.
-
-    Supports saved profiles, creating/updating profiles with --cmd,
-    and merging runtime options. Pass-through args append to saved commands.
-
-    Args:
-        ctx: Typer context for capturing pass-through arguments.
-        name: Profile name to execute or create.
-        cmd: Command to execute (creates/updates profile if provided).
-        env: Environment variables to add (KEY=VALUE format).
-        vault: Vault project(s) to include.
-        tunnel_out: Reverse tunnels to add (local_port:domain@host).
-        tunnel_in: Forward tunnels to add (service:port@host).
-        proxy: Proxy routes to add (from@host -> to).
-        tunnel_auth: HTTP basic auth for tunnel-out Caddy routes (user:pass).
-
-    Raises:
-        typer.Exit: If profile not found and --cmd not provided.
-    """
+    """Execute a run profile, or create/update one with --cmd."""
     service = RunProfileService()
     executor = RunProfileExecutor()
 
@@ -139,6 +121,15 @@ def _hash_tunnel_auth(spec: str) -> str:
     return f"{user}:{hashed}"
 
 
+def _parse_proxy_routes(specs: list[str]) -> list[ProxyRoute]:
+    """Parse --proxy specs into ProxyRoute models."""
+    routes = []
+    for spec in specs:
+        from_url, to_url, host = parse_proxy_spec(spec)
+        routes.append(ProxyRoute(**{"from": from_url, "to": to_url, "host": host}))
+    return routes
+
+
 def _build_profile(
     cmd: str,
     env: list[str],
@@ -158,12 +149,7 @@ def _build_profile(
     elif tunnel_auth:
         raise ConfigError("--tunnel-auth requires --tunnel-out")
 
-    proxy_routes = []
-    for spec in proxy:
-        from_url, to_url, host = parse_proxy_spec(spec)
-        proxy_routes.append(
-            ProxyRoute(**{"from": from_url, "to": to_url, "host": host})
-        )
+    proxy_routes = _parse_proxy_routes(proxy)
 
     return RunProfile(
         cmd=cmd, env=env, vaults=vaults, tunnels=tunnels, proxy=proxy_routes
@@ -227,13 +213,7 @@ def _merge_runtime_options(
             }
         )
 
-    merged_proxy = list(profile.proxy)
-    if proxy:
-        for spec in proxy:
-            from_url, to_url, host = parse_proxy_spec(spec)
-            merged_proxy.append(
-                ProxyRoute(**{"from": from_url, "to": to_url, "host": host})
-            )
+    merged_proxy = list(profile.proxy) + _parse_proxy_routes(proxy)
 
     return RunProfile(
         cmd=profile.cmd,

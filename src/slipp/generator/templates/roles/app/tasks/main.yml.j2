@@ -17,7 +17,7 @@
   ansible.posix.synchronize:
     src: "{{ service.path }}/"
     dest: "/tmp/{{ project_name }}-{{ service.name }}/"
-    delete: yes
+    delete: true
     rsync_opts:
       - "--exclude=node_modules"
       - "--exclude=.venv"
@@ -29,8 +29,8 @@
   containers.podman.podman_image:
     name: "{{ project_name }}-{{ service.name }}"
     path: "/tmp/{{ project_name }}-{{ service.name }}"
-    force: yes
-    force_rm: yes
+    force: true
+    force_rm: true
     state: build
 {% else %}
   community.docker.docker_image:
@@ -38,8 +38,7 @@
     build:
       path: "/tmp/{{ project_name }}-{{ service.name }}"
     source: build
-    force_source: yes
-    force_rm: yes
+    force_source: true
 {% endif %}
   notify: Restart {{ project_name }}-{{ service.name }}
 
@@ -49,12 +48,12 @@
     dest: "/etc/systemd/system/{{ project_name }}-{{ service.name }}.service"
     mode: '0644'
   notify:
-    - reload systemd
+    - Reload systemd
     - Restart {{ project_name }}-{{ service.name }}
 
 - name: Enable and start service
   ansible.builtin.systemd:
     name: "{{ project_name }}-{{ service.name }}.service"
-    enabled: yes
+    enabled: true
     state: started
-    daemon_reload: yes
+    daemon_reload: true

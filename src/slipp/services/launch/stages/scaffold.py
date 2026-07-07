@@ -13,6 +13,7 @@ from slipp.services.ansible import (
     syntax_check,
 )
 from slipp.services.registry import ProjectRegistry
+from slipp.utils.errors import LaunchError
 
 
 class ScaffoldValidationStage:
@@ -25,11 +26,10 @@ class ScaffoldValidationStage:
         # Install requirements before validation (roles needed for syntax check)
         if context.requirements_path and context.requirements_path.exists():
             if not context.roles_path:
-                output.error("--roles-path required when requirements.yml exists")
-                output.hint(
-                    "Example: ac scaffold -p setup.yml --roles-path roles/galaxy"
+                raise LaunchError(
+                    "--roles-path required when requirements.yml exists\n"
+                    "Example: slipp generate scaffold -p setup.yml --roles-path roles/galaxy"
                 )
-                raise typer.Exit(1)
 
             if check_roles_installed(context.roles_path):
                 output.info(f"Roles already installed in {context.roles_path}")
@@ -44,34 +44,29 @@ class ScaffoldValidationStage:
                 if result.exit_code == 0:
                     output.success("Installing requirements")
                 else:
-                    output.error("Installing requirements failed")
+                    message = "Installing requirements failed"
                     if result.log_path:
-                        output.hint(f"See log: {result.log_path}")
-                    raise typer.Exit(1)
+                        message += f"\nSee log: {result.log_path}"
+                    raise LaunchError(message)
 
         if not context.playbook_path:
-            output.error("No playbook specified")
-            raise typer.Exit(1)
+            raise LaunchError("No playbook specified")
 
         if not context.playbook_path.exists():
-            output.error(
+            raise LaunchError(
                 f"Playbook not found: {format_path(context.playbook_path, context.output_dir)}"
             )
-            raise typer.Exit(1)
 
         output.info(
             f"Validating {format_path(context.playbook_path, context.output_dir)}..."
         )
 
         if not syntax_check(context.playbook_path):
-            output.error(
-                f"Playbook syntax check failed: {format_path(context.playbook_path, context.output_dir)}"
+            raise LaunchError(
+                f"Playbook syntax check failed: {format_path(context.playbook_path, context.output_dir)}\n"
+                f"Run: ansible-playbook --syntax-check "
+                f"{format_path(context.playbook_path, context.output_dir)}"
             )
-            output.hint(
-                "Run: ansible-playbook --syntax-check "
-                + format_path(context.playbook_path, context.output_dir)
-            )
-            raise typer.Exit(1)
 
         output.success(
             f"Playbook valid: {format_path(context.playbook_path, context.output_dir)}"
@@ -155,7 +150,7 @@ class ScaffoldInventoryStage:
         context.generated_files.append(vars_path)
 
         vault_path = context.inventory_dir / "vault.yml"
-        vault_path.write_text("---\n# Add secrets with: ac secret add <name>\n")
+        vault_path.write_text("---\n# Add secrets with: slipp secrets add <name>\n")
         output.list_items(
             [str(vault_path.relative_to(context.output_dir))], bullet=output.ICON_CHECK
         )

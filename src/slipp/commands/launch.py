@@ -4,30 +4,8 @@ from pathlib import Path
 
 import typer
 
-from slipp import output
 from slipp.constants import DEFAULT_ENV
-from slipp.generator import TemplateGenerator
-from slipp.generator.inventory_generator import InventoryGenerator
-from slipp.generator.playbook_generator import PlaybookGenerator
-
-from .context import FullContext
-from .pipeline import LaunchPipeline
-from .stages import (
-    AppRolesStage,
-    CaddyConfigStage,
-    CaddyRoleStage,
-    ComposeGenerationStage,
-    DockerfileGenerationStage,
-    GroupVarsStage,
-    InventoryFileStage,
-    InventoryLoadStage,
-    InventoryValidationStage,
-    PlaybookGenerationStage,
-    ProjectScanStage,
-    RegistrationStage,
-    SummaryStage,
-    ValidationStage,
-)
+from slipp.services.launch import FullContext, run_full_pipeline
 
 
 def launch_command(
@@ -83,28 +61,7 @@ def launch_command(
         project_name=name,
     )
 
-    stages = [
-        ValidationStage(),
-        ProjectScanStage(),
-        InventoryLoadStage(),
-        InventoryValidationStage(),
-        DockerfileGenerationStage(TemplateGenerator()),
-        CaddyConfigStage(),
-        InventoryFileStage(InventoryGenerator()),
-        PlaybookGenerationStage(PlaybookGenerator()),
-        GroupVarsStage(),
-        CaddyRoleStage(),
-        AppRolesStage(),
-        ComposeGenerationStage(),
-        RegistrationStage(),
-        SummaryStage(),
-    ]
-
-    try:
-        LaunchPipeline(stages).execute(context)
-    except Exception as e:
-        output.error(f"Launch failed: {e}")
-        raise typer.Exit(1)
+    run_full_pipeline(context)
 
 
 __all__ = ["launch_command"]

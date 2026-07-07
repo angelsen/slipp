@@ -8,7 +8,7 @@ be integrated with slipp.
 from dataclasses import dataclass
 from pathlib import Path
 
-from .base import BaseContext
+from slipp.services.launch.context.base import BaseContext
 
 
 @dataclass

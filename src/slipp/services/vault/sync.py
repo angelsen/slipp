@@ -14,9 +14,9 @@ from slipp.services.vault.vault import (
     write_vault,
 )
 from slipp.utils.errors import (
+    AnsibleVaultNotInstalledError,
     PasswordMismatchError,
     VaultError,
-    VaultNotFoundError,
     VaultSyncError,
 )
 
@@ -119,7 +119,7 @@ class SecretSynchronizer:
                     secrets[name] = encrypted
         except PasswordMismatchError:
             raise VaultSyncError("Passwords do not match")
-        except VaultNotFoundError as e:
+        except AnsibleVaultNotInstalledError as e:
             raise VaultSyncError(str(e))
         except VaultError as e:
             raise VaultSyncError(f"Encryption failed: {e}")

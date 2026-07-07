@@ -79,7 +79,6 @@ class ResolvedConfig:
         managed_roles: Role names for service filtering
         inventory_source: Where inventory was resolved from
         playbook_source: Where playbook was resolved from
-        roles_path_source: Where roles_path was resolved from
     """
 
     inventory: Path
@@ -90,7 +89,6 @@ class ResolvedConfig:
     managed_roles: list[str]
     inventory_source: str  # "cli", "local", "default"
     playbook_source: str
-    roles_path_source: str
 
 
 class ConfigResolver:
@@ -208,13 +206,10 @@ class ConfigResolver:
 
         if cli_roles:
             roles_path = [Path(r) for r in cli_roles]
-            roles_path_source = "cli"
         elif self._local_config and self._local_config.roles_path:
             roles_path = [self.project_root / r for r in self._local_config.roles_path]
-            roles_path_source = "local"
         else:
             roles_path = []
-            roles_path_source = "default"
 
         if self._local_config and self._local_config.galaxy_path:
             galaxy_path = self.project_root / self._local_config.galaxy_path
@@ -234,5 +229,4 @@ class ConfigResolver:
             managed_roles=managed_roles,
             inventory_source=inv_source,
             playbook_source=pb_source,
-            roles_path_source=roles_path_source,
         )

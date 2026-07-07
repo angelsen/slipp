@@ -54,10 +54,11 @@ class DockerfileGenerationStage:
         """
         output.info("Generating Dockerfiles...")
 
-        assert context.inventory_config is not None, "Inventory config must be loaded"
-
-        first_host = list(context.inventory_config.hosts.values())[0]
-        runtime = first_host.container_runtime
+        if context.inventory_config is not None:
+            first_host = list(context.inventory_config.hosts.values())[0]
+            runtime = first_host.container_runtime
+        else:
+            runtime = context.container_runtime
 
         for service in context.services:
             try:

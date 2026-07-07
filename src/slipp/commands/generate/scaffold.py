@@ -4,16 +4,7 @@ from pathlib import Path
 
 import typer
 
-from slipp import output
-from slipp.commands.launch.context import ScaffoldContext
-from slipp.commands.launch.pipeline import LaunchPipeline
-from slipp.commands.launch.stages import (
-    ScaffoldInventoryStage,
-    ScaffoldPromptStage,
-    ScaffoldRegistrationStage,
-    ScaffoldSummaryStage,
-    ScaffoldValidationStage,
-)
+from slipp.services.launch import ScaffoldContext, run_scaffold_pipeline
 
 
 def scaffold_command(
@@ -70,16 +61,4 @@ def scaffold_command(
         roles_path=roles_path,
     )
 
-    stages = [
-        ScaffoldValidationStage(),
-        ScaffoldPromptStage(),
-        ScaffoldInventoryStage(),
-        ScaffoldRegistrationStage(),
-        ScaffoldSummaryStage(),
-    ]
-
-    try:
-        LaunchPipeline(stages).execute(context)
-    except Exception as e:
-        output.error(f"Scaffold failed: {e}")
-        raise typer.Exit(1)
+    run_scaffold_pipeline(context)

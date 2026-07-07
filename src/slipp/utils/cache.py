@@ -19,14 +19,9 @@ class Cache:
         {'data': 'value'}
     """
 
-    def __init__(self, cache_dir: Path | None = None):
-        """Initialize cache.
-
-        Args:
-            cache_dir: Optional cache directory (defaults to ~/.cache/slipp)
-        """
-        if cache_dir is None:
-            cache_dir = Path.home() / ".cache" / "slipp"
+    def __init__(self):
+        """Initialize cache."""
+        cache_dir = Path.home() / ".cache" / "slipp"
 
         self.cache_dir = cache_dir
         self.cache_file = cache_dir / "cache.json"
@@ -95,16 +90,6 @@ class Cache:
         }
 
         self._save()
-
-    def delete(self, key: str) -> None:
-        """Delete key from cache.
-
-        Args:
-            key: Cache key to delete
-        """
-        if key in self._cache:
-            del self._cache[key]
-            self._save()
 
     def clear(self) -> None:
         """Clear all cache entries."""

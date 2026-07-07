@@ -1,6 +1,7 @@
 """Vault secret management commands."""
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 
 import typer
@@ -19,11 +20,12 @@ from slipp.services.vault import (
     vault_password_file,
 )
 from slipp.utils.errors import (
+    AnsibleVaultNotInstalledError,
     ProjectNotFoundError,
     PullTimeoutError,
     SourceNotFoundError,
     VaultError,
-    VaultNotFoundError,
+    VaultSyncError,
 )
 
 
@@ -53,6 +55,39 @@ def _resolve_vault_or_exit(target: str | None) -> tuple[ConfigResolver, Path | N
         raise typer.Exit(1)
 
 
+@dataclass
+class _VaultLookup:
+    """Result of resolving a target and listing its vault keys, if any."""
+
+    target: str
+    resolver: ConfigResolver
+    vault_path: Path | None
+    keys: list[str] | None
+    error: str | None  # "no vault configured" | "vault file not found" | None
+
+
+def _lookup_vault_keys(target: str) -> _VaultLookup:
+    """Resolve a target to its vault and list keys, capturing any error.
+
+    Args:
+        target: Project name, path to vault file
+
+    Returns:
+        _VaultLookup with keys populated on success, error set otherwise
+    """
+    resolver, vault_path = _resolve_vault_or_exit(target)
+
+    if not vault_path:
+        return _VaultLookup(target, resolver, None, None, "no vault configured")
+
+    try:
+        keys = list_keys(vault_path)
+    except FileNotFoundError:
+        return _VaultLookup(target, resolver, vault_path, None, "vault file not found")
+
+    return _VaultLookup(target, resolver, vault_path, keys, None)
+
+
 def _list_available_vaults() -> None:
     """Show all registered projects that have vaults configured (discovery mode)."""
     from slipp.services.config import LocalConfigService
@@ -72,6 +107,9 @@ def _list_available_vaults() -> None:
                     keys = list_keys(vault_path)
                     count = str(len(keys))
                 except Exception:
+                    # list_keys can raise FileNotFoundError/YAMLError/AttributeError
+                    # for a malformed vault - degrade to "?" rather than aborting
+                    # the whole listing over one bad vault file.
                     count = "?"
                 vaults_found.append(
                     {
@@ -129,65 +167,63 @@ def list_secrets(
         _list_available_vaults()
         return
 
+    lookups = [_lookup_vault_keys(target) for target in targets]
+
     if output.get_output_format() == OutputFormat.json:
         results: list[dict[str, object]] = []
-        for target in targets:
-            resolver, vault_path = _resolve_vault_or_exit(target)
-            entry: dict[str, object] = {"target": target}
+        for lookup in lookups:
+            entry: dict[str, object] = {"target": lookup.target}
 
-            if not vault_path:
-                entry["error"] = "no vault configured"
+            if lookup.error:
+                if lookup.vault_path:
+                    entry["vault_path"] = str(lookup.vault_path)
+                entry["error"] = lookup.error
                 results.append(entry)
                 continue
 
-            entry["vault_path"] = str(vault_path)
-            try:
-                keys = list_keys(vault_path)
-            except FileNotFoundError:
-                entry["error"] = "vault file not found"
-                results.append(entry)
-                continue
-
+            assert lookup.vault_path is not None and lookup.keys is not None
+            entry["vault_path"] = str(lookup.vault_path)
             if secret_name:
                 entry["secret_name"] = secret_name
-                entry["found"] = secret_name in keys
+                entry["found"] = secret_name in lookup.keys
             else:
-                entry["keys"] = keys
+                entry["keys"] = lookup.keys
             results.append(entry)
 
         output.stdout(json.dumps(results, indent=2))
         return
 
-    for i, target in enumerate(targets):
+    for i, lookup in enumerate(lookups):
         if i > 0:
             output.blank()
 
-        resolver, vault_path = _resolve_vault_or_exit(target)
-
-        if not vault_path:
-            output.warning(f"No vault configured for '{target}'")
+        if lookup.error == "no vault configured":
+            output.warning(f"No vault configured for '{lookup.target}'")
             continue
-
-        try:
-            keys = list_keys(vault_path)
-        except FileNotFoundError:
+        if lookup.error == "vault file not found":
+            assert lookup.vault_path is not None
             output.error(
-                f"Vault file not found: {format_path(vault_path, resolver.project_root)}"
+                f"Vault file not found: {format_path(lookup.vault_path, lookup.resolver.project_root)}"
             )
             continue
 
+        assert lookup.vault_path is not None and lookup.keys is not None
+        keys = lookup.keys
+
         if secret_name:
             if secret_name not in keys:
-                output.error(f"Secret '{secret_name}' not found in {target}")
+                output.error(f"Secret '{secret_name}' not found in {lookup.target}")
                 continue
             output.stdout(f"{{{{ {secret_name} }}}}")
             continue
 
         if not keys:
-            output.info(f"No secrets found in {target}")
+            output.info(f"No secrets found in {lookup.target}")
             continue
 
-        output.info(f"Secrets in {format_path(vault_path, resolver.project_root)}:")
+        output.info(
+            f"Secrets in {format_path(lookup.vault_path, lookup.resolver.project_root)}:"
+        )
         for key in keys:
             output.bullet(key, indent=1)
 
@@ -241,7 +277,7 @@ def add_secret(
     try:
         with vault_password_file(confirm=False) as pw_file:
             encrypted = encrypt_string(secret, name, password_file=pw_file)
-    except VaultNotFoundError as e:
+    except AnsibleVaultNotInstalledError as e:
         output.error(str(e))
         raise typer.Exit(1)
     except VaultError as e:
@@ -286,22 +322,12 @@ def sync_secrets(
     project_root = Path.cwd()
     vault_path = path.parent / "vault.yml"
 
-    if not path.exists():
-        output.error(f"File not found: {format_path(path, project_root)}")
+    try:
+        content = path.read_text()
+    except OSError as e:
+        output.error(f"Cannot read {format_path(path, project_root)}: {e}")
         raise typer.Exit(1)
 
-    if not path.is_file():
-        output.error(f"Not a file: {format_path(path, project_root)}")
-        raise typer.Exit(1)
-
-    if vault_path.exists() and not force:
-        output.error(
-            f"Vault file already exists: {format_path(vault_path, project_root)}"
-        )
-        output.hint("Use --force to overwrite")
-        raise typer.Exit(1)
-
-    content = path.read_text()
     synchronizer = SecretSynchronizer(num_bytes=num_bytes, encoding=encoding)
     refs = synchronizer.find_vault_references(content)
 
@@ -314,7 +340,13 @@ def sync_secrets(
     for ref in sorted(refs):
         output.bullet(ref, indent=1)
 
-    synchronizer.sync(path, vault_path, force=force)
+    try:
+        synchronizer.sync(path, vault_path, force=force)
+    except VaultSyncError as e:
+        output.error(str(e))
+        if vault_path.exists():
+            output.hint("Use --force to overwrite")
+        raise typer.Exit(1)
 
     output.success(f"Created {format_path(vault_path, project_root)}")
     output.hint(

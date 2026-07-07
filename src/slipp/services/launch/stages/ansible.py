@@ -7,13 +7,11 @@ the main playbook, group variables, and app role definitions.
 from pathlib import Path
 from typing import Any
 
-from jinja2 import Environment, FileSystemLoader
-
 from slipp import output
+from slipp.generator.env import make_env
 from slipp.generator.playbook_generator import PlaybookGenerator
 from slipp.generator.role_generator import RoleGenerator
-
-from .common import FileGenerationStage
+from slipp.services.launch.stages.common import FileGenerationStage
 
 
 class PlaybookGenerationStage(FileGenerationStage):
@@ -48,12 +46,7 @@ class GroupVarsStage(FileGenerationStage):
     def generate_content(self, context: Any) -> dict[Path, str]:
         assert context.provision_config is not None, "Provision config must be set"
 
-        template_dir = (
-            Path(__file__).parent.parent.parent.parent / "generator" / "templates"
-        )
-        template = Environment(loader=FileSystemLoader(str(template_dir))).get_template(
-            "group_vars/all.yml.j2"
-        )
+        template = make_env().get_template("group_vars/all.yml.j2")
         group_vars_content = template.render(**context.provision_config.to_dict())
 
         group_vars_dir = context.output_dir / "group_vars"
