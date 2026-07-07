@@ -300,17 +300,100 @@ network/routing it's exposed through.
   shelling out to a native command; name collisions between two workspace
   members sharing a directory basename (pre-existing risk, not introduced
   here); no flag to force-disable auto-detection when no `--dir` is given.
-- **Delegate exposure to wg-manage instead of templating Caddy.** Where the
-  target host already runs wg-deploy's `wg-manage` (source of truth for
-  Caddy via `/etc/wg-services.json`), slipp's `caddy` role should stop
-  generating its own Caddyfile and instead shell out over the existing SSH
-  connection: `wg-manage service add <name> <target> --https|--public`
-  (idempotent create-or-update — see the matching ask in wg-deploy's TODO).
-  Keeps exactly one owner of Caddy state instead of two tools racing to
-  regenerate the same file. Bulletins-admin needs *no* exposure step at all
-  (binds directly to the WG IP, no Caddy route) — the smallest possible
-  first test of the native app role, before attempting bulletins-chat
-  (public, needs Caddy + DNS).
+- **Delegate exposure to wg-manage instead of templating Caddy — scoped
+  (2026-07-07), not yet implemented.** Where the target host already runs
+  wg-deploy's `wg-manage` (source of truth for Caddy via
+  `/etc/wg-services.json`), slipp's `caddy` role should stop generating its
+  own Caddyfile and instead shell out over the existing SSH connection to
+  `wg-manage service add`. Re-verified both sides directly (not from stale
+  notes) before scoping:
+
+  **wg-manage's side is fully done and the contract is exactly as
+  hoped.** `service add <name> <target> [--https|--public] [--upstream-tls]
+  [--streaming] [--caddy-file F]` (`wg-deploy/templates/wg-manage.py.j2:930-963`)
+  is genuinely idempotent — its own docstring: "the same command can be
+  re-run safely (e.g. by an automated deploy) and converges to the same
+  result," printing "Service unchanged" as a no-op when flags match what's
+  already stored (`wg-manage.py.j2:667-712`). So slipp needs **no
+  pre-check** (no `service list` diffing) — just call `service add`
+  unconditionally every deploy, exactly like `ansible.builtin.package` or
+  any other converge-to-desired-state module. wg-deploy's own TODO confirms
+  no blockers remain on its side and spells out the exact call Bulletins
+  needs: `wg-manage service add bulletins.chat <host>:<port> --public`.
+
+  **The gap this surfaces that isn't just "swap the Caddy role": slipp has
+  no per-service exposure control today.** `CaddyGenerator.build_caddy_sites()`
+  (`generator/caddy_generator.py:114-179`) builds a site for *every*
+  detected service unconditionally — the only override is the project-wide
+  `--proxy none` flag (`VALID_PROXIES`, `constants.py`), there's no way to
+  say "expose this service, not that one" within one `slipp launch`. Not
+  fixing that here — the existing workaround (separate `slipp launch`
+  invocations per exposure tier, e.g. `--dir admin --proxy none` for
+  bulletins-admin and a second run for bulletins-chat) already covers
+  Bulletins' actual need and keeps this feature's scope to "how a single
+  exposed service gets its route," not "mixed exposure in one launch."
+
+  **Design:**
+  1. New `--proxy wg-manage` mode alongside today's `caddy`/`none`
+     (`commands/launch.py`, `constants.VALID_PROXIES`). Like `--proxy none`,
+     skips `CaddyRoleStage`/`CaddyGenerator` entirely (no Caddyfile
+     templated) — but unlike `none`, still needs *something* generated.
+  2. New lightweight role `roles/wg-manage-exposure/tasks/main.yml.j2`
+     (no handlers/templates needed — no config file to reload, `wg-manage`
+     handles its own Caddy regen/reload internally per its own docs) with
+     one `ansible.builtin.command` task per exposed service:
+     `wg-manage service add {{ domain }} {{ ansible_host }}:{{ port }} --public`
+     (or `--https` for internal-only-but-TLS — see decision below), using
+     `changed_when: "'unchanged' not in result.stdout"` on the registered
+     result for accurate Ansible change-reporting, matching wg-manage's own
+     stdout convention.
+  3. Domain-per-service naming reuses the existing convention already in
+     `build_caddy_sites()`'s multi-service branch: bare `app_domain` for a
+     single service, `{{ service.name }}.{{ app_domain }}` per service
+     otherwise. wg-manage's model is one-FQDN-to-one-target (no path-prefix
+     multiplexing like Caddy's `domain/api` vs `domain/` split), so the
+     path-prefix branch of `build_caddy_sites()` doesn't carry over —
+     every exposed service just gets its own subdomain.
+  4. **Open decision, needs a call before implementing:** `--public`
+     (Let's Encrypt, internet-facing) vs `--https` (internal CA) isn't a
+     distinction slipp's config models at all today (`CaddyConfig.auto_https`
+     is one blanket bool). Needs an explicit flag at `slipp launch` time
+     (matching the "explicit over auto-detected" precedent set for
+     `runtime: systemd`) — leaning toward defaulting to `--https` (safer,
+     internal-only) and requiring an explicit `--public` opt-in, since
+     "internet-facing by default" is the wrong failure mode for a mistake.
+  5. No existence check for `wg-manage` itself on the target host — same
+     "explicit config, trust it" principle as the runtime work; if it's not
+     actually there, the Ansible task just fails with a clear "command not
+     found," which is an acceptable error mode for a deliberately-opted-into
+     mode.
+
+  **Confirmed: no wg-manage changes needed** — its CLI surface already
+  covers everything this design uses, and wg-deploy's own TODO says so
+  explicitly ("all items from the original slipp-integration review are
+  now done"). Two adjacent things this scope surfaced that aren't
+  wg-manage gaps either, but do affect whether it works end-to-end:
+  - **DNS is a separate, unbuilt prerequisite.** `--public` mode means
+    Let's Encrypt issuing a real cert, which requires the domain to
+    already resolve to the host's public IP *before* `wg-manage service
+    add --public` runs. Neither slipp nor wg-manage manages DNS records —
+    that's the still-unbuilt Gigahost provider integration below. Until
+    then, the domain's DNS record has to be created by hand first.
+  - **This design only ever calls `service add`, never `service rm`.** If
+    a service is renamed or removed from a project between deploys, its
+    old `wg-manage` entry (and the Caddy route/cert it holds) would linger
+    forever — slipp has no cleanup step. `wg-manage service rm` already
+    exists; slipp's design just doesn't call it. Not fixing this in v1
+    (matches slipp's existing non-cleanup-on-rename behavior for other
+    generated artifacts), but flagging it since a stale *exposure* entry
+    has more real consequence than a stale local file.
+
+  **Verification when this gets implemented:** real end-to-end run against
+  an actual wg-deploy-managed host (this one isn't scratch-project-testable
+  the way the systemd role work was, since it needs a live `wg-manage`
+  binary) — deploy bulletins-admin with `--proxy none` first (already
+  possible today, validates the native app role on real infra), then once
+  this lands, bulletins-chat with `--proxy wg-manage --public`.
 - **Provider integrations below are bigger than first scoped** — see
   updated Gigahost section.
 
