@@ -1,5 +1,42 @@
 # slipp TODO
 
+## Next session: manual QA pass — try to break it
+
+No automated tests yet (deliberate for now, project isn't in production),
+but today's cleanup session found 4 real bugs just from manual hands-on testing:
+`generate dockerfile` completely broken (hard assert on data its own
+pipeline never populates), `caddy_generator.py` silently omitting
+`project_name` from a rendered path, `pyyaml` missing as a direct
+dependency (would've broken on a fresh install), and a generated Ansible
+task using a `docker_image` module parameter (`force_rm`) that doesn't
+actually exist on the installed collection. That hit rate suggests there
+are more latent bugs than one session surfaced.
+
+Before Bulletins becomes the first real deployment target, spend a session
+just trying to break slipp against a handful of scratch projects under
+`/tmp/`:
+
+- Run the full `launch` → `deploy --dry-run` loop against project types the
+  scanner doesn't explicitly support (plain static site, a Go binary, a
+  Rails app) and see what happens — scanner currently only detects
+  Flask/generic-Python/Node/SvelteKit, everything else silently produces
+  zero services.
+- Multi-host inventories — most of the generator code takes
+  `list(inventory.hosts.values())[0]` and only ever uses the first host;
+  poke at what a second host actually gets (nothing, probably worth
+  confirming that's expected rather than silently wrong).
+- Flag combinations nobody's tried: `--reconfigure` after switching
+  `container_runtime` docker↔podman, `--force-requirements`, `--roles`
+  combined with an auto-generated `requirements.yml`, running `deploy`
+  twice in a row, running commands from a subdirectory instead of project
+  root.
+- Error paths specifically — pull the network cable / rename a binary off
+  PATH / feed malformed YAML into `inventory.yml` and see whether the
+  failure is a clean `SlippError` message or a raw traceback slipping
+  through.
+- Whatever `slipp generate scaffold` does end to end against a real
+  existing (non-slipp) Ansible project — least-tested path today.
+
 ## SSH Security
 
 | Feature | slipp only | needs nor-auth |
