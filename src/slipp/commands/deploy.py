@@ -70,14 +70,18 @@ def deploy_command(
 ):
     """Execute ansible-playbook to deploy services and manage infrastructure."""
     if name and inventory:
+        # Bound to cwd, never a walked root: creates/updates *this* directory's
+        # config. The resolve_root() below then finds the file just created
+        # here, keeping the rest of deploy self-consistent.
         ensure_local_config(name, inventory, playbook, roles, vault, Path.cwd())
 
+    project_root = LocalConfigService.resolve_root()
     project_name = resolve_project_name(cli_name=name)
     environment, resolved_tags, resolved_skip_tags = resolve_environment_and_tags(
         target, preset, tags, skip_tags
     )
 
-    resolver = ConfigResolver()
+    resolver = ConfigResolver(project_root)
     roles_list = roles if roles else None
     config = resolver.resolve(
         cli_inventory=inventory,
@@ -103,7 +107,7 @@ def deploy_command(
         config, resolver, inventory, playbook
     )
 
-    log_dir = output.get_log_dir()
+    log_dir = output.get_log_dir(project_root)
     install_galaxy_requirements(requirements, galaxy_path, force_requirements, log_dir)
 
     result = execute_playbook(
@@ -135,11 +139,11 @@ def deploy_command(
             and not name
         ):
             persist_config_updates(
-                inventory, playbook, roles_list, galaxy_path_flag, vault
+                inventory, playbook, roles_list, galaxy_path_flag, vault, project_root
             )
 
-        register_project(project_name)
-        LocalConfigService.ensure_logs_gitignore()
+        register_project(project_name, project_root)
+        LocalConfigService.ensure_logs_gitignore(project_root)
     else:
         output.hint(f"Review log: {format_path(log_dir, resolver.project_root)}")
         raise typer.Exit(result.exit_code)

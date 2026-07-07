@@ -15,6 +15,20 @@ from slipp.services.config.local import LocalConfigService
 from slipp.utils.errors import ProjectNameRequiredError, ProjectNotFoundError
 
 
+def _resolve_cli_path(value: str) -> Path:
+    """Anchor a CLI flag path (-i/--playbook/--roles/--vault) to the actual
+    process cwd, resolving it to an absolute path.
+
+    CLI flags are relative-to-cwd by normal CLI convention, but the Ansible
+    subprocess this eventually feeds runs with cwd=project_root (see
+    services/ansible/ansible.py run_playbook), which can now differ from the
+    process cwd once project_root is discovered by walking up from a
+    subdirectory. Leaving the path relative would silently resolve it
+    against the wrong directory.
+    """
+    return Path(value).resolve()
+
+
 def resolve_project_name(cli_name: str | None = None) -> str:
     """Resolve project name with strict requirements - no cwd fallback.
 
@@ -35,7 +49,7 @@ def resolve_project_name(cli_name: str | None = None) -> str:
     if cli_name:
         return cli_name
 
-    config = LocalConfigService.load()
+    config = LocalConfigService.load(LocalConfigService.find_root())
     if config and config.name:
         return config.name
 
@@ -110,9 +124,10 @@ class ConfigResolver:
         """Initialize ConfigResolver.
 
         Args:
-            project_root: Project root directory (defaults to cwd)
+            project_root: Project root directory (defaults to the enclosing
+                project found by walking up from cwd, or cwd itself if none)
         """
-        self.project_root = project_root or Path.cwd()
+        self.project_root = project_root or LocalConfigService.resolve_root()
         self._local_config = LocalConfigService.load(self.project_root)
 
     @classmethod
@@ -149,7 +164,7 @@ class ConfigResolver:
             Resolved vault Path or None if not configured
         """
         if cli_vault:
-            return Path(cli_vault)
+            return _resolve_cli_path(cli_vault)
         if self._local_config and self._local_config.vault:
             return self.project_root / self._local_config.vault
         return None
@@ -185,7 +200,7 @@ class ConfigResolver:
             ResolvedConfig with all paths and source tracking
         """
         if cli_inventory:
-            inventory = Path(cli_inventory)
+            inventory = _resolve_cli_path(cli_inventory)
             inv_source = "cli"
         elif self._local_config and self._local_config.inventory:
             inventory = self.project_root / self._local_config.inventory
@@ -195,7 +210,7 @@ class ConfigResolver:
             inv_source = "default"
 
         if cli_playbook:
-            playbook = Path(cli_playbook)
+            playbook = _resolve_cli_path(cli_playbook)
             pb_source = "cli"
         elif self._local_config and self._local_config.playbook:
             playbook = self.project_root / self._local_config.playbook
@@ -205,7 +220,7 @@ class ConfigResolver:
             pb_source = "default"
 
         if cli_roles:
-            roles_path = [Path(r) for r in cli_roles]
+            roles_path = [_resolve_cli_path(r) for r in cli_roles]
         elif self._local_config and self._local_config.roles_path:
             roles_path = [self.project_root / r for r in self._local_config.roles_path]
         else:

@@ -80,20 +80,22 @@ def find_service_or_exit(
 
 
 def get_project_root(project_name: str) -> Path:
-    """Get project root path from registry, falling back to cwd.
+    """Get project root path from registry, falling back to discovery.
 
     Args:
         project_name: Name of the project to look up
 
     Returns:
-        Project root path from registry, or current working directory if not found
+        Project root path from registry, or the enclosing project found by
+        walking up from cwd (or cwd itself) if not found
     """
+    from slipp.services.config import LocalConfigService
     from slipp.services.registry import ProjectRegistry
 
     project = ProjectRegistry().get(project_name)
     if project:
         return project.project_path
-    return Path.cwd()
+    return LocalConfigService.resolve_root()
 
 
 def resolve_runtime(host: str | None) -> tuple[Path, str]:
@@ -108,9 +110,9 @@ def resolve_runtime(host: str | None) -> tuple[Path, str]:
     Raises:
         RuntimeDetectionError: If runtime detection fails
     """
-    from slipp.services.config import RuntimeDetector
+    from slipp.services.config import LocalConfigService, RuntimeDetector
 
-    project_root = get_project_root(host) if host else Path.cwd()
+    project_root = get_project_root(host) if host else LocalConfigService.resolve_root()
     runtime = RuntimeDetector(project_root).detect()
 
     return project_root, runtime

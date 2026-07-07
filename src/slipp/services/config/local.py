@@ -9,6 +9,7 @@ from typing import Any
 
 import yaml
 
+from slipp import output
 from slipp.models.local_config import LocalConfig
 from slipp.utils.errors import ConfigParseError
 from slipp.utils.files import atomic_write_text
@@ -30,6 +31,9 @@ class LocalConfigService:
     def get_config_path(project_root: Path | None = None) -> Path:
         """Get path to slipp.yaml.
 
+        Exact-dir semantics only -- never walks up. Use find_root()/
+        resolve_root() at the caller for subdirectory discovery.
+
         Args:
             project_root: Project root directory (defaults to cwd)
 
@@ -38,6 +42,50 @@ class LocalConfigService:
         """
         root = project_root or Path.cwd()
         return root / CONFIG_FILENAME
+
+    @staticmethod
+    def find_root(start: Path | None = None) -> Path | None:
+        """Walk upward from start looking for a directory with slipp.yaml.
+
+        Checks the file's presence only, never its parseability -- a corrupt
+        slipp.yaml in the starting directory binds to that directory rather
+        than silently falling through to a parent's config.
+
+        This is opt-in discovery for read/resolution call sites. Anything
+        that creates or gates on "is a project already configured here"
+        (projects add, ensure_local_config's create-vs-update check, scaffold/
+        launch registration) must NOT use this -- it must bind to an explicit
+        directory (typically cwd), or a walk could silently write into an
+        enclosing project's slipp.yaml.
+
+        Args:
+            start: Directory to start searching from (defaults to cwd)
+
+        Returns:
+            First ancestor (inclusive) containing slipp.yaml, or None if not
+            found before the filesystem root.
+        """
+        current = (start or Path.cwd()).resolve()
+        for candidate in (current, *current.parents):
+            if (candidate / CONFIG_FILENAME).is_file():
+                return candidate
+        return None
+
+    @staticmethod
+    def resolve_root(start: Path | None = None) -> Path:
+        """Find the enclosing project root, falling back to start/cwd.
+
+        Convenience wrapper around find_root() for the common case: read
+        resolution should walk up when possible, but behave exactly like
+        today (bind to cwd) when no slipp.yaml exists anywhere above it.
+
+        Args:
+            start: Directory to start searching from (defaults to cwd)
+
+        Returns:
+            Discovered project root, or start/cwd if none found
+        """
+        return LocalConfigService.find_root(start) or (start or Path.cwd())
 
     @staticmethod
     def exists(project_root: Path | None = None) -> bool:
@@ -70,7 +118,8 @@ class LocalConfigService:
             with open(config_path) as f:
                 data = yaml.safe_load(f) or {}
             return LocalConfig(**data)
-        except Exception:
+        except Exception as e:
+            output.warning(f"Ignoring invalid {config_path}: {e}")
             return None
 
     @staticmethod
@@ -84,6 +133,10 @@ class LocalConfigService:
         project_root: Path | None = None,
     ) -> LocalConfig:
         """Create a new local config.
+
+        Never discovers a root -- callers creating a config must pass an
+        explicit project_root (or intend cwd). Using resolve_root() here
+        could silently overwrite an enclosing project's slipp.yaml.
 
         Args:
             name: Project identifier (required)

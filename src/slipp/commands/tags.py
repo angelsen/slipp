@@ -52,7 +52,8 @@ def add_preset(
     ),
 ) -> None:
     """Add or update a tag preset."""
-    config = LocalConfigService.load()
+    root = LocalConfigService.resolve_root()
+    config = LocalConfigService.load(root)
 
     if not config:
         output.error("No slipp.yaml found")
@@ -80,7 +81,7 @@ def add_preset(
         output.success(f"Added preset '{name}'")
 
     config.tag_presets[name] = args
-    LocalConfigService.save(config)
+    LocalConfigService.save(config, root)
 
     output.hint(f"Use: slipp deploy {name}")
 
@@ -90,7 +91,8 @@ def remove_preset(
     name: str = typer.Argument(..., help="Preset name to remove"),
 ) -> None:
     """Remove a tag preset."""
-    config = LocalConfigService.load()
+    root = LocalConfigService.resolve_root()
+    config = LocalConfigService.load(root)
 
     if not config:
         output.error("No slipp.yaml found")
@@ -103,6 +105,6 @@ def remove_preset(
         raise typer.Exit(1)
 
     del config.tag_presets[name]
-    LocalConfigService.save(config)
+    LocalConfigService.save(config, root)
 
     output.success(f"Removed preset '{name}'")

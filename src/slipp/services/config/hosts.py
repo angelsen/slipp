@@ -188,10 +188,12 @@ class HostResolver:
         from slipp.services.config.local import LocalConfigService
         from slipp.services.registry import ProjectRegistry
 
-        local_config = LocalConfigService.load()
+        project_root = LocalConfigService.find_root()
+        local_config = LocalConfigService.load(project_root) if project_root else None
         if local_config:
+            assert project_root is not None
             try:
-                hosts = self._load_hosts_for_project(Path.cwd())
+                hosts = self._load_hosts_for_project(project_root)
                 return self._first_host(hosts, "Current project")
             except HostNotFoundError:
                 pass
@@ -208,7 +210,7 @@ class HostResolver:
         raise HostNotFoundError(
             "No host context found.\n"
             "Either:\n"
-            "  - cd to project directory with slipp.yaml\n"
+            "  - cd to project directory (or a subdirectory of it) with slipp.yaml\n"
             "  - Use service name: slipp <cmd> <service>\n"
             "  - Use project flag: slipp <cmd> -p <project>"
         )

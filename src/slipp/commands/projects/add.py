@@ -59,6 +59,9 @@ def add_command(
     ),
 ) -> None:
     """Register an Ansible project with slipp."""
+    # Intentionally no root discovery: this command creates/claims THIS
+    # directory as a project root. Walking up would risk overwriting an
+    # enclosing project's slipp.yaml.
     project_root = Path.cwd()
 
     if inventory:

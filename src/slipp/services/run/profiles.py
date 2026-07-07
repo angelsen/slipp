@@ -36,7 +36,7 @@ class RunProfileService:
     """Manage run profile persistence, inheritance, and queries."""
 
     def __init__(self, project_root: Path | None = None):
-        self.project_root = project_root or Path.cwd()
+        self.project_root = project_root or LocalConfigService.resolve_root()
         self._raw_cache: dict[str, dict[str, Any]] | None = None
 
     def _legacy_path(self) -> Path:

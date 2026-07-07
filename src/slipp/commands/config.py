@@ -17,7 +17,7 @@ from slipp.utils.errors import InventoryParseError
 
 def config_command() -> None:
     """Show current project configuration."""
-    project_root = Path.cwd()
+    project_root = LocalConfigService.resolve_root()
 
     if output.get_output_format() == OutputFormat.json:
         _show_json(project_root)
@@ -63,7 +63,7 @@ def _show_table(project_root: Path) -> None:
     resolver = ConfigResolver(project_root)
 
     if not resolver.has_local_config:
-        output.warning("No slipp.yaml found in current directory")
+        output.warning("No slipp.yaml found in current directory or any parent")
         output.hint("Run 'slipp projects add <name> -i <inventory>' to create config")
         output.hint(
             "Or 'slipp deploy --name <name> -i <inventory>' to deploy and save config"

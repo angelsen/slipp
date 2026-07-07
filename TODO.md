@@ -35,31 +35,70 @@ iteration order depends on Python's per-process hash seed — switched to
 auto-generated `requirements.yml`, running `deploy` twice, missing-binary
 error path.
 
-**Left for later, not bugs but worth knowing:**
+**Left for later, not bugs but worth knowing:** none remaining from this pass
+— subdirectory config discovery (below) was the last item.
 
-- **Subdirectory config discovery.** Running commands from a subdirectory
-  (instead of project root) fails cleanly but doesn't walk up to find
-  `slipp.yaml` like git/npm/cargo do. Scoped this out (2026-07-07) — it's a
-  coordinated multi-file change, not a one-function fix:
-  - Callers that already delegate to `LocalConfigService` with
-    `project_root=None` (would auto-benefit from an upward walk added to
-    `get_config_path`): `HostResolver.current()` (the cwd-fallback path for
-    `slipp host`/`exec`/`ssh`/`logs`/`status` when invoked without `-p`/a
-    service — the registry-backed paths already work fine), `slipp tags
-    add/remove`, `PresetResolver`, `resolve_project_name()`.
-  - Callers that hardcode `Path.cwd()` themselves before ever reaching
-    `LocalConfigService` — need separate explicit changes:
-    `ConfigResolver.__init__` (backs `slipp deploy` and `slipp config`),
-    and `commands/config.py`'s `config_command()` (hardcodes
-    `project_root = Path.cwd()` directly, no override at all).
-  - **Footgun to resolve first:** `LocalConfigService.exists()`/`load()`
-    also gate "is a project already configured here" checks (e.g. `slipp
-    projects add`). A blind upward walk could make `projects add` in a
-    subdirectory of an already-slipp-managed parent wrongly think a nested
-    project is already configured, or write into the wrong project's
-    `slipp.yaml`. Needs the walk scoped to read-only resolution paths, not
-    create/write-gating checks — not yet traced whether `projects add`
-    shares the same `exists()` call.
+## Subdirectory config discovery — done (2026-07-07)
+
+Running slipp commands from a subdirectory of a project now walks up to find
+`slipp.yaml`, like git/npm/cargo. Previously scoped out due to a footgun:
+`LocalConfigService.get_config_path()` is the single choke point that
+`exists`/`load`/**`save`** all funnel through, so a blind walk would have
+silently redirected writes (e.g. `projects add`'s `create()`) into an
+enclosing project's `slipp.yaml`.
+
+**Design:** discovery-at-entry, explicit-root-downstream (the git model).
+Added `LocalConfigService.find_root()`/`resolve_root()`
+(`services/config/local.py`) — walk from cwd upward checking `slipp.yaml`
+file presence only (never parsed, so a corrupt config in cwd binds to cwd,
+not a grandparent). All existing `LocalConfigService` primitives keep strict
+exact-dir semantics; the walk is opt-in at command/service entry. Governing
+rule: **creation never walks** (`projects add`, scaffold/launch stages,
+`ensure_local_config`'s create-vs-update gate stay bound to cwd/explicit
+dir) — **updates to a discovered config are the feature** (`tags add`,
+`run --cmd`, deploy flag persistence writing into the walked root is exactly
+"operate on the enclosing project"; nearest-file-wins keeps it safe).
+
+Adopters: `ConfigResolver`, `RuntimeDetector`, `RunProfileService`,
+`HostResolver.current()`, `PresetResolver`, `resolve_project_name()`,
+`commands/config.py`, `commands/common.py` (`get_project_root`/
+`resolve_runtime`), `commands/tags.py` (resolve root once, pass to both
+load+save), and deploy (`commands/deploy.py` +
+`services/deploy/config.py`).
+
+**Bug found and fixed during verification (not in the original scope):**
+CLI-flag relative paths (`-i`, `--playbook`, `--roles`, `--vault`) were left
+relative to the process's cwd, but `run_playbook()`
+(`services/ansible/ansible.py`) runs the ansible subprocess with
+`cwd=playbook.parent` — i.e. `project_root`. Before this feature,
+`project_root` was always cwd, so the two never diverged and this was
+invisible. Once project_root can be a discovered *ancestor* of cwd, a
+relative CLI path resolves against the wrong directory (confirmed by hand:
+`slipp deploy -i ../../inventory2/hosts` from a subdirectory tried to parse
+`/tmp/inventory2/hosts` instead of the intended path). Fixed by anchoring
+CLI-flag paths to the actual process cwd via `Path(value).resolve()`
+(`services/config/resolver.py`, `_resolve_cli_path`) before they're used
+downstream.
+
+Also added: deploy's `persist_config_updates` now converts flag paths to
+project-root-relative before writing them into `slipp.yaml` (so persisted
+paths mean the same thing on the next run regardless of which directory
+`deploy` was invoked from), with a warning + skip for paths that fall
+outside the project root and can't be expressed that way.
+
+Verified end-to-end in a termtap pane (nested `parent/sub/deeper` tree):
+regression baseline from the project root unchanged; reads (`config`,
+`host`, `deploy --dry-run`) and writes (`tags add`, `run --cmd`, deploy flag
+persistence) from a subdirectory correctly resolve/target the parent's
+`slipp.yaml`; `.slipp/logs/` lands under the project root, never the
+subdirectory; `projects add`/`deploy --name` in a subdirectory of a managed
+parent create their own nested config without touching the parent's
+(byte-identical before/after); `deploy --name` with no local config in the
+subdirectory registers the *discovered* root in the global registry, not the
+subdirectory it was run from; a corrupt `slipp.yaml` in an intermediate
+directory binds there (with a new visible warning) rather than silently
+falling through to the parent; no-config-anywhere behaves exactly as
+before.
 
 ## `slipp generate scaffold` + external roles — fixed (2026-07-07)
 

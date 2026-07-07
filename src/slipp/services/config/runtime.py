@@ -18,7 +18,7 @@ class RuntimeDetector:
     """
 
     def __init__(self, project_root: Path | None = None):
-        self.project_root = project_root or Path.cwd()
+        self.project_root = project_root or LocalConfigService.resolve_root()
 
     def detect(self) -> str:
         """Detect container runtime, error if unclear.

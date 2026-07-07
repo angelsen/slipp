@@ -22,9 +22,10 @@ class PresetResolver:
         """Initialize with optional config.
 
         Args:
-            config: Local config to use (loads from cwd if None)
+            config: Local config to use (loads from the enclosing project,
+                walking up from cwd, if None)
         """
-        self.config = config or LocalConfigService.load()
+        self.config = config or LocalConfigService.load(LocalConfigService.find_root())
 
     def resolve(self, preset_name: str) -> tuple[str | None, str | None]:
         """Resolve preset to (tags, skip_tags) tuple.
