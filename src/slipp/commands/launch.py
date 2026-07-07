@@ -4,7 +4,9 @@ from pathlib import Path
 
 import typer
 
+from slipp import output
 from slipp.constants import DEFAULT_ENV
+from slipp.scanner.workspaces import detect_workspace_members
 from slipp.services.launch import FullContext, run_full_pipeline
 
 
@@ -48,7 +50,16 @@ def launch_command(
     ),
 ) -> None:
     """Generate complete Ansible project from codebase."""
-    dirs = project_dirs if project_dirs else [Path.cwd()]
+    if project_dirs:
+        dirs = project_dirs
+    else:
+        cwd = Path.cwd()
+        members = detect_workspace_members(cwd)
+        if members:
+            output.info(f"Detected workspace: {len(members)} member(s)")
+            dirs = [cwd, *members]
+        else:
+            dirs = [cwd]
     output_dir = Path.cwd() if len(dirs) > 1 else dirs[0]
 
     context = FullContext(

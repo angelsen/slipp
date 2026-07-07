@@ -242,17 +242,64 @@ network/routing it's exposed through.
   both a real two-service monorepo layout and a plain single-service
   project.
 
-  **Left for later, deliberately not built now:** `package.json`
-  `"workspaces"` auto-detection to suggest `--dir` candidates instead of
-  requiring the user to enumerate every app directory by hand. Scoped the
-  shape but didn't implement: workspace entries aren't automatically
-  "deployable services" (a shared package like `@bulletins/schema` would
-  show up in the array too — still needs the existing scan-and-skip-
-  non-matches behavior, not blind trust), and whether the workspace *root*
-  itself counts as a deployable app (true for Bulletins) or is just a
-  coordinator with no app of its own (common in Turborepo-style repos) isn't
-  inferable from `package.json` alone — needs a flag/prompt, not a silent
-  guess.
+  **`package.json` workspace auto-detection — done (2026-07-07).**
+  `slipp launch` with no `--dir` flags now auto-detects a
+  `"workspaces"` array in the cwd's `package.json` and scans root + every
+  member, instead of requiring the user to enumerate each app directory by
+  hand. Explicit `--dir` still bypasses detection entirely, unchanged.
+
+  Root-as-candidate needed no special-casing: `scan()` (`scanner/scanner.py:56`)
+  already returns `None` for a directory matching no known framework, and
+  `ProjectScanStage` already silently skips a `None` result — so a
+  Turborepo-style pure-coordinator root (no build script) is naturally
+  excluded for free, no need to distinguish "root is an app" vs "root is a
+  coordinator" as a case. Confirmed by research rather than assumed: `uv`'s
+  own workspace docs are explicit that "every workspace needs a root, which
+  is also a workspace member" — same convention, independent ecosystem.
+
+  Resolution leverages native package-manager tooling instead of
+  hand-rolling glob matching: `npm query .workspace --json` (npm 8+) or
+  `yarn workspaces list --json` (Yarn Berry) resolve the `"workspaces"`
+  glob patterns (including negation) into concrete member paths —
+  `scanner/workspaces.py`'s `detect_workspace_members()`. Extracted the
+  existing lockfile-based package-manager sniffing out of
+  `NodeJSVariableExtractor._detect_package_manager()` into a shared
+  `utils/nodejs.py` helper so both call sites use one implementation.
+  **pnpm is out of scope** — it declares workspaces in a separate
+  `pnpm-workspace.yaml`, not `package.json`, and slipp doesn't read that
+  file (Bulletins uses plain npm, confirmed via its `package-lock.json`).
+
+  **Bug found and fixed during verification, not anticipated in scoping:**
+  `npm query .workspace --json` (and presumably `yarn workspaces list`)
+  returns an empty array on a project where `npm install` hasn't actually
+  run — `--package-lock-only` isn't enough, node_modules must exist.
+  Confirmed by hand: same repo, same `"workspaces": ["admin"]` declaration,
+  `npm query` returns `[]` before a real `npm install` and the correct
+  `admin` entry after. Since the code originally only fell back to the next
+  resolver (native → glob) on an outright subprocess/parse failure, a fresh
+  clone (the exact state a monorepo is in right after `git clone`, before
+  `npm install`) would have silently detected zero workspace members
+  instead of falling back. Fixed: fall back to the naive glob resolver on
+  an **empty** result too, not just a hard failure — safe because
+  `detect_workspace_members()` already confirmed the raw `"workspaces"`
+  array itself is non-empty before ever calling a resolver.
+
+  Verified end-to-end in a termtap pane: auto-detection via the native npm
+  path (with `node_modules` present), via the glob fallback (fresh clone,
+  no `node_modules`), explicit `--dir` still bypassing detection, and a
+  plain single-app project with no `"workspaces"` key behaving identically
+  to before. Sync-excludes (previous fix, commit `a6b67ff`) apply correctly
+  to auto-detected services with no additional wiring needed.
+
+  **Left for later:** pnpm workspace support (`pnpm-workspace.yaml`
+  parsing); a symmetric `uv` workspace auto-detector for the Python
+  scanners (Flask/FastAPI/Django) — `uv` has no equivalent to
+  `npm query`/`yarn workspaces list` (no machine-readable listing command),
+  so that side would need to parse `[tool.uv.workspace]`'s `members`/
+  `exclude` glob patterns from `pyproject.toml` directly rather than
+  shelling out to a native command; name collisions between two workspace
+  members sharing a directory basename (pre-existing risk, not introduced
+  here); no flag to force-disable auto-detection when no `--dir` is given.
 - **Delegate exposure to wg-manage instead of templating Caddy.** Where the
   target host already runs wg-deploy's `wg-manage` (source of truth for
   Caddy via `/etc/wg-services.json`), slipp's `caddy` role should stop

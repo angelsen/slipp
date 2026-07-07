@@ -10,6 +10,7 @@ from typing import Any
 
 from slipp.generator.extractors.base import VariableExtractor
 from slipp.models.deployment import DetectedService
+from slipp.utils.nodejs import detect_package_manager
 
 
 class NodeJSVariableExtractor(VariableExtractor):
@@ -53,7 +54,7 @@ class NodeJSVariableExtractor(VariableExtractor):
         variables["nodeVersion"] = self._detect_nodejs_version(service.path)
 
         # Package manager detection
-        package_manager, package_files = self._detect_package_manager(service.path)
+        package_manager, package_files = detect_package_manager(service.path)
         variables["packager"] = package_manager
         variables["package_files"] = package_files
 
@@ -115,28 +116,6 @@ class NodeJSVariableExtractor(VariableExtractor):
 
         # Default to LTS version
         return "20"
-
-    def _detect_package_manager(self, service_path: Path) -> tuple[str, str]:
-        """Detect package manager from lock files.
-
-        Args:
-            service_path: Path to service directory
-
-        Returns:
-            Tuple of (package_manager, package_files)
-            e.g., ("yarn", "package.json yarn.lock")
-        """
-        if (service_path / "yarn.lock").exists():
-            return ("yarn", "package.json yarn.lock")
-        elif (service_path / "pnpm-lock.yaml").exists():
-            return ("pnpm", "package.json pnpm-lock.yaml")
-        elif (service_path / "bun.lockb").exists():
-            return ("bun", "package.json bun.lockb")
-        elif (service_path / "package-lock.json").exists():
-            return ("npm", "package.json package-lock.json")
-        else:
-            # No lock file found, default to npm
-            return ("npm", "package.json package-lock.json")
 
     def _has_build_script(self, service_path: Path) -> bool:
         """Check if package.json has a build script.
