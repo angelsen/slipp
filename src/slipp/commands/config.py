@@ -4,6 +4,7 @@ Shows local slipp.yaml settings, inventory hosts, and global
 registry status. Supports both human-readable table and JSON output.
 """
 
+import json
 from pathlib import Path
 
 import typer
@@ -85,8 +86,6 @@ def _show_table(project_root: Path) -> None:
 
 def _show_json(project_root: Path) -> None:
     """Display config as JSON."""
-    import json
-
     resolver = ConfigResolver(project_root)
     registry = ProjectRegistry()
     local_config = resolver.local_config

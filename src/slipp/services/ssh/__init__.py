@@ -11,7 +11,6 @@ from slipp.services.ssh.tunnel import (
     parse_container_tunnel_in,
     parse_tunnel_in,
     parse_tunnel_out,
-    resolve_tunnel_host,
 )
 from slipp.services.ssh.user import UserResolution, UserResolver
 
@@ -22,7 +21,6 @@ __all__ = [
     "parse_container_tunnel_in",
     "parse_tunnel_in",
     "parse_tunnel_out",
-    "resolve_tunnel_host",
     "InteractiveSessionManager",
     "CommandBuilder",
     "build_ssh_command",

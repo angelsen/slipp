@@ -16,7 +16,7 @@ from slipp.models.deployment import (
 )
 from slipp.scanner.models import NODE_FRAMEWORKS, PYTHON_FRAMEWORKS
 from slipp.services.launch.context import FullContext
-from slipp.services.launch.stages.common import FileGenerationStage
+from slipp.services.launch.stages.common import FileGenerationStage, require
 
 # Node frameworks serve as the frontend, Python as the backend, in slipp's
 # default multi-service Caddy routing convention.
@@ -88,16 +88,16 @@ class CaddyConfigStage:
             context: Deployment context object with inventory_config, services,
                 and skip_caddy flag.
         """
-        assert context.inventory_config is not None, "Inventory config must be loaded"
+        inventory_config = require(context.inventory_config, "inventory config")
 
-        first_host = context.inventory_config.first_host
+        first_host = inventory_config.first_host
 
         if not context.skip_caddy:
             output.info("Configuring Caddy reverse proxy...")
 
-            assert first_host.app_domain is not None, "app_domain must be set for Caddy"
+            app_domain = require(first_host.app_domain, "app_domain")
 
-            caddy_sites = build_caddy_sites(context.services, first_host.app_domain)
+            caddy_sites = build_caddy_sites(context.services, app_domain)
             caddy_config = CaddyConfig(
                 sites=caddy_sites,
                 auto_https=True,
@@ -117,7 +117,7 @@ class CaddyConfigStage:
 
         context.provision_config = ProvisionConfig(
             services=context.services,
-            inventory=context.inventory_config,
+            inventory=inventory_config,
             project_name=context.project_name,
             project_root=context.output_dir,
             caddy_config=caddy_config,
@@ -148,21 +148,21 @@ class CaddyRoleStage(FileGenerationStage[FullContext]):
         if context.skip_caddy:
             return {}
 
-        assert context.inventory_config is not None, "Inventory config must be loaded"
-        assert context.provision_config is not None, "Provision config must be set"
+        inventory_config = require(context.inventory_config, "inventory config")
+        provision_config = require(context.provision_config, "provision config")
 
-        first_host = context.inventory_config.first_host
+        first_host = inventory_config.first_host
 
-        assert first_host.app_domain is not None, "app_domain must be set"
-        assert first_host.admin_email is not None, "admin_email must be set"
+        app_domain = require(first_host.app_domain, "app_domain")
+        admin_email = require(first_host.admin_email, "admin_email")
 
         caddy_generator = CaddyGenerator()
 
         caddy_files = caddy_generator.generate(
-            context.provision_config.caddy_config,
+            provision_config.caddy_config,
             context.project_name,
-            first_host.app_domain,
-            first_host.admin_email,
+            app_domain,
+            admin_email,
         )
 
         return {

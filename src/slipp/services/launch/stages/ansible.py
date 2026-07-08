@@ -10,7 +10,7 @@ from slipp.generator.env import render_template
 from slipp.generator.playbook_generator import generate_playbook
 from slipp.generator.role_generator import RoleGenerator
 from slipp.services.launch.context import FullContext
-from slipp.services.launch.stages.common import FileGenerationStage
+from slipp.services.launch.stages.common import FileGenerationStage, require
 from slipp.utils.errors import LaunchError
 
 
@@ -21,9 +21,9 @@ class PlaybookGenerationStage(FileGenerationStage[FullContext]):
         super().__init__("Generating playbook.yml")
 
     def generate_content(self, context: FullContext) -> dict[Path, str]:
-        assert context.provision_config is not None, "Provision config must be set"
+        provision_config = require(context.provision_config, "provision config")
 
-        playbook_content = generate_playbook(context.provision_config)
+        playbook_content = generate_playbook(provision_config)
         playbook_path = context.output_dir / "playbook.yml"
 
         return {playbook_path: playbook_content}
@@ -39,11 +39,11 @@ class GroupVarsStage(FileGenerationStage[FullContext]):
         super().__init__("Generating group_vars/all.yml")
 
     def generate_content(self, context: FullContext) -> dict[Path, str]:
-        assert context.provision_config is not None, "Provision config must be set"
+        provision_config = require(context.provision_config, "provision config")
 
         group_vars_content = render_template(
             "group_vars/all.yml.j2",
-            context.provision_config.to_dict(),
+            provision_config.to_dict(),
             label="group_vars/all.yml",
         )
 
@@ -65,9 +65,9 @@ class AppRolesStage(FileGenerationStage[FullContext]):
         super().__init__("Generating app roles")
 
     def generate_content(self, context: FullContext) -> dict[Path, str]:
-        assert context.inventory_config is not None, "Inventory config must be loaded"
+        inventory_config = require(context.inventory_config, "inventory config")
 
-        first_host = context.inventory_config.first_host
+        first_host = inventory_config.first_host
         runtime = first_host.runtime
         role_generator = RoleGenerator()
 

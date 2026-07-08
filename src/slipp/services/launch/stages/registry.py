@@ -5,6 +5,7 @@ from slipp.constants import get_inventory_filename
 from slipp.models.service import Runtime
 from slipp.services.launch.context import FullContext
 from slipp.services.launch.registration import register_project
+from slipp.services.launch.stages.common import require
 
 
 class RegistrationStage:
@@ -25,9 +26,9 @@ class RegistrationStage:
         if context.dry_run:
             return
 
-        assert context.inventory_config is not None, "Inventory config must be loaded"
+        inventory_config = require(context.inventory_config, "inventory config")
         inventory_filename = get_inventory_filename(context.environment)
-        first_host = context.inventory_config.first_host
+        first_host = inventory_config.first_host
         register_project(
             name=context.project_name,
             project_root=context.output_dir,
@@ -48,9 +49,9 @@ class SummaryStage:
         Args:
             context: Launch context with generated files and inventory config.
         """
-        assert context.inventory_config is not None, "Inventory config must be loaded"
+        inventory_config = require(context.inventory_config, "inventory config")
 
-        first_host = context.inventory_config.first_host
+        first_host = inventory_config.first_host
 
         if context.dry_run:
             output.warning("Dry run complete (no files written)")

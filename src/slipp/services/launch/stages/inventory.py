@@ -10,7 +10,7 @@ from slipp.generator.inventory_generator import generate_inventory
 from slipp.models.deployment import DeploymentHostConfig, InventoryConfig
 from slipp.models.service import Runtime
 from slipp.services.launch.context import FullContext
-from slipp.services.launch.stages.common import FileGenerationStage
+from slipp.services.launch.stages.common import FileGenerationStage, require
 from slipp.utils.errors import LaunchError
 from slipp.utils.prompts import get_inventory_config
 
@@ -79,11 +79,11 @@ class InventoryValidationStage:
         Raises:
             LaunchError: If required fields are missing.
         """
-        assert context.inventory_config is not None, (
-            "Inventory config must be loaded before validation"
+        inventory_config = require(
+            context.inventory_config, "inventory config (before validation)"
         )
 
-        first_host = context.inventory_config.first_host
+        first_host = inventory_config.first_host
 
         if not first_host.app_domain:
             raise LaunchError(
@@ -113,10 +113,10 @@ class InventoryFileStage(FileGenerationStage[FullContext]):
         Returns:
             Dictionary mapping file path to inventory YAML content.
         """
-        assert context.inventory_config is not None, "Inventory config must be loaded"
+        inventory_config = require(context.inventory_config, "inventory config")
 
         inventory_filename = get_inventory_filename(context.environment)
-        inventory_content = generate_inventory(context.inventory_config)
+        inventory_content = generate_inventory(inventory_config)
         inventory_path = context.output_dir / inventory_filename
 
         return {inventory_path: inventory_content}

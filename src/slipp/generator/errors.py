@@ -21,12 +21,6 @@ class TemplateFetchError(GeneratorError):
     pass
 
 
-class TemplateRenderError(GeneratorError):
-    """Template rendering failed."""
-
-    pass
-
-
 class TemplateGenerationError(GeneratorError):
     """Template generation failed (playbook/compose)."""
 

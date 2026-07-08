@@ -13,13 +13,13 @@ from pathlib import Path
 from slipp import output
 from slipp.models.host import AnsibleHost
 from slipp.models.run import ProxyRoute, RunProfile, TunnelConfig
+from slipp.services.config import HostResolver
 from slipp.services.run.caddy import CaddyProxy
 from slipp.services.ssh import (
     TunnelManager,
     parse_container_tunnel_in,
     parse_tunnel_in,
     parse_tunnel_out,
-    resolve_tunnel_host,
 )
 from slipp.services.vault import (
     merge_vault_envs,
@@ -27,11 +27,39 @@ from slipp.services.vault import (
 )
 from slipp.utils.errors import (
     ConfigError,
+    HostNotFoundError,
     ProfileExecutionError,
     SSHAuthenticationError,
     SSHConnectionError,
     TunnelError,
 )
+
+
+def resolve_tunnel_host(host_spec: str) -> AnsibleHost:
+    """Resolve host spec to AnsibleHost.
+
+    Supports:
+    - Project name from registry (e.g., 'metria')
+    - Direct IP/hostname (e.g., '192.168.1.1')
+
+    Args:
+        host_spec: Project name or IP/hostname
+
+    Returns:
+        AnsibleHost for the target
+    """
+    resolver = HostResolver()
+
+    try:
+        return resolver.by_project(host_spec)
+    except HostNotFoundError:
+        pass
+
+    return AnsibleHost(
+        inventory_hostname=host_spec,
+        ansible_host=host_spec,
+        ansible_user="root",
+    )
 
 
 def parse_env_vars(env_list: list[str]) -> dict[str, str]:
@@ -90,6 +118,9 @@ def run_command(
         Exit code from command
     """
     full_env = {**os.environ, **(env or {})}
+    # shell=True is deliberate: `cmd` is the user's own dev command from their
+    # local run profile (e.g. "npm run dev"), run locally as themselves --
+    # same trust boundary as typing it at a shell prompt.
     process = subprocess.Popen(cmd, shell=True, cwd=cwd, env=full_env)
     return process.wait()
 

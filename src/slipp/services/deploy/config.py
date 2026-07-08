@@ -7,6 +7,7 @@ from typing import Any
 from slipp import output
 from slipp.output import format_path
 from slipp.services.config import LocalConfigService
+from slipp.services.config.detection import PLAYBOOK_PATTERNS, detect_path
 from slipp.services.registry import ProjectRegistry
 from slipp.utils.errors import ConfigError, ConfigParseError, SlippError
 
@@ -24,7 +25,9 @@ def ensure_local_config(
     Args:
         name: Project name.
         inventory: Inventory file path (relative to project_root).
-        playbook: Playbook file path, defaults to "playbook.yml".
+        playbook: Playbook file path. Auto-detected (same patterns as
+            `slipp projects add`) when not given, falling back to
+            "playbook.yml" if nothing is found.
         roles: Role search directories.
         vault: Vault file path.
         project_root: Project root directory.
@@ -39,6 +42,14 @@ def ensure_local_config(
             f"Inventory file not found: {format_path(inventory_path, project_root)}"
         )
 
+    if playbook:
+        playbook_path = playbook
+    else:
+        detected = detect_path(project_root, PLAYBOOK_PATTERNS)
+        playbook_path = (
+            str(detected.relative_to(project_root)) if detected else "playbook.yml"
+        )
+
     try:
         if LocalConfigService.exists(project_root):
             LocalConfigService.update(
@@ -50,7 +61,7 @@ def ensure_local_config(
             LocalConfigService.create(
                 name=name,
                 inventory_path=inventory,
-                playbook_path=playbook or "playbook.yml",
+                playbook_path=playbook_path,
                 roles_path=roles if roles else None,
                 vault_path=vault,
                 project_root=project_root,

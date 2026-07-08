@@ -4,7 +4,7 @@ from pathlib import Path
 
 from slipp.generator.requirements_generator import generate_requirements
 from slipp.services.launch.context import FullContext
-from slipp.services.launch.stages.common import FileGenerationStage
+from slipp.services.launch.stages.common import FileGenerationStage, require
 
 
 class RequirementsFileStage(FileGenerationStage[FullContext]):
@@ -25,10 +25,10 @@ class RequirementsFileStage(FileGenerationStage[FullContext]):
         Returns:
             Dictionary mapping file path to content.
         """
-        assert context.inventory_config is not None, "Inventory config must be loaded"
+        inventory_config = require(context.inventory_config, "inventory config")
 
         requirements_path = context.output_dir / "requirements.yml"
-        first_host = context.inventory_config.first_host
+        first_host = inventory_config.first_host
         content = generate_requirements(first_host.runtime)
 
         return {requirements_path: content}

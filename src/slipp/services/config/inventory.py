@@ -24,6 +24,8 @@ def load_project_ansible_hosts(project_path: Path) -> list[AnsibleHost]:
     Raises:
         HostNotFoundError: If config or inventory invalid
     """
+    # Must stay lazy: local.py top-imports this module (InventoryService), so
+    # a top-level import here would be a mutual from-import cycle.
     from slipp.services.config.local import LocalConfigService
 
     local_config = LocalConfigService.load(project_path)

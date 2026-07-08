@@ -9,11 +9,8 @@ from slipp import output
 from slipp.commands.common import display_services_table, resolve_host_or_exit
 from slipp.constants import OutputFormat
 from slipp.services.config import HostResolver, collect_managed_roles
-from slipp.services.discovery import (
-    discover_across_hosts,
-    discover_and_enrich,
-    filter_services,
-)
+from slipp.services.discovery import filter_services
+from slipp.services.discovery.pipeline import discover_across_hosts, discover_and_enrich
 
 
 def ps_command(

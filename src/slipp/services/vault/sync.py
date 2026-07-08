@@ -38,35 +38,17 @@ class SecretSynchronizer:
         self.num_bytes = num_bytes
         self.encoding = encoding
 
-    def find_vault_references(self, content: str) -> set[str]:
-        """Extract vault_* variable names from YAML content.
-
-        Args:
-            content: YAML file content as string
-
-        Returns:
-            Set of vault variable names found
-        """
-        return extract_vault_refs(content)
-
-    def sync(
-        self,
-        vars_file: Path,
-        vault_path: Path | None = None,
-        force: bool = False,
-    ) -> list[str]:
-        """Find {{ vault_* }} refs and generate missing secrets.
+    def scan(self, vars_file: Path) -> set[str]:
+        """Read a YAML file and extract its {{ vault_* }} references.
 
         Args:
             vars_file: Path to YAML file to scan for references
-            vault_path: Path to vault file (default: vars_file.parent / vault.yml)
-            force: Overwrite existing vault file if True
 
         Returns:
-            List of generated secret names
+            Set of vault variable names found
 
         Raises:
-            VaultSyncError: On file not found, already exists, or encryption errors
+            VaultSyncError: If the file doesn't exist or isn't a file
         """
         if not vars_file.exists():
             raise VaultSyncError(f"File not found: {vars_file}")
@@ -74,16 +56,32 @@ class SecretSynchronizer:
         if not vars_file.is_file():
             raise VaultSyncError(f"Not a file: {vars_file}")
 
-        if vault_path is None:
-            vault_path = vars_file.parent / "vault.yml"
+        return extract_vault_refs(vars_file.read_text())
 
+    def sync(
+        self,
+        vault_path: Path,
+        refs: set[str],
+        force: bool = False,
+    ) -> list[str]:
+        """Generate and write missing secrets for the given references.
+
+        Args:
+            vault_path: Path to vault file to write.
+            refs: Vault variable names to generate secrets for (e.g. from scan()).
+            force: Overwrite existing vault file if True
+
+        Returns:
+            List of generated secret names
+
+        Raises:
+            VaultSyncError: If the vault file already exists (without force),
+                or on encryption errors
+        """
         if vault_path.exists() and not force:
             raise VaultSyncError(
                 f"Vault file already exists: {vault_path}. Use force=True to overwrite."
             )
-
-        content = vars_file.read_text()
-        refs = self.find_vault_references(content)
 
         if not refs:
             return []

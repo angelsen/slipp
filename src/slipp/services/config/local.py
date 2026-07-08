@@ -12,6 +12,8 @@ import yaml
 from slipp import output
 from slipp.models.local_config import LocalConfig
 from slipp.models.service import Runtime
+from slipp.services.config.inventory import InventoryService
+from slipp.services.registry import ProjectRegistry
 from slipp.utils.errors import ConfigParseError
 from slipp.utils.files import atomic_write_text
 
@@ -153,8 +155,6 @@ class LocalConfigService:
         Returns:
             Created LocalConfig
         """
-        from slipp.services.config.inventory import InventoryService
-
         root = project_root or Path.cwd()
 
         managed_roles: list[str] = []
@@ -195,8 +195,6 @@ class LocalConfigService:
         Raises:
             ConfigParseError: If config doesn't exist or is invalid
         """
-        from slipp.services.config.inventory import InventoryService
-
         root = project_root or Path.cwd()
         config = LocalConfigService.load(root)
 
@@ -297,8 +295,6 @@ def collect_managed_roles(project: str | None = None) -> list[str] | None:
     Returns:
         List of managed role names, or None if none are configured
     """
-    from slipp.services.registry import ProjectRegistry
-
     project_registry = ProjectRegistry()
 
     if project:

@@ -25,7 +25,9 @@ class PresetResolver:
             config: Local config to use (loads from the enclosing project,
                 walking up from cwd, if None)
         """
-        self.config = config or LocalConfigService.load(LocalConfigService.find_root())
+        self.config = config or LocalConfigService.load(
+            LocalConfigService.resolve_root()
+        )
 
     def resolve(self, preset_name: str) -> tuple[str | None, str | None]:
         """Resolve preset to (tags, skip_tags) tuple.

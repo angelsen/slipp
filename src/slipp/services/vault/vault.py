@@ -43,14 +43,10 @@ _VaultLoader.add_constructor("!vault", _vault_constructor)
 
 
 @contextmanager
-def vault_password_file(
-    prompt: str = "Vault password",
-    confirm: bool = True,
-) -> Iterator[Path]:
+def vault_password_file(confirm: bool = True) -> Iterator[Path]:
     """Context manager that prompts for password and creates temp file.
 
     Args:
-        prompt: Password prompt message
         confirm: If True, prompt twice and verify match
 
     Yields:
@@ -65,11 +61,11 @@ def vault_password_file(
     """
     from slipp import output
 
-    password = output.prompt_password(prompt, confirm=confirm)
+    password = output.prompt_password("Vault password", confirm=confirm)
 
+    # mkstemp already creates the file 0600; no extra chmod needed.
     fd, path = tempfile.mkstemp(prefix="vault_pass_", text=True)
     try:
-        os.chmod(path, 0o600)
         with os.fdopen(fd, "w") as f:
             f.write(password)
         yield Path(path)
@@ -161,11 +157,11 @@ def encrypt_string(
     """
     check_tool_installed("ansible-vault", AnsibleVaultNotInstalledError)
 
-    cmd = ["ansible-vault", "encrypt_string", value, "--name", name]
+    cmd = ["ansible-vault", "encrypt_string", "--stdin-name", name]
     if password_file:
         cmd.extend(["--vault-password-file", str(password_file)])
 
-    result = run_checked(cmd, VaultError)
+    result = run_checked(cmd, VaultError, input=value)
 
     return result.stdout
 

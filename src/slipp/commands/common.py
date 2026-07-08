@@ -1,7 +1,7 @@
 """Presentation utilities for commands.
 
 This module contains display/formatting functions shared across commands.
-Business logic (filtering, discovery, lookups) is in services/discovery.py.
+Business logic (filtering, discovery, lookups) is in services/discovery/.
 """
 
 from pathlib import Path
@@ -13,7 +13,8 @@ from slipp import output
 from slipp.models.host import AnsibleHost
 from slipp.models.service import Runtime, Service
 from slipp.scanner.workspaces import detect_workspace_members
-from slipp.services.discovery import discover_and_enrich, filter_services, find_service
+from slipp.services.discovery import filter_services, find_service
+from slipp.services.discovery.pipeline import discover_and_enrich
 from slipp.utils.errors import AmbiguousServiceError, HostNotFoundError
 from slipp.utils.identifiers import parse_service_identifier
 

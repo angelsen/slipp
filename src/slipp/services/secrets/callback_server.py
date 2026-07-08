@@ -6,7 +6,7 @@ import hashlib
 import json
 
 from aiohttp import web
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 
 class CallbackServer:
@@ -69,32 +69,31 @@ class CallbackServer:
             return web.Response(text=f"Decryption failed: {e}", status=400)
 
     def _decrypt(self, encrypted: str) -> dict:
-        """Decrypt credentials using AES-256-CBC.
+        """Decrypt credentials using AES-256-GCM.
 
         Args:
-            encrypted: Base64url-encoded IV + ciphertext.
+            encrypted: Base64url-encoded nonce + ciphertext + auth tag.
 
         Returns:
             Decrypted JSON object containing resources and successUrl.
 
-        Format: base64url(IV + ciphertext)
+        Raises:
+            cryptography.exceptions.InvalidTag: If the ciphertext was
+                tampered with or the nonce/key don't match (also covers
+                truncated/malformed input). Caught by the generic handler
+                in _handle_callback.
+
+        Format: base64url(nonce[12] + ciphertext || tag[16])
         Key: SHA-256(session_secret)
         """
         # Add padding - Node base64url omits '='
         encrypted += "=" * (-len(encrypted) % 4)
         raw = base64.urlsafe_b64decode(encrypted)
-        iv = raw[:16]
-        ciphertext = raw[16:]
+        nonce = raw[:12]
+        ciphertext_and_tag = raw[12:]
 
         key = hashlib.sha256(self.session_secret.encode()).digest()
-        cipher = Cipher(algorithms.AES(key), modes.CBC(iv))
-        decryptor = cipher.decryptor()
-
-        padded = decryptor.update(ciphertext) + decryptor.finalize()
-
-        # Remove PKCS7 padding
-        pad_len = padded[-1]
-        plaintext = padded[:-pad_len]
+        plaintext = AESGCM(key).decrypt(nonce, ciphertext_and_tag, None)
 
         return json.loads(plaintext.decode())
 

@@ -1,0 +1,34 @@
+"""Auto-detection of Ansible project files (inventory, playbook, roles).
+
+Single source of truth for the conventional paths slipp looks for when a
+project doesn't explicitly specify them, shared by `slipp projects add`
+(explicit registration) and `slipp deploy` (implicit registration).
+"""
+
+from pathlib import Path
+
+INVENTORY_PATTERNS = ["inventory/hosts", "inventory.yml", "hosts"]
+PLAYBOOK_PATTERNS = ["playbook.yml", "site.yml", "main.yml"]
+ROLES_PATTERNS = ["roles"]
+
+
+def detect_path(
+    project_root: Path, patterns: list[str], is_dir: bool = False
+) -> Path | None:
+    """Return first existing path from patterns, or None.
+
+    Args:
+        project_root: Base directory paths are resolved relative to.
+        patterns: Candidate relative paths to check, in priority order.
+        is_dir: If True, check for a directory instead of a file.
+
+    Returns:
+        The first matching path, or None if none of the patterns exist.
+    """
+    for pattern in patterns:
+        path = project_root / pattern
+        if is_dir and path.is_dir():
+            return path
+        elif not is_dir and path.is_file():
+            return path
+    return None

@@ -7,15 +7,15 @@ Manages SSH tunnels for:
 """
 
 import re
+import shlex
 import socket
 import subprocess
 import time
 
 from slipp.models.host import AnsibleHost
-from slipp.services.config import HostResolver
 from slipp.services.ssh.client import SSHService
 from slipp.services.ssh.command import build_ssh_command
-from slipp.utils.errors import HostNotFoundError, TunnelError
+from slipp.utils.errors import TunnelError
 
 # Pattern for container tunnel specs: docker://container:port:local@host
 CONTAINER_TUNNEL_PATTERN = re.compile(r"^(docker|podman)://([^:]+):(\d+):(\d+)@(.+)$")
@@ -82,33 +82,6 @@ def parse_container_tunnel_in(spec: str) -> tuple[str, str, int, int, str] | Non
         return None
     runtime, container, remote_port, local_port, host_spec = match.groups()
     return runtime, container, int(remote_port), int(local_port), host_spec
-
-
-def resolve_tunnel_host(host_spec: str) -> AnsibleHost:
-    """Resolve host spec to AnsibleHost.
-
-    Supports:
-    - Project name from registry (e.g., 'metria')
-    - Direct IP/hostname (e.g., '192.168.1.1')
-
-    Args:
-        host_spec: Project name or IP/hostname
-
-    Returns:
-        AnsibleHost for the target
-    """
-    resolver = HostResolver()
-
-    try:
-        return resolver.by_project(host_spec)
-    except HostNotFoundError:
-        pass
-
-    return AnsibleHost(
-        inventory_hostname=host_spec,
-        ansible_host=host_spec,
-        ansible_user="root",
-    )
 
 
 def is_port_in_use(port: int) -> bool:
@@ -257,7 +230,7 @@ class TunnelManager:
         inspect_cmd = (
             f"{runtime} inspect -f "
             f'"{{{{range.NetworkSettings.Networks}}}}{{{{.IPAddress}}}} {{{{end}}}}" '
-            f"{container}"
+            f"{shlex.quote(container)}"
         )
 
         try:

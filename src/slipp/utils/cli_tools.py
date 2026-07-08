@@ -32,6 +32,7 @@ def run_checked(
     *,
     context: str | None = None,
     cwd: Path | None = None,
+    input: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run a subprocess, raising error_cls if it exits non-zero.
 
@@ -40,6 +41,8 @@ def run_checked(
         error_cls: SlippError subclass to raise on non-zero exit.
         context: Label for the error message (defaults to "'<cmd[0]>'").
         cwd: Working directory for the subprocess.
+        input: Data to write to the subprocess's stdin (e.g. a secret value,
+            keeping it off argv/`ps` output).
 
     Returns:
         The completed process (stdout/stderr captured as text).
@@ -47,7 +50,9 @@ def run_checked(
     Raises:
         error_cls: If the subprocess exits non-zero.
     """
-    result = subprocess.run(cmd, capture_output=True, text=True, check=False, cwd=cwd)
+    result = subprocess.run(
+        cmd, capture_output=True, text=True, check=False, cwd=cwd, input=input
+    )
     if result.returncode != 0:
         label = context or f"'{cmd[0]}'"
         raise error_cls(

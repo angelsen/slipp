@@ -13,25 +13,14 @@ import typer
 from slipp import output
 from slipp.output import format_path
 from slipp.services.config import LocalConfigService
+from slipp.services.config.detection import (
+    INVENTORY_PATTERNS,
+    PLAYBOOK_PATTERNS,
+    ROLES_PATTERNS,
+    detect_path,
+)
 from slipp.services.registry import ProjectRegistry
 from slipp.utils.errors import ConfigError
-
-INVENTORY_PATTERNS = ["inventory/hosts", "inventory.yml", "hosts"]
-PLAYBOOK_PATTERNS = ["playbook.yml", "site.yml", "main.yml"]
-ROLES_PATTERNS = ["roles"]
-
-
-def _detect_path(
-    project_root: Path, patterns: list[str], is_dir: bool = False
-) -> Path | None:
-    """Return first existing path from patterns, or None."""
-    for pattern in patterns:
-        path = project_root / pattern
-        if is_dir and path.is_dir():
-            return path
-        elif not is_dir and path.is_file():
-            return path
-    return None
 
 
 def _resolve_required(
@@ -62,7 +51,7 @@ def _resolve_required(
     path = (
         project_root / cli_value
         if cli_value
-        else _detect_path(project_root, patterns, is_dir=is_dir)
+        else detect_path(project_root, patterns, is_dir=is_dir)
     )
 
     if not path:

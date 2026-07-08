@@ -12,6 +12,10 @@ from pathlib import Path
 
 from slipp import output
 from slipp.models.host import AnsibleHost
+from slipp.services.config.inventory import load_project_ansible_hosts
+from slipp.services.config.local import LocalConfigService
+from slipp.services.discovery import lookup_host_by_service
+from slipp.services.registry import ProjectRegistry
 from slipp.utils.errors import HostNotFoundError
 from slipp.utils.identifiers import parse_service_identifier
 
@@ -40,8 +44,6 @@ class HostResolver:
         Raises:
             HostNotFoundError: If config or inventory invalid
         """
-        from slipp.services.config.inventory import load_project_ansible_hosts
-
         return load_project_ansible_hosts(project_path)
 
     def all_hosts(self) -> list[tuple[str, AnsibleHost]]:
@@ -57,8 +59,6 @@ class HostResolver:
             >>> hosts = resolver.all_hosts()
             >>> # [("mdad", host1), ("myapp", host2)]
         """
-        from slipp.services.registry import ProjectRegistry
-
         results: list[tuple[str, AnsibleHost]] = []
         for project in ProjectRegistry().list_all():
             try:
@@ -89,8 +89,6 @@ class HostResolver:
             HostNotFoundError: If service not found
             AmbiguousServiceError: If multiple matches found
         """
-        from slipp.services.discovery import lookup_host_by_service
-
         service_name, host_filter, project_filter = parse_service_identifier(service)
 
         host = lookup_host_by_service(
@@ -132,8 +130,6 @@ class HostResolver:
         Raises:
             HostNotFoundError: If project not found or invalid
         """
-        from slipp.services.registry import ProjectRegistry
-
         project_obj = ProjectRegistry().get(project)
 
         if project_obj is None:
@@ -155,9 +151,6 @@ class HostResolver:
         Raises:
             HostNotFoundError: If no context found
         """
-        from slipp.services.config.local import LocalConfigService
-        from slipp.services.registry import ProjectRegistry
-
         project_root = LocalConfigService.find_root()
         local_config = LocalConfigService.load(project_root) if project_root else None
         if local_config:

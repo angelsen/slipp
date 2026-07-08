@@ -17,6 +17,7 @@ Traffic flow:
 import json
 import logging
 import re
+import shlex
 from importlib.resources import files
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -54,10 +55,11 @@ def _push_route(host: AnsibleHost, route_config: dict, error_prefix: str) -> Non
         CaddyProxyError: If the route push fails
     """
     route_json = json.dumps(route_config)
+    jq_filter = shlex.quote(f"[{route_json}] + .")
 
     add_cmd = (
         f"curl -sf http://localhost:2019/config/apps/http/servers/srv1/routes | "
-        f"jq '[{route_json}] + .' | "
+        f"jq {jq_filter} | "
         f"curl -sf -X PATCH 'http://localhost:2019/config/apps/http/servers/srv1/routes' "
         f"-H 'Content-Type: application/json' -d @-"
     )

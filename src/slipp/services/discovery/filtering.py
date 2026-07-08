@@ -7,6 +7,7 @@ for the discovery pipeline that produces the `Service` lists these operate on.
 
 from slipp.models.service import Service
 from slipp.utils.identifiers import parse_service_identifier
+from slipp.utils.matching import fuzzy_match
 
 
 def _fuzzy_match_roles(
@@ -22,8 +23,6 @@ def _fuzzy_match_roles(
     Returns:
         True if service name matches any role with similarity >= threshold
     """
-    from slipp.utils.matching import fuzzy_match
-
     service_clean = service_name.lower().replace(".service", "")
     return fuzzy_match(service_clean, roles, threshold=threshold) is not None
 
@@ -121,8 +120,6 @@ def find_service(
     matches = [s for s in services if s.name == service_name]
 
     if not matches:
-        from slipp.utils.matching import fuzzy_match
-
         service_names = [s.name for s in services]
         best_match = fuzzy_match(service_name, service_names)
         if best_match:

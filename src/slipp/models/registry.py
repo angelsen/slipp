@@ -41,20 +41,3 @@ class GlobalRegistry(BaseModel):
     """
 
     projects: dict[str, RegisteredProject] = Field(default_factory=dict)
-
-    def to_json_dict(self) -> dict:
-        """Convert to JSON-serializable dict.
-
-        Returns:
-            Dictionary with all fields converted to JSON-compatible types
-        """
-        return {
-            "projects": {
-                name: {
-                    "name": proj.name,
-                    "project_path": str(proj.project_path),
-                    "registered_at": proj.registered_at.isoformat(),
-                }
-                for name, proj in self.projects.items()
-            },
-        }

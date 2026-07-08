@@ -12,6 +12,7 @@ from pathlib import Path
 from slipp.constants import PLAYBOOK_FILENAME, get_inventory_filename
 from slipp.models.local_config import LocalConfig
 from slipp.services.config.local import LocalConfigService
+from slipp.services.registry import ProjectRegistry
 from slipp.utils.errors import ProjectNameRequiredError, ProjectNotFoundError
 
 
@@ -146,8 +147,6 @@ class ConfigResolver:
         Raises:
             ProjectNotFoundError: If project not in registry
         """
-        from slipp.services.registry import ProjectRegistry
-
         registry = ProjectRegistry()
         project = registry.get(project_name)
         if not project:

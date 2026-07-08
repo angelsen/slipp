@@ -310,14 +310,16 @@ def sync_secrets(
     project_root = Path.cwd()
     vault_path = path.parent / "vault.yml"
 
+    synchronizer = SecretSynchronizer(num_bytes=num_bytes, encoding=encoding)
+
     try:
-        content = path.read_text()
+        refs = synchronizer.scan(path)
+    except VaultSyncError as e:
+        output.error(str(e))
+        raise typer.Exit(1)
     except OSError as e:
         output.error(f"Cannot read {format_path(path, project_root)}: {e}")
         raise typer.Exit(1)
-
-    synchronizer = SecretSynchronizer(num_bytes=num_bytes, encoding=encoding)
-    refs = synchronizer.find_vault_references(content)
 
     if not refs:
         output.info("No vault references found")
@@ -329,7 +331,7 @@ def sync_secrets(
         output.bullet(ref, indent=1)
 
     try:
-        synchronizer.sync(path, vault_path, force=force)
+        synchronizer.sync(vault_path, refs, force=force)
     except VaultSyncError as e:
         output.error(str(e))
         if vault_path.exists():

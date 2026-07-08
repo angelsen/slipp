@@ -93,7 +93,8 @@ class RegistryIO:
 
         try:
             temp_file.write_text(
-                json.dumps(registry.to_json_dict(), indent=2), encoding="utf-8"
+                json.dumps(registry.model_dump(mode="json"), indent=2),
+                encoding="utf-8",
             )
 
             temp_file.replace(config_file)

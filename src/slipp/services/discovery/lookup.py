@@ -5,7 +5,12 @@ belong to that project. Hosts are loaded on-demand from local configs.
 """
 
 from slipp.models.host import AnsibleHost
-from slipp.utils.errors import AmbiguousServiceError
+from slipp.services.discovery.discovery import DiscoveryService
+from slipp.utils.errors import (
+    AmbiguousServiceError,
+    SSHAuthenticationError,
+    SSHConnectionError,
+)
 
 
 def lookup_host_by_service(
@@ -24,9 +29,11 @@ def lookup_host_by_service(
     Raises:
         AmbiguousServiceError: If the service runs on multiple matching hosts
     """
+    # Must stay lazy: config/__init__ (hosts.py) top-imports
+    # lookup_host_by_service from this package's __init__, so this executes
+    # while config/__init__ is still mid-import -- HostResolver isn't bound
+    # yet at that point. The one intentional lazy import on this boundary.
     from slipp.services.config import HostResolver
-    from slipp.services.discovery.discovery import DiscoveryService
-    from slipp.utils.errors import SSHAuthenticationError, SSHConnectionError
 
     resolver = HostResolver()
     discovery = DiscoveryService()

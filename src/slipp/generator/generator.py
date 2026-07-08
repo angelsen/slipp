@@ -5,13 +5,15 @@ Ties together fetcher, renderer, and extractors to generate deployment files.
 
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlparse
 
 from pydantic import BaseModel
 
 from slipp import __version__
+from slipp.generator.errors import TemplateFetchError
 from slipp.generator.extractors import extract_template_variables
 from slipp.generator.fetcher import TemplateFetcher
-from slipp.generator.renderer import GoTemplateRenderer
+from slipp.generator.renderer import render_go_template
 from slipp.models.deployment import DetectedService
 
 
@@ -35,7 +37,6 @@ class TemplateGenerator:
             cache_dir: Directory to cache templates (default: ~/.cache/slipp/templates)
         """
         self.fetcher = TemplateFetcher(cache_dir)
-        self.renderer = GoTemplateRenderer()
 
     def generate(
         self,
@@ -67,7 +68,9 @@ class TemplateGenerator:
         template_path = self._extract_template_path(service.template_url)
         template = self.fetcher.fetch_template(template_path, force_refresh)
         variables = extract_template_variables(service)
-        rendered_content = self.renderer.render(template.content, variables)
+        rendered_content = render_go_template(
+            template.content, variables, label=template_path
+        )
 
         if container_runtime == "podman":
             rendered_content = self._apply_podman_fixes(rendered_content)
@@ -86,11 +89,18 @@ class TemplateGenerator:
     def _extract_template_path(self, template_url: str) -> str:
         """Extract template path from GitHub raw URL.
 
+        raw.githubusercontent.com URLs always follow the layout
+        /<owner>/<repo>/<ref>/<path...>, regardless of branch/ref name.
+
         Args:
             template_url: GitHub raw URL (from scanner)
 
         Returns:
             Relative path from repo root
+
+        Raises:
+            TemplateFetchError: If the URL doesn't have enough path segments
+                to contain owner/repo/ref/path
 
         Example:
             >>> generator = TemplateGenerator()
@@ -98,17 +108,12 @@ class TemplateGenerator:
             >>> generator._extract_template_path(url)
             'scanner/templates/flask/Dockerfile'
         """
-        parts = template_url.split("/")
-
-        if "master" in parts:
-            branch_index = parts.index("master")
-        elif "main" in parts:
-            branch_index = parts.index("main")
-        else:
-            branch_index = 5
-
-        path_parts = parts[branch_index + 1 :]
-        return "/".join(path_parts)
+        segments = urlparse(template_url).path.strip("/").split("/")
+        if len(segments) < 4:
+            raise TemplateFetchError(
+                f"Cannot derive template path from URL: {template_url}"
+            )
+        return "/".join(segments[3:])
 
     def _generate_preamble(self, template_path: str) -> str:
         """Generate slipp preamble comment block for Dockerfile protection.
