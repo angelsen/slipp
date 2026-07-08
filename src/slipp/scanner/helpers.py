@@ -6,36 +6,14 @@ helpers.go patterns. All checks are composable and return bool.
 
 import json
 from pathlib import Path
-from typing import Callable, Literal
-
-CheckFn = Callable[[Path], bool]
+from typing import Literal
 
 PythonDepManager = Literal["uv", "poetry", "pep621", "pipenv", "pip"]
 
-
-def checks_pass(source_dir: Path, *checks: CheckFn) -> bool:
-    """Run multiple checks, return True if ANY pass (OR logic).
-
-    Mirrors flyctl's checksPass function (helpers.go line 28).
-
-    Args:
-        source_dir: Directory to check
-        *checks: Variable number of check functions
-
-    Returns:
-        True if any check passes, False if all fail
-
-    Example:
-        >>> checks_pass(
-        ...     path,
-        ...     file_exists("setup.py"),
-        ...     file_exists("pyproject.toml")
-        ... )
-    """
-    for check in checks:
-        if check(source_dir):
-            return True
-    return False
+# Fly.io template URLs (matches flyctl). Shared by every detector that emits
+# the given family, so the two families can't drift apart on template updates.
+PYTHON_DOCKER_TEMPLATE = "https://raw.githubusercontent.com/superfly/flyctl/master/scanner/templates/python-docker/Dockerfile"
+NODE_DOCKER_TEMPLATE = "https://raw.githubusercontent.com/superfly/flyctl/master/scanner/templates/node/Dockerfile"
 
 
 def has_uv_project(source_dir: Path) -> bool:
@@ -129,26 +107,22 @@ def detect_python_dep_manager(source_dir: Path) -> PythonDepManager | None:
     return None
 
 
-def file_exists(*filenames: str) -> CheckFn:
-    """Create check function for file existence.
+def file_exists(source_dir: Path, *filenames: str) -> bool:
+    """Check whether any of the given filenames exists in source_dir.
 
     Mirrors flyctl's fileExists (helpers.go line 36).
 
     Args:
+        source_dir: Directory to check
         *filenames: One or more filenames to check
 
     Returns:
-        Check function that returns True if any file exists
+        True if any of the named files exists
 
     Example:
-        >>> check = file_exists("setup.py", "pyproject.toml")
-        >>> check(Path("/path/to/project"))  # True if either exists
+        >>> file_exists(Path("/path/to/project"), "setup.py", "pyproject.toml")
     """
-
-    def check(source_dir: Path) -> bool:
-        return any((source_dir / filename).exists() for filename in filenames)
-
-    return check
+    return any((source_dir / filename).exists() for filename in filenames)
 
 
 def parse_dependency(dep: str) -> str:

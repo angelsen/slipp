@@ -27,6 +27,7 @@ from slipp.utils.errors import (
     PullTimeoutError,
     SourceNotFoundError,
     VaultError,
+    VaultFileNotFoundError,
     VaultSyncError,
 )
 
@@ -84,7 +85,7 @@ def _lookup_vault_keys(target: str) -> _VaultLookup:
 
     try:
         keys = list_keys(vault_path)
-    except FileNotFoundError:
+    except VaultFileNotFoundError:
         return _VaultLookup(target, resolver, vault_path, None, "vault file not found")
 
     return _VaultLookup(target, resolver, vault_path, keys, None)

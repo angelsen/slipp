@@ -79,7 +79,7 @@ def write_generated_file(
 class FileGenerationStage(Generic[CtxT]):
     """Base class for stages that generate files."""
 
-    def __init__(self, description: str, *, respect_customized: bool = False):
+    def __init__(self, description: str, *, respect_customized: bool = True):
         self.description = description
         self.respect_customized = respect_customized
 

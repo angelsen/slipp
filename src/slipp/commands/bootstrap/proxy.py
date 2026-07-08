@@ -49,27 +49,28 @@ def proxy_command(
     output.stdout(f"Setting up dev proxy on {ansible_host.ansible_host}...")
     output.blank()
 
-    proxy = CaddyProxy(ansible_host, acme_email=email, fallback_port=fallback_port)
+    with CaddyProxy(
+        ansible_host, acme_email=email, fallback_port=fallback_port
+    ) as proxy:
+        output.info("1. Checking port 443...")
+        try:
+            port_free = proxy.is_port_443_free()
+        except (SSHConnectionError, SSHAuthenticationError) as e:
+            output.error(f"Could not reach {ansible_host.ansible_host}: {e}")
+            raise typer.Exit(1)
+        if not port_free:
+            output.error("Port 443 in use")
+            output.blank()
+            output.hint("Free port 443 and retry")
+            raise typer.Exit(1)
+        output.success("Port 443 available")
 
-    output.info("1. Checking port 443...")
-    try:
-        port_free = proxy.is_port_443_free()
-    except (SSHConnectionError, SSHAuthenticationError) as e:
-        output.error(f"Could not reach {ansible_host.ansible_host}: {e}")
-        raise typer.Exit(1)
-    if not port_free:
-        output.error("Port 443 in use")
-        output.blank()
-        output.hint("Free port 443 and retry")
-        raise typer.Exit(1)
-    output.success("Port 443 available")
-
-    output.info("2. Installing Caddy dev proxy...")
-    try:
-        proxy.ensure_installed()
-    except (CaddyProxyError, SSHConnectionError, SSHAuthenticationError) as e:
-        output.error(f"Installation failed: {e}")
-        raise typer.Exit(1)
+        output.info("2. Installing Caddy dev proxy...")
+        try:
+            proxy.ensure_installed()
+        except (CaddyProxyError, SSHConnectionError, SSHAuthenticationError) as e:
+            output.error(f"Installation failed: {e}")
+            raise typer.Exit(1)
 
     output.blank()
     output.success("Dev proxy ready!")

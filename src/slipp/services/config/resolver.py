@@ -116,8 +116,8 @@ class ConfigResolver:
             cli_roles=["roles/custom"],
             cli_vault=None,
         )
-        print(config.inventory)  # Path to inventory
-        print(config.inventory_source)  # "cli" or "local" or "default"
+        config.inventory       # Path to inventory
+        config.inventory_source  # "cli" or "local" or "default"
     """
 
     def __init__(self, project_root: Path | None = None):

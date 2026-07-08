@@ -50,7 +50,6 @@ class InventoryLoadStage:
             context.inventory_config = InventoryConfig(
                 hosts={
                     context.environment: DeploymentHostConfig(
-                        name=context.environment,
                         inventory_hostname=context.environment,
                         ansible_host="example.com",
                         ansible_user="root",

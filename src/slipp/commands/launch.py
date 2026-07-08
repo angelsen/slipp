@@ -6,6 +6,7 @@ from typing import Annotated
 import typer
 
 from slipp import output
+from slipp.commands.common import DryRunOption
 from slipp.constants import DEFAULT_ENV
 from slipp.scanner.workspaces import detect_workspace_members
 from slipp.services.launch import FullContext, run_full_pipeline
@@ -34,12 +35,7 @@ def launch_command(
             resolve_path=True,
         ),
     ] = None,
-    dry_run: Annotated[
-        bool,
-        typer.Option(
-            "--dry-run", help="Show what would be done without making changes"
-        ),
-    ] = False,
+    dry_run: DryRunOption = False,
     reconfigure: Annotated[
         bool,
         typer.Option(

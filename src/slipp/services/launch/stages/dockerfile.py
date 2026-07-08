@@ -65,5 +65,4 @@ class DockerfileGenerationStage:
                     )
 
             except Exception as e:
-                output.error(f"  Failed to generate {service.name}: {e}")
-                continue
+                raise LaunchError(f"Failed to generate {service.name}: {e}") from e

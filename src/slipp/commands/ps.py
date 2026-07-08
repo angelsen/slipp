@@ -113,7 +113,7 @@ def ps_command(
     if errors:
         output.blank()
         output.warning(f"{len(errors)} host(s) unreachable:")
-        output.list_items(errors, indent=2)
+        output.list_items(errors, indent=1)
 
     if not all_services and not project:
         output.hint("Tip: Use --all for system services, -p <project> to filter")

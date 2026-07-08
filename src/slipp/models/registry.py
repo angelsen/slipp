@@ -29,14 +29,11 @@ class RegisteredProject(BaseModel):
     project_path: Path
     registered_at: datetime = Field(default_factory=datetime.now)
 
-    model_config = {"arbitrary_types_allowed": True}
-
 
 class GlobalRegistry(BaseModel):
     """Global project registry structure.
 
     Attributes:
-        version: Registry format version (for future migrations)
         projects: Map of project name → RegisteredProject
 
     The registry is now a simple path index. All configuration

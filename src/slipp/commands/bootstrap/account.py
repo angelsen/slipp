@@ -6,6 +6,7 @@ from typing import Annotated
 import typer
 
 from slipp import output
+from slipp.commands.common import DryRunOption
 from slipp.services.bootstrap import provision_account
 from slipp.utils.errors import BootstrapError, SSHConnectionError
 
@@ -65,12 +66,7 @@ def account_command(
             "--user", help="Name of service account to create (default: slipp)"
         ),
     ] = "slipp",
-    dry_run: Annotated[
-        bool,
-        typer.Option(
-            "--dry-run", help="Show what would be done without making changes"
-        ),
-    ] = False,
+    dry_run: DryRunOption = False,
 ) -> None:
     """Create slipp service account on VPS."""
     output.blank()

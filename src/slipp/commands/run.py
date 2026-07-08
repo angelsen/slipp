@@ -62,7 +62,7 @@ def run_command(
             list(proxy),
             tunnel_auth,
         )
-        _save_profile(name, profile)
+        _save_profile(service, name, profile)
         _execute_profile(executor, profile)
 
     elif service.profile_exists(name):
@@ -98,9 +98,8 @@ def _execute_profile(executor: RunProfileExecutor, profile: RunProfile) -> None:
         raise typer.Exit(result.exit_code)
 
 
-def _save_profile(name: str, profile: RunProfile) -> None:
+def _save_profile(service: RunProfileService, name: str, profile: RunProfile) -> None:
     """Save profile and display appropriate message."""
-    service = RunProfileService()
     is_update = service.profile_exists(name)
     service.save_profile(name, profile)
 

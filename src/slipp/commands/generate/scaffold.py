@@ -6,6 +6,7 @@ from typing import Annotated
 import typer
 
 from slipp import output
+from slipp.commands.common import DryRunOption
 from slipp.services.launch import ScaffoldContext, run_scaffold_pipeline
 
 
@@ -55,12 +56,7 @@ def scaffold_command(
             help="Path to install roles (required if requirements.yml exists)",
         ),
     ] = None,
-    dry_run: Annotated[
-        bool,
-        typer.Option(
-            "--dry-run", help="Show what would be done without making changes"
-        ),
-    ] = False,
+    dry_run: DryRunOption = False,
 ) -> None:
     """Scaffold inventory for existing Ansible project."""
     output_dir = playbook.parent
@@ -76,7 +72,6 @@ def scaffold_command(
 
     context = ScaffoldContext(
         output_dir=output_dir,
-        environment="production",
         dry_run=dry_run,
         playbook_path=playbook,
         inventory_path=inventory,

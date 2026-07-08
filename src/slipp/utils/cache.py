@@ -90,8 +90,3 @@ class Cache:
         }
 
         self._save()
-
-    def clear(self) -> None:
-        """Clear all cache entries."""
-        self._cache = {}
-        self._save()

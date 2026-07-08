@@ -9,14 +9,12 @@ Mirrors and extends flyctl's python.go patterns.
 from pathlib import Path
 
 from slipp.scanner.helpers import (
-    checks_pass,
+    PYTHON_DOCKER_TEMPLATE,
     detect_python_dep_manager,
     extract_python_dependencies,
     file_exists,
 )
 from slipp.scanner.models import SourceInfo
-
-PYTHON_TEMPLATE = "https://raw.githubusercontent.com/superfly/flyctl/master/scanner/templates/python-docker/Dockerfile"
 
 
 def configure_python(source_dir: Path) -> SourceInfo | None:
@@ -50,19 +48,16 @@ def configure_python(source_dir: Path) -> SourceInfo | None:
         return SourceInfo(
             family="Python",
             port=8080,
-            template_url=PYTHON_TEMPLATE,
+            template_url=PYTHON_DOCKER_TEMPLATE,
             dependencies=dependencies,
         )
 
-    if checks_pass(
-        source_dir,
-        file_exists("setup.py", "setup.cfg", "environment.yml"),
-    ):
+    if file_exists(source_dir, "setup.py", "setup.cfg", "environment.yml"):
         dependencies = extract_python_dependencies(source_dir)
         return SourceInfo(
             family="Python",
             port=8080,
-            template_url=PYTHON_TEMPLATE,
+            template_url=PYTHON_DOCKER_TEMPLATE,
             dependencies=dependencies,
         )
 

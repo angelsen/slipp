@@ -11,7 +11,7 @@ class RequirementsFileStage(FileGenerationStage[FullContext]):
     """Generate requirements.yml listing the Galaxy collections the project needs."""
 
     def __init__(self):
-        super().__init__("Generating Galaxy requirements", respect_customized=True)
+        super().__init__("Generating Galaxy requirements")
 
     def generate_content(self, context: FullContext) -> dict[Path, str]:
         """Generate requirements.yml content.

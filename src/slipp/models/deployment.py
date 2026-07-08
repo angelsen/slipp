@@ -53,13 +53,11 @@ class DeploymentHostConfig(AnsibleHost):
     - External projects (MDAD): app_domain and admin_email are None
 
     Attributes:
-        name: Ansible host identifier (same as inventory_hostname, kept for template compatibility)
         app_domain: Domain for the application (used by Caddy). Optional for external projects.
         admin_email: Admin email for Let's Encrypt HTTPS certificates. Optional for external projects.
         runtime: How the app runs (systemd, docker, podman; default: docker)
     """
 
-    name: str = Field(..., min_length=1, description="Host identifier")
     app_domain: str | None = Field(default=None, description="Domain for app (Caddy)")
     admin_email: str | None = Field(
         default=None, description="Admin email for HTTPS certs"
@@ -104,7 +102,7 @@ class InventoryConfig(BaseModel):
         """
         hosts_data = data.get("all", {}).get("hosts", {})
         hosts = {
-            name: DeploymentHostConfig(name=name, inventory_hostname=name, **config)
+            name: DeploymentHostConfig(inventory_hostname=name, **config)
             for name, config in hosts_data.items()
         }
         return cls(hosts=hosts)
@@ -162,7 +160,6 @@ class InventoryConfig(BaseModel):
             user = vars.get("ansible_user") or vars.get("ansible_ssh_user") or "root"
 
             hosts[hostname] = DeploymentHostConfig(
-                name=hostname,
                 inventory_hostname=hostname,
                 ansible_host=vars.get("ansible_host", hostname),
                 ansible_user=user,
@@ -268,7 +265,7 @@ class ProvisionConfig(BaseModel):
         Returns:
             Dict with all fields formatted for Jinja2 templates
         """
-        first_host = list(self.inventory.hosts.values())[0]
+        first_host = self.inventory.first_host
 
         return {
             "services": [s.model_dump() for s in self.services],

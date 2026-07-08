@@ -5,6 +5,7 @@ Business logic (filtering, discovery, lookups) is in services/discovery.py.
 """
 
 from pathlib import Path
+from typing import Annotated
 
 import typer
 
@@ -14,6 +15,11 @@ from slipp.models.service import Runtime, Service
 from slipp.services.discovery import discover_and_enrich, filter_services, find_service
 from slipp.utils.errors import AmbiguousServiceError, HostNotFoundError
 from slipp.utils.identifiers import parse_service_identifier
+
+DryRunOption = Annotated[
+    bool,
+    typer.Option("--dry-run", help="Show what would be done without making changes"),
+]
 
 
 def resolve_host_or_exit(
@@ -69,7 +75,7 @@ def find_service_or_exit(
 
     service = find_service(filtered, identifier)
     if not service:
-        show_service_not_found_error(
+        _show_service_not_found_error(
             identifier,
             ssh_config.ansible_host,
             filter_services(services, show_all=True),
@@ -79,7 +85,7 @@ def find_service_or_exit(
     return service
 
 
-def get_project_root(project_name: str) -> Path:
+def _get_project_root(project_name: str) -> Path:
     """Get project root path from registry, falling back to discovery.
 
     Args:
@@ -98,24 +104,24 @@ def get_project_root(project_name: str) -> Path:
     return LocalConfigService.resolve_root()
 
 
-def resolve_runtime(host: str | None) -> tuple[Path, Runtime]:
+def _resolve_runtime(host: str | None) -> Runtime:
     """Resolve project root and detect its runtime.
 
     Args:
         host: Optional project name (defaults to cwd if not given)
 
     Returns:
-        Tuple of (project_root, runtime)
+        The detected Runtime
 
     Raises:
         RuntimeDetectionError: If runtime detection fails
     """
     from slipp.services.config import LocalConfigService, RuntimeDetector
 
-    project_root = get_project_root(host) if host else LocalConfigService.resolve_root()
-    runtime = RuntimeDetector(project_root).detect()
-
-    return project_root, runtime
+    project_root = (
+        _get_project_root(host) if host else LocalConfigService.resolve_root()
+    )
+    return RuntimeDetector(project_root).detect()
 
 
 def require_container_runtime(project: str | None, *, action: str) -> Runtime:
@@ -131,7 +137,7 @@ def require_container_runtime(project: str | None, *, action: str) -> Runtime:
     Raises:
         typer.Exit: If the project runtime isn't a container runtime
     """
-    _, runtime = resolve_runtime(project)
+    runtime = _resolve_runtime(project)
     if not runtime.is_container():
         output.error(
             f"Project runtime is '{runtime}' -- no container images to {action}"
@@ -193,7 +199,7 @@ def display_services_table(
     output.table(service_dicts)
 
 
-def show_service_not_found_error(
+def _show_service_not_found_error(
     service_identifier: str,
     host: str,
     available_services: list[Service],
@@ -209,7 +215,7 @@ def show_service_not_found_error(
         available_services: List of available services on the host
 
     Example:
-        >>> show_service_not_found_error("synapze", "83.143.80.248", services)
+        >>> _show_service_not_found_error("synapze", "83.143.80.248", services)
         # Displays:
         # ✗ Service 'synapze' not found on 83.143.80.248
         # ℹ Did you mean: matrix-synapse?

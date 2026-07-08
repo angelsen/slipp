@@ -171,7 +171,7 @@ class NodeJSVariableExtractor(VariableExtractor):
         Returns:
             Runtime name string
         """
-        # Keys match what slipp.scanner can actually emit (sveltekit, node) -
+        # Keys match slipp.scanner.models.NODE_FRAMEWORKS (sveltekit, node) -
         # nextjs/nuxtjs/express/remix have no scanner detector.
         runtime_map = {
             "sveltekit": "SvelteKit",

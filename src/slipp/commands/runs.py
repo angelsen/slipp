@@ -44,20 +44,22 @@ def list_profiles() -> None:
     output.blank()
 
     for name, profile in profiles.items():
-        output.stdout(f"  {name}:")
-        output.stdout(f"    cmd: {profile.cmd}")
+        output.bullet(f"{name}:")
+        output.kv("cmd", profile.cmd, indent=1)
         if profile.vaults:
-            output.stdout(f"    vaults: {', '.join(profile.vaults)}")
+            output.kv("vaults", ", ".join(profile.vaults), indent=1)
         if profile.tunnels:
             if profile.tunnels.out:
                 for t in profile.tunnels.out:
-                    output.stdout(f"    tunnel-out: {t}")
+                    output.kv("tunnel-out", t, indent=1)
             if profile.tunnels.in_:
                 for t in profile.tunnels.in_:
-                    output.stdout(f"    tunnel-in: {t}")
+                    output.kv("tunnel-in", t, indent=1)
         if profile.proxy:
             for route in profile.proxy:
-                output.stdout(f"    proxy: {route.from_}@{route.host} -> {route.to}")
+                output.kv(
+                    "proxy", f"{route.from_}@{route.host} -> {route.to}", indent=1
+                )
         output.blank()
 
 

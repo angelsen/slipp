@@ -14,14 +14,14 @@ from slipp.models.deployment import (
     DetectedService,
     ProvisionConfig,
 )
+from slipp.scanner.models import NODE_FRAMEWORKS, PYTHON_FRAMEWORKS
 from slipp.services.launch.context import FullContext
 from slipp.services.launch.stages.common import FileGenerationStage
 
-# Framework sets match what slipp.scanner can actually emit (sveltekit/node
-# for frontend, flask/python for backend) - fastapi/django/nextjs/gatsby
-# have no scanner detector and would never match here.
-_FRONTEND_FRAMEWORKS = {"sveltekit", "node"}
-_BACKEND_FRAMEWORKS = {"flask", "python"}
+# Node frameworks serve as the frontend, Python as the backend, in slipp's
+# default multi-service Caddy routing convention.
+_FRONTEND_FRAMEWORKS = NODE_FRAMEWORKS
+_BACKEND_FRAMEWORKS = PYTHON_FRAMEWORKS
 
 
 def build_caddy_sites(services: list[DetectedService], domain: str) -> list[CaddySite]:

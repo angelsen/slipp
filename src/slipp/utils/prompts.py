@@ -93,7 +93,8 @@ def get_inventory_config(
         46.251.249.252
     """
     output.task("Inventory Configuration")
-    print("Configure deployment target\n")
+    output.info("Configure deployment target")
+    output.blank()
 
     ansible_host = typer.prompt("Target host (IP or domain)")
     ansible_user = typer.prompt("SSH user", default=DEFAULT_SSH_USER)
@@ -104,11 +105,13 @@ def get_inventory_config(
         default=f"admin@{app_domain}" if "@" not in app_domain else "",
     )
 
-    print("\nRuntime")
-    print("Choose how the app runs on the server:")
-    print("  docker  - Container, recommended, broader compatibility")
-    print("  podman  - Container, rootless, no daemon")
-    print("  systemd - Native process, no container runtime needed\n")
+    output.blank()
+    output.info("Runtime")
+    output.hint("Choose how the app runs on the server:")
+    output.hint("  docker  - Container, recommended, broader compatibility")
+    output.hint("  podman  - Container, rootless, no daemon")
+    output.hint("  systemd - Native process, no container runtime needed")
+    output.blank()
 
     valid_runtimes = [r.value for r in Runtime]
     while True:
@@ -121,7 +124,6 @@ def get_inventory_config(
 
     try:
         host_config = DeploymentHostConfig(
-            name=environment,
             inventory_hostname=environment,
             ansible_host=ansible_host,
             ansible_user=ansible_user,

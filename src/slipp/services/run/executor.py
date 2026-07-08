@@ -310,7 +310,6 @@ class RunProfileExecutor:
                 raise ProfileExecutionError("\n".join(messages))
 
         env: dict[str, str] = {}
-        tunnel_manager: TunnelManager | None = None
         caddy_proxies: dict[str, CaddyProxy] = {}
 
         try:
@@ -325,7 +324,7 @@ class RunProfileExecutor:
 
                 if profile.tunnels and (profile.tunnels.out or profile.tunnels.in_):
                     output.info("Setting up tunnels...")
-                    tunnel_manager = self.setup_tunnels(profile.tunnels)
+                    stack.enter_context(self.setup_tunnels(profile.tunnels))
 
                     if profile.tunnels.out:
                         output.info("Adding Caddy routes...")
@@ -347,7 +346,3 @@ class RunProfileExecutor:
 
         except KeyboardInterrupt:
             return ExecutionResult(exit_code=130)
-
-        finally:
-            if tunnel_manager:
-                tunnel_manager.cleanup()

@@ -53,6 +53,12 @@ class VaultDecryptError(VaultError):
     pass
 
 
+class VaultFileNotFoundError(VaultError):
+    """Vault file does not exist on disk."""
+
+    pass
+
+
 class VaultSyncError(VaultError):
     """Vault synchronization failed."""
 

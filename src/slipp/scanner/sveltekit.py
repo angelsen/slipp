@@ -6,11 +6,8 @@ Mirrors flyctl's jsFramework.go SvelteKit detection (lines 255-264).
 
 from pathlib import Path
 
-from slipp.scanner.helpers import extract_nodejs_dependencies
+from slipp.scanner.helpers import NODE_DOCKER_TEMPLATE, extract_nodejs_dependencies
 from slipp.scanner.models import SourceInfo
-
-# Fly.io template URL (matches flyctl)
-SVELTEKIT_TEMPLATE = "https://raw.githubusercontent.com/superfly/flyctl/master/scanner/templates/node/Dockerfile"
 
 
 def configure_sveltekit(source_dir: Path) -> SourceInfo | None:
@@ -42,6 +39,6 @@ def configure_sveltekit(source_dir: Path) -> SourceInfo | None:
     return SourceInfo(
         family="SvelteKit",
         port=3000,
-        template_url=SVELTEKIT_TEMPLATE,
+        template_url=NODE_DOCKER_TEMPLATE,
         dependencies=dependencies,
     )

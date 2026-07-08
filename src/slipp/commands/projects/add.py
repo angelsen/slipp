@@ -34,6 +34,52 @@ def _detect_path(
     return None
 
 
+def _resolve_required(
+    project_root: Path,
+    cli_value: str | None,
+    patterns: list[str],
+    kind: str,
+    flag_hint: str,
+    *,
+    is_dir: bool = False,
+) -> Path:
+    """Resolve a required file/dir: explicit CLI value, else auto-detect, else exit.
+
+    Args:
+        project_root: Base directory paths are resolved relative to.
+        cli_value: Explicit path from a CLI flag, if given.
+        patterns: Candidate relative paths to auto-detect when cli_value is None.
+        kind: Human name for error messages (e.g. "inventory", "playbook").
+        flag_hint: Flag to suggest in the "specify with" hint.
+        is_dir: If True, resolve/validate as a directory instead of a file.
+
+    Returns:
+        The resolved, existing path.
+
+    Raises:
+        typer.Exit: If no candidate is found, or the resolved path doesn't exist.
+    """
+    path = (
+        project_root / cli_value
+        if cli_value
+        else _detect_path(project_root, patterns, is_dir=is_dir)
+    )
+
+    if not path:
+        output.error(f"No {kind} found (tried: {', '.join(patterns)})")
+        output.hint(f"Specify with: {flag_hint}")
+        raise typer.Exit(1)
+
+    exists = path.is_dir() if is_dir else path.exists()
+    if not exists:
+        output.error(
+            f"{kind.capitalize()} not found: {format_path(path, project_root)}"
+        )
+        raise typer.Exit(1)
+
+    return path
+
+
 def add_command(
     name: Annotated[str, typer.Argument(help="Project name")],
     inventory: Annotated[
@@ -75,51 +121,32 @@ def add_command(
     # enclosing project's slipp.yaml.
     project_root = Path.cwd()
 
-    if inventory:
-        inventory_path = project_root / inventory
-    else:
-        inventory_path = _detect_path(project_root, INVENTORY_PATTERNS)
-
-    if not inventory_path:
-        output.error(f"No inventory found (tried: {', '.join(INVENTORY_PATTERNS)})")
-        output.hint("Specify with: --inventory <path>")
-        raise typer.Exit(1)
-
-    if not inventory_path.exists():
-        output.error(
-            f"Inventory not found: {format_path(inventory_path, project_root)}"
-        )
-        raise typer.Exit(1)
-
-    if playbook:
-        playbook_path = project_root / playbook
-    else:
-        playbook_path = _detect_path(project_root, PLAYBOOK_PATTERNS)
-
-    if not playbook_path:
-        output.error(f"No playbook found (tried: {', '.join(PLAYBOOK_PATTERNS)})")
-        output.hint("Specify with: --playbook <path>")
-        raise typer.Exit(1)
-
-    if not playbook_path.exists():
-        output.error(f"Playbook not found: {format_path(playbook_path, project_root)}")
-        raise typer.Exit(1)
+    inventory_path = _resolve_required(
+        project_root, inventory, INVENTORY_PATTERNS, "inventory", "--inventory <path>"
+    )
+    playbook_path = _resolve_required(
+        project_root, playbook, PLAYBOOK_PATTERNS, "playbook", "--playbook <path>"
+    )
 
     if roles:
         roles_paths = [project_root / r for r in roles]
+        for rp in roles_paths:
+            if not rp.is_dir():
+                output.error(
+                    f"Roles directory not found: {format_path(rp, project_root)}"
+                )
+                raise typer.Exit(1)
     else:
-        detected_roles = _detect_path(project_root, ROLES_PATTERNS, is_dir=True)
-        roles_paths = [detected_roles] if detected_roles else None
-
-    if not roles_paths:
-        output.error(f"No roles directory found (tried: {', '.join(ROLES_PATTERNS)})")
-        output.hint("Specify with: --roles <path>")
-        raise typer.Exit(1)
-
-    for rp in roles_paths:
-        if not rp.is_dir():
-            output.error(f"Roles directory not found: {format_path(rp, project_root)}")
-            raise typer.Exit(1)
+        roles_paths = [
+            _resolve_required(
+                project_root,
+                None,
+                ROLES_PATTERNS,
+                "roles directory",
+                "--roles <path>",
+                is_dir=True,
+            )
+        ]
 
     inventory_rel = str(inventory_path.relative_to(project_root))
     playbook_rel = str(playbook_path.relative_to(project_root))
@@ -138,12 +165,12 @@ def add_command(
             vault_path=vault,
             project_root=project_root,
         )
-    except Exception as e:
+    except OSError as e:
         raise ConfigError(f"Failed to create config: {e}") from e
 
     try:
         ProjectRegistry().register(name=name, project_path=project_root)
-    except Exception as e:
+    except OSError as e:
         raise ConfigError(f"Failed to register project: {e}") from e
 
     output.success(f"Registered '{name}'")

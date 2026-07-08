@@ -4,10 +4,10 @@ This module centralizes all hardcoded values used across the codebase,
 making them easy to find, understand, and modify.
 """
 
-from enum import Enum
+from enum import StrEnum
 
 
-class OutputFormat(str, Enum):
+class OutputFormat(StrEnum):
     """Output format for CLI commands.
 
     Used as global option: slipp -o json ps
@@ -17,7 +17,7 @@ class OutputFormat(str, Enum):
     json = "json"
 
 
-class SecretEncoding(str, Enum):
+class SecretEncoding(StrEnum):
     """Output encoding for generated secrets.
 
     Used by: slipp secret / slipp secrets add / slipp secrets sync

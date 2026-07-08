@@ -6,6 +6,8 @@ import socket
 from dataclasses import dataclass
 from datetime import datetime
 
+from slipp.utils.errors import SlippError
+
 
 @dataclass
 class PullSession:
@@ -35,4 +37,4 @@ def find_available_port(start: int = 49152, end: int = 65535) -> int:
                 return port
         except OSError:
             continue
-    raise RuntimeError("No available ports")
+    raise SlippError("No available ports")

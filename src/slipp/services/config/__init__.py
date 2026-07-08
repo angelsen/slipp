@@ -13,7 +13,7 @@ from slipp.services.config.resolver import (
     resolve_project_name,
     resolve_vault_target,
 )
-from slipp.services.config.runtime import RuntimeDetectionError, RuntimeDetector
+from slipp.services.config.runtime import RuntimeDetector
 
 __all__ = [
     "LocalConfigService",
@@ -28,5 +28,4 @@ __all__ = [
     "parse_preset_args",
     "HostResolver",
     "RuntimeDetector",
-    "RuntimeDetectionError",
 ]

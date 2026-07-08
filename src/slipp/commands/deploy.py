@@ -6,6 +6,7 @@ from typing import Annotated
 import typer
 
 from slipp import output
+from slipp.commands.common import DryRunOption
 from slipp.constants import DEFAULT_ENV, DEFAULT_GALAXY_PATH
 from slipp.output import format_path
 from slipp.services.config import (
@@ -43,12 +44,7 @@ def deploy_command(
             "-n", "--name", help="Project name (creates/updates local config)"
         ),
     ] = None,
-    dry_run: Annotated[
-        bool,
-        typer.Option(
-            "--dry-run", help="Show what would be done without making changes"
-        ),
-    ] = False,
+    dry_run: DryRunOption = False,
     inventory: Annotated[
         str | None,
         typer.Option("-i", "--inventory", help="Custom inventory file path"),

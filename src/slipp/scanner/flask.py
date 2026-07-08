@@ -6,11 +6,8 @@ Extracts dependencies internally using language-specific helper.
 
 from pathlib import Path
 
-from slipp.scanner.helpers import extract_python_dependencies
+from slipp.scanner.helpers import PYTHON_DOCKER_TEMPLATE, extract_python_dependencies
 from slipp.scanner.models import SourceInfo
-
-# Fly.io template URL (matches flyctl)
-FLASK_TEMPLATE = "https://raw.githubusercontent.com/superfly/flyctl/master/scanner/templates/python-docker/Dockerfile"
 
 
 def configure_flask(source_dir: Path) -> SourceInfo | None:
@@ -42,6 +39,6 @@ def configure_flask(source_dir: Path) -> SourceInfo | None:
     return SourceInfo(
         family="Flask",
         port=8080,
-        template_url=FLASK_TEMPLATE,
+        template_url=PYTHON_DOCKER_TEMPLATE,
         dependencies=dependencies,  # Include for metadata
     )

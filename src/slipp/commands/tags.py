@@ -33,14 +33,14 @@ def list_presets() -> None:
 
     rows = [{"name": name, "args": args} for name, args in presets.items()]
 
-    if output.get_output_format() != OutputFormat.json:
-        output.info("Tag presets:")
+    if output.get_output_format() == OutputFormat.json:
+        output.table(rows)
+        return
 
+    output.info("Tag presets:")
     output.table(rows)
-
-    if output.get_output_format() != OutputFormat.json:
-        output.blank()
-        output.hint("Use: slipp deploy <preset> or slipp deploy <env> <preset>")
+    output.blank()
+    output.hint("Use: slipp deploy <preset> or slipp deploy <env> <preset>")
 
 
 @tags_app.command(name="add")

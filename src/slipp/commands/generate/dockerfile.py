@@ -10,6 +10,7 @@ from typing import Annotated
 import typer
 
 from slipp import output
+from slipp.commands.common import DryRunOption
 from slipp.models.service import Runtime
 from slipp.services.launch import DockerfileContext, run_dockerfile_pipeline
 
@@ -27,12 +28,7 @@ def dockerfile_command(
             resolve_path=True,
         ),
     ] = None,
-    dry_run: Annotated[
-        bool,
-        typer.Option(
-            "--dry-run", help="Show what would be done without making changes"
-        ),
-    ] = False,
+    dry_run: DryRunOption = False,
     proxy: Annotated[
         str, typer.Option("--proxy", help="Reverse proxy: caddy, none")
     ] = "caddy",
@@ -46,7 +42,6 @@ def dockerfile_command(
 
     context = DockerfileContext(
         output_dir=output_dir,
-        environment="production",
         dry_run=dry_run,
         project_dirs=dirs,
         proxy=proxy,

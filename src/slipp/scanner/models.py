@@ -6,6 +6,13 @@ Mirrors flyctl's scanner types but using Pydantic instead of Go structs.
 
 from pydantic import BaseModel, Field
 
+# Framework identifiers slipp.scanner can actually emit, grouped by language
+# family. Single source of truth for anything that needs to branch on
+# framework -> family (Caddy site routing, template variable extraction) -
+# fastapi/django/nextjs/nuxtjs/etc. have no scanner detector and never match.
+PYTHON_FRAMEWORKS = frozenset({"flask", "python"})
+NODE_FRAMEWORKS = frozenset({"sveltekit", "node"})
+
 
 class SourceInfo(BaseModel):
     """Source code information detected by scanner.

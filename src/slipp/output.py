@@ -220,7 +220,9 @@ def list_items(
         items: List of items to display
         numbered: If True, use 1. 2. 3., else use bullet
         bullet: Bullet character (default: •, ignored if numbered=True)
-        indent: Number of spaces to indent (0, 2, 4, etc.)
+        indent: Indent level (0, 1, 2, ...), same meaning as kv()/bullet() -
+            each level adds 2 spaces, on top of this function's own 2-space
+            base indent before the bullet/number.
 
     Examples:
         >>> output.list_items(["file1.yml", "file2.yml"])
@@ -231,10 +233,10 @@ def list_items(
         1. Review files
         2. Test locally
 
-        >>> output.list_items(["nested item"], indent=4)
+        >>> output.list_items(["nested item"], indent=2)
             •  nested item
     """
-    indent_str = " " * indent
+    indent_str = "  " * indent
     for i, item in enumerate(items, 1):
         prefix = f"{i}." if numbered else bullet
         line = f"{indent_str}  {prefix} {item}"

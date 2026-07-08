@@ -25,6 +25,7 @@ from slipp.utils.errors import (
     DuplicateEnvVarError,
     VaultDecryptError,
     VaultError,
+    VaultFileNotFoundError,
 )
 
 
@@ -193,10 +194,10 @@ def list_keys(vault_path: Path) -> list[str]:
         List of variable names (e.g., ["vault_db_password", "vault_api_key"])
 
     Raises:
-        FileNotFoundError: If vault file doesn't exist
+        VaultFileNotFoundError: If vault file doesn't exist
     """
     if not vault_path.exists():
-        raise FileNotFoundError(f"Vault file not found: {vault_path}")
+        raise VaultFileNotFoundError(f"Vault file not found: {vault_path}")
 
     with open(vault_path) as f:
         data = yaml.load(f, Loader=_VaultLoader)
@@ -243,7 +244,7 @@ def list_project_vaults() -> list[VaultInfo]:
         try:
             secret_count = len(list_keys(vault_path))
         except Exception:
-            # list_keys can raise FileNotFoundError/YAMLError/AttributeError
+            # list_keys can raise VaultFileNotFoundError/YAMLError/AttributeError
             # for a malformed vault - degrade to unknown rather than aborting
             # the whole listing over one bad vault file.
             secret_count = None
@@ -390,12 +391,12 @@ def decrypt_vault(vault_path: Path, password_file: Path) -> dict[str, str]:
 
     Raises:
         VaultDecryptError: If decryption fails
-        FileNotFoundError: If vault file doesn't exist
+        VaultFileNotFoundError: If vault file doesn't exist
     """
     check_tool_installed("ansible-vault", AnsibleVaultNotInstalledError)
 
     if not vault_path.exists():
-        raise FileNotFoundError(f"Vault file not found: {vault_path}")
+        raise VaultFileNotFoundError(f"Vault file not found: {vault_path}")
 
     content = vault_path.read_text()
 
