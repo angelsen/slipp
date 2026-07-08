@@ -245,3 +245,33 @@ class ImageTransferError(SlippError):
     """Container image transfer to remote host failed."""
 
     pass
+
+
+class ProviderError(SlippError):
+    """Provider operation failed."""
+
+    pass
+
+
+class ProviderNotConfiguredError(ProviderError):
+    """No provider configured for this operation."""
+
+    pass
+
+
+class ProvisionError(ProviderError):
+    """Server provisioning failed."""
+
+    pass
+
+
+class DNSSyncError(ProviderError):
+    """DNS sync operation failed."""
+
+    pass
+
+
+class DomainRegistrationError(ProviderError):
+    """Domain registration failed."""
+
+    pass

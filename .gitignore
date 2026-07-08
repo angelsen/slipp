@@ -17,3 +17,8 @@ misc/
 
 # slipp local runtime state (logs, personal run-profile overrides)
 .slipp/
+
+# repld runtime state
+.pyrepl.lock
+.pyrepl.sock
+.pyrepl.dashboard

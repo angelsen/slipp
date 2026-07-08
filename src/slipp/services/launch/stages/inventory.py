@@ -23,12 +23,17 @@ class InventoryLoadStage:
 
         Loads existing inventory if available and not reconfiguring,
         otherwise prompts user for configuration. In dry-run mode,
-        creates dummy configuration.
+        creates dummy configuration. A caller that has already populated
+        context.inventory_config (e.g. `slipp up` after provisioning a
+        server via a provider API) short-circuits both the file load and
+        the prompt.
 
         Args:
             context: Deployment context to populate with inventory config.
         """
-        if not context.dry_run:
+        if context.inventory_config is not None:
+            output.success("Using inventory pre-populated from provisioning")
+        elif not context.dry_run:
             inventory_path = context.output_dir / get_inventory_filename(
                 context.environment
             )

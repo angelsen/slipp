@@ -416,17 +416,33 @@ network/routing it's exposed through.
 - [x] JSON output (`-o json`) for all plural commands
 - [x] Tunnel auth (`--tunnel-auth user:pass`)
 - [ ] `slipp bootstrap auth` - SSH CA + TOTP setup (requires nor-auth)
-- [ ] Provider integrations (Gigahost, Cloudflare)
-- [ ] Full SSH test session against a real (arbitrary) VPS once one's available.
-      Round-2 health-remediation pass (2026-07-08) touched several SSH-dependent
-      paths that could only be verified via `--dry-run`/unit-level checks in the
-      sandbox (no reachable host): `discover_across_hosts`'s threaded
-      `host_to_projects` map (`services/discovery/discovery.py`), `HostResolver`/
-      `by_service` after the `lookup_host_by_service` rename, `UserResolver.resolve()`
-      now used for both `exec` and `ssh` (`commands/ssh.py`), `slipp images` via the
-      new `list_images()` service call, `slipp launch` (non-dry-run) writing/
-      re-running against customized Dockerfiles + requirements.yml on a live host,
-      and the `CallbackServer` async-context-manager change in the secrets-pull flow.
+- [x] Provider integrations (Gigahost) — implemented: providers add/list/remove,
+      servers list, server status/reboot, domains check/register/list, dns sync/list,
+      provision, up. Verified against live Gigahost API (2026-07-08).
+- [x] Full SSH test session against a real VPS — completed 2026-07-08 against
+      Gigahost VPS (193.200.238.213, Debian 13). Verified: bootstrap account,
+      slipp launch, slipp deploy (Flask app in Docker). Found and documented
+      several Debian 13 minimal issues (see below).
+
+### Post-e2e fixes (from live VPS testing 2026-07-08)
+
+- [ ] Bootstrap: install python3 + rsync on fresh Debian (Ansible requires both,
+      Debian 13 minimal includes neither). Add `_install_prerequisites` step to
+      `services/bootstrap/account.py`.
+- [ ] Playbook template: `{{ runtime }}` used as package name but Debian/Ubuntu
+      package is `docker.io` not `docker`. Map runtime → package name in template
+      (`generator/templates/playbook.yml.j2`). Also add `python3-requests` to
+      pre_tasks (required by Docker Ansible module).
+- [ ] Runtime prompt: show podman above docker (user preference — podman-first).
+      Change order in `utils/prompts.py`.
+- [ ] Deploy: print app URL at the end (`https://{app_domain}` from inventory).
+- [ ] Caddy template: IP-only deploys (no domain) should serve on `:80` instead
+      of attempting HTTPS with Let's Encrypt (which fails for IP addresses).
+- [ ] Provision: show "this can take up to 60 minutes" warning during install polling.
+- [ ] Provision: resume-able flow — save order state to `.slipp/provisions/<name>.yaml`
+      on order, so `slipp provision <name>` resumes poll→bootstrap→register if
+      interrupted. State file: `{order_id, srv_id, name, created_at, status}`.
+- [ ] Cloudflare provider (DNS-only, uses official Python SDK)
 
 ---
 

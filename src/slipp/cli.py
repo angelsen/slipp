@@ -13,6 +13,8 @@ from slipp import output
 from slipp.commands.bootstrap import bootstrap_app
 from slipp.commands.config import config_command
 from slipp.commands.deploy import deploy_command
+from slipp.commands.dns import dns_app
+from slipp.commands.domains import domains_app
 from slipp.commands.exec import exec_command
 from slipp.commands.generate import generate_app
 from slipp.commands.host import host_command
@@ -22,15 +24,20 @@ from slipp.commands.launch import launch_command
 from slipp.commands.logo import logo_command
 from slipp.commands.logs import logs_command
 from slipp.commands.projects import projects_app
+from slipp.commands.provision import provision_command
+from slipp.commands.providers import providers_app
 from slipp.commands.ps import ps_command
 from slipp.commands.run import RUN_CONTEXT_SETTINGS, run_command
 from slipp.commands.runs import runs_app
 from slipp.commands.secret import secret_command
 from slipp.commands.secrets import secrets_app
+from slipp.commands.server import server_command
+from slipp.commands.servers import servers_app
 from slipp.commands.ssh import ssh_command
 from slipp.commands.status import status_command
 from slipp.commands.tag import tag_command
 from slipp.commands.tags import tags_app
+from slipp.commands.up import up_command
 from slipp.constants import OutputFormat
 from slipp.services.logo import show_logo
 
@@ -72,12 +79,16 @@ def main(
 
 
 app.add_typer(bootstrap_app, name="bootstrap")
+app.add_typer(dns_app, name="dns")
+app.add_typer(domains_app, name="domains")
 app.add_typer(generate_app, name="generate")
 app.add_typer(image_app, name="image")
 app.add_typer(images_app, name="images")
 app.add_typer(projects_app, name="projects")
+app.add_typer(providers_app, name="providers")
 app.add_typer(runs_app, name="runs")
 app.add_typer(secrets_app, name="secrets")
+app.add_typer(servers_app, name="servers")
 app.add_typer(tags_app, name="tags")
 
 app.command(name="config")(config_command)
@@ -87,9 +98,12 @@ app.command(name="host")(host_command)
 app.command(name="launch")(launch_command)
 app.command(name="logo")(logo_command)
 app.command(name="logs")(logs_command)
+app.command(name="provision")(provision_command)
 app.command(name="ps")(ps_command)
 app.command(name="run", context_settings=RUN_CONTEXT_SETTINGS)(run_command)
 app.command(name="secret")(secret_command)
+app.command(name="server")(server_command)
 app.command(name="ssh")(ssh_command)
 app.command(name="status")(status_command)
 app.command(name="tag")(tag_command)
+app.command(name="up")(up_command)
