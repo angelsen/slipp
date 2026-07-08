@@ -86,6 +86,26 @@ def parse_env_vars(env_list: list[str]) -> dict[str, str]:
 
 
 @dataclass
+class ResolvedTunnelOut:
+    """Pre-parsed tunnel-out spec with resolved host."""
+
+    local_port: int
+    domain: str
+    host_spec: str
+    host: AnsibleHost
+
+
+def resolve_tunnel_out_specs(specs: list[str]) -> list[ResolvedTunnelOut]:
+    """Parse and resolve tunnel-out specs once for reuse across methods."""
+    resolved: list[ResolvedTunnelOut] = []
+    for spec in specs:
+        local_port, domain, host_spec = parse_tunnel_out(spec)
+        host = resolve_tunnel_host(host_spec)
+        resolved.append(ResolvedTunnelOut(local_port, domain, host_spec, host))
+    return resolved
+
+
+@dataclass
 class CaddyCheckResult:
     """Result of Caddy requirements check."""
 
@@ -136,21 +156,14 @@ class RunProfileExecutor:
     5. Cleaning up resources on completion/failure
     """
 
-    def check_caddy_requirements(self, tunnel_out_specs: list[str]) -> CaddyCheckResult:
-        """Check Caddy dev proxy is installed on all tunnel-out hosts.
-
-        Args:
-            tunnel_out_specs: List of tunnel-out specs (e.g., "5173:auth.metria.no@metria")
-
-        Returns:
-            CaddyCheckResult with check status
-        """
+    def check_caddy_requirements(
+        self, resolved: list[ResolvedTunnelOut]
+    ) -> CaddyCheckResult:
+        """Check Caddy dev proxy is installed on all tunnel-out hosts."""
         hosts_to_check: dict[str, tuple[str, AnsibleHost]] = {}
-        for spec in tunnel_out_specs:
-            _, _, host_spec = parse_tunnel_out(spec)
-            host = resolve_tunnel_host(host_spec)
-            if host.ansible_host not in hosts_to_check:
-                hosts_to_check[host.ansible_host] = (host_spec, host)
+        for r in resolved:
+            if r.host.ansible_host not in hosts_to_check:
+                hosts_to_check[r.host.ansible_host] = (r.host_spec, r.host)
 
         missing: list[str] = []
         unreachable: list[str] = []
@@ -186,33 +199,23 @@ class RunProfileExecutor:
             output.success(f"Loaded {len(env)} env vars from {', '.join(vaults)}")
             return env
 
-    def setup_tunnels(self, tunnels: TunnelConfig) -> TunnelManager:
-        """Setup SSH tunnels.
-
-        Args:
-            tunnels: Tunnel configuration
-
-        Returns:
-            TunnelManager owning the started tunnels
-
-        Raises:
-            TunnelError: If tunnel setup fails
-        """
+    def setup_tunnels(
+        self,
+        tunnels: TunnelConfig,
+        resolved_out: list[ResolvedTunnelOut],
+    ) -> TunnelManager:
+        """Setup SSH tunnels."""
         tunnel_manager = TunnelManager()
 
-        # Track created tunnels: (port, host) -> first domain (for logging)
         created_tunnels: dict[tuple[int, str], str] = {}
 
         try:
-            for spec in tunnels.out:
-                local_port, domain, host_spec = parse_tunnel_out(spec)
-                host = resolve_tunnel_host(host_spec)
-
-                tunnel_key = (local_port, host.ansible_host)
+            for r in resolved_out:
+                tunnel_key = (r.local_port, r.host.ansible_host)
                 if tunnel_key not in created_tunnels:
-                    tunnel_manager.start_tunnel_out(local_port, domain, host)
-                    created_tunnels[tunnel_key] = domain
-                    output.success(f"Tunnel: localhost:{local_port} → {domain}")
+                    tunnel_manager.start_tunnel_out(r.local_port, r.domain, r.host)
+                    created_tunnels[tunnel_key] = r.domain
+                    output.success(f"Tunnel: localhost:{r.local_port} → {r.domain}")
 
             for spec in tunnels.in_:
                 container_spec = parse_container_tunnel_in(spec)
@@ -243,35 +246,22 @@ class RunProfileExecutor:
 
     def setup_caddy_routes(
         self,
-        tunnel_out_specs: list[str],
+        resolved: list[ResolvedTunnelOut],
         caddy_proxies: dict[str, CaddyProxy],
         stack: ExitStack,
         auth: tuple[str, str] | None = None,
     ) -> None:
-        """Setup Caddy dev proxy routes for tunnel-out specs.
+        """Setup Caddy dev proxy routes for pre-resolved tunnel-out specs."""
+        for r in resolved:
+            if r.host.ansible_host not in caddy_proxies:
+                caddy_proxies[r.host.ansible_host] = stack.enter_context(
+                    CaddyProxy(r.host)
+                )
 
-        Args:
-            tunnel_out_specs: List of tunnel-out specs
-            caddy_proxies: Dict to populate with CaddyProxy instances
-            stack: ExitStack that owns cleanup for any CaddyProxy created here -
-                registered immediately on creation so a mid-loop failure still
-                cleans up routes added by earlier iterations
-            auth: Optional (username, bcrypt-hash) for HTTP basic auth on all routes
-
-        Raises:
-            CaddyProxyError: If route setup fails
-        """
-        for spec in tunnel_out_specs:
-            local_port, domain, host_spec = parse_tunnel_out(spec)
-            host = resolve_tunnel_host(host_spec)
-
-            if host.ansible_host not in caddy_proxies:
-                caddy_proxies[host.ansible_host] = stack.enter_context(CaddyProxy(host))
-
-            proxy = caddy_proxies[host.ansible_host]
-            proxy.add_route(domain, local_port, auth=auth)
+            proxy = caddy_proxies[r.host.ansible_host]
+            proxy.add_route(r.domain, r.local_port, auth=auth)
             suffix = f" (auth: {auth[0]})" if auth else ""
-            output.success(f"Route: {domain} → :{local_port}{suffix}")
+            output.success(f"Route: {r.domain} → :{r.local_port}{suffix}")
 
     def setup_proxy_routes(
         self,
@@ -323,8 +313,12 @@ class RunProfileExecutor:
             TunnelError: If tunnel setup fails
             CaddyProxyError: If Caddy route setup fails
         """
+        resolved_out: list[ResolvedTunnelOut] = []
         if profile.tunnels and profile.tunnels.out:
-            check_result = self.check_caddy_requirements(profile.tunnels.out)
+            resolved_out = resolve_tunnel_out_specs(profile.tunnels.out)
+
+        if resolved_out:
+            check_result = self.check_caddy_requirements(resolved_out)
             if not check_result.success:
                 messages = []
                 if check_result.missing_hosts:
@@ -353,18 +347,20 @@ class RunProfileExecutor:
                     cli_env = parse_env_vars(profile.env)
                     env = {**env, **cli_env}
 
-                if profile.tunnels and (profile.tunnels.out or profile.tunnels.in_):
+                if profile.tunnels and (resolved_out or profile.tunnels.in_):
                     output.info("Setting up tunnels...")
-                    stack.enter_context(self.setup_tunnels(profile.tunnels))
+                    stack.enter_context(
+                        self.setup_tunnels(profile.tunnels, resolved_out)
+                    )
 
-                    if profile.tunnels.out:
+                    if resolved_out:
                         output.info("Adding Caddy routes...")
                         auth = None
                         if profile.tunnels.auth:
                             username, password_hash = profile.tunnels.auth.split(":", 1)
                             auth = (username, password_hash)
                         self.setup_caddy_routes(
-                            profile.tunnels.out, caddy_proxies, stack, auth=auth
+                            resolved_out, caddy_proxies, stack, auth=auth
                         )
 
                 if profile.proxy:

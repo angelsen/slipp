@@ -86,8 +86,9 @@ class InteractiveSessionManager:
         Returns:
             Exit code from session
         """
-        user_flag = f"-u {user}" if user and user != "root" else ""
-        exec_cmd = f"{runtime} exec -it {user_flag} {container_name} /bin/sh".strip()
+        exec_cmd = CommandBuilder.container_command(
+            container_name, "/bin/sh", user=user, runtime=runtime, interactive=True
+        )
 
         cmd = build_ssh_command(host_config, flags=["-t"], remote_command=exec_cmd)
         return _run_interactive(cmd)

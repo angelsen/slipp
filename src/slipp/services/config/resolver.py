@@ -11,6 +11,7 @@ from pathlib import Path
 
 from slipp.constants import PLAYBOOK_FILENAME, get_inventory_filename
 from slipp.models.local_config import LocalConfig
+from slipp.services.config.detection import PLAYBOOK_PATTERNS, detect_path
 from slipp.services.config.local import LocalConfigService
 from slipp.services.registry import ProjectRegistry
 from slipp.utils.errors import ProjectNameRequiredError, ProjectNotFoundError
@@ -215,7 +216,8 @@ class ConfigResolver:
             playbook = self.project_root / self._local_config.playbook
             pb_source = "local"
         else:
-            playbook = self.project_root / PLAYBOOK_FILENAME
+            detected = detect_path(self.project_root, PLAYBOOK_PATTERNS)
+            playbook = detected or (self.project_root / PLAYBOOK_FILENAME)
             pb_source = "default"
 
         if cli_roles:

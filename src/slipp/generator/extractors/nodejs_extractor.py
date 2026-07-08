@@ -21,146 +21,69 @@ class NodeJSVariableExtractor(VariableExtractor):
     """
 
     def extract(self, service: DetectedService) -> dict[str, Any]:
-        """Extract Node.js template variables from DetectedService.
+        """Extract Node.js template variables from DetectedService."""
+        variables: dict[str, Any] = {}
 
-        Args:
-            service: Detected Node.js service
-
-        Returns:
-            Dictionary of Node.js template variables
-
-        Example:
-            >>> service = DetectedService(
-            ...     name="frontend",
-            ...     framework="sveltekit",
-            ...     path=Path("examples/PoC/packages/frontend"),
-            ...     dependencies=["@sveltejs/kit", "vite"],
-            ...     port=3000
-            ... )
-            >>> extractor = NodeJSVariableExtractor()
-            >>> vars = extractor.extract(service)
-            >>> vars["nodeVersion"]
-            '20'
-            >>> vars["packager"]
-            'npm'
-        """
-        variables = {}
-
-        # Common variables
         variables["appName"] = service.name
         variables["port"] = service.port
 
-        # Node version detection
-        variables["nodeVersion"] = self._detect_nodejs_version(service.path)
+        pkg = self._load_package_json(service.path)
 
-        # Package manager detection
+        variables["nodeVersion"] = self._detect_nodejs_version(service.path, pkg)
+
         package_manager, package_files = detect_package_manager(service.path)
         variables["packager"] = package_manager
         variables["package_files"] = package_files
 
-        # Yarn-specific variables
         if package_manager == "yarn":
             variables["yarn"] = True
-            variables["yarnVersion"] = "1.22.0"  # Default Yarn 1.x version
+            variables["yarnVersion"] = "1.22.0"
         else:
             variables["yarn"] = False
 
-        # Runtime/framework name (for Docker labels)
         variables["runtime"] = self._get_runtime_name(service.framework)
 
-        # Feature detection
         variables["prisma"] = "@prisma/client" in service.dependencies
-        variables["build"] = self._has_build_script(service.path)
-        variables["devDependencies"] = self._has_dev_dependencies(service.path)
+        variables["build"] = "build" in pkg.get("scripts", {}) if pkg else False
+        variables["devDependencies"] = (
+            bool(pkg.get("devDependencies")) if pkg else False
+        )
 
         return variables
 
-    def _detect_nodejs_version(self, service_path: Path) -> str:
-        """Detect Node.js version from .nvmrc or package.json.
+    @staticmethod
+    def _load_package_json(service_path: Path) -> dict[str, Any] | None:
+        """Load and parse package.json, returning None on missing/invalid."""
+        package_json = service_path / "package.json"
+        if not package_json.exists():
+            return None
+        try:
+            return json.loads(package_json.read_text())
+        except (json.JSONDecodeError, IOError):
+            return None
 
-        Args:
-            service_path: Path to service directory
-
-        Returns:
-            Node.js major version string (e.g., "20")
-        """
-        # Check .nvmrc
+    def _detect_nodejs_version(
+        self, service_path: Path, pkg: dict[str, Any] | None
+    ) -> str:
+        """Detect Node.js version from .nvmrc or package.json engines."""
         nvmrc = service_path / ".nvmrc"
         if nvmrc.exists():
             try:
-                version = nvmrc.read_text().strip()
-                # Extract major version (e.g., "v20.0.0" → "20", "20" → "20")
-                version = version.lstrip("v")
+                version = nvmrc.read_text().strip().lstrip("v")
                 parts = version.split(".")
                 if parts:
                     return parts[0]
             except (IOError, ValueError):
                 pass
 
-        # Check package.json engines.node field
-        package_json = service_path / "package.json"
-        if package_json.exists():
-            try:
-                data = json.loads(package_json.read_text())
-                engines = data.get("engines", {})
-                node_version = engines.get("node", "")
+        if pkg:
+            node_version = pkg.get("engines", {}).get("node", "")
+            if node_version:
+                match = re.search(r"\d+", node_version)
+                if match:
+                    return match.group(0)
 
-                if node_version:
-                    # Parse version specifier (e.g., ">=20.0.0", "^20", "20.x")
-                    # Extract first number
-                    match = re.search(r"\d+", node_version)
-                    if match:
-                        return match.group(0)
-            except (json.JSONDecodeError, IOError):
-                pass
-
-        # Default to LTS version
         return "20"
-
-    def _has_build_script(self, service_path: Path) -> bool:
-        """Check if package.json has a build script.
-
-        Args:
-            service_path: Path to service directory
-
-        Returns:
-            True if build script exists
-        """
-        package_json = service_path / "package.json"
-        if not package_json.exists():
-            return False
-
-        try:
-            data = json.loads(package_json.read_text())
-            scripts = data.get("scripts", {})
-            return "build" in scripts
-        except (json.JSONDecodeError, IOError):
-            return False
-
-    def _has_dev_dependencies(self, service_path: Path) -> bool:
-        """Check if package.json declares any devDependencies.
-
-        Reads package.json directly rather than service.dependencies, which
-        merges dependencies and devDependencies together (see
-        scanner/helpers.py:extract_nodejs_dependencies) and would be true
-        for nearly any Node project regardless of whether it has dev-only
-        packages.
-
-        Args:
-            service_path: Path to service directory
-
-        Returns:
-            True if package.json has a non-empty devDependencies section
-        """
-        package_json = service_path / "package.json"
-        if not package_json.exists():
-            return False
-
-        try:
-            data = json.loads(package_json.read_text())
-            return bool(data.get("devDependencies"))
-        except (json.JSONDecodeError, IOError):
-            return False
 
     def _get_runtime_name(self, framework: str) -> str:
         """Get human-readable runtime name for Docker label.

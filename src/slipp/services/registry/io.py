@@ -12,6 +12,7 @@ from datetime import datetime
 from pathlib import Path
 
 from slipp.models.registry import GlobalRegistry, RegisteredProject
+from slipp.utils.files import atomic_write_text
 
 logger = logging.getLogger(__name__)
 
@@ -80,27 +81,7 @@ class RegistryIO:
 
     @staticmethod
     def save(registry: GlobalRegistry) -> None:
-        """Save registry with atomic write.
-
-        Args:
-            registry: GlobalRegistry instance to save
-
-        Raises:
-            Exception: If write fails (after cleanup)
-        """
+        """Save registry with atomic write."""
         config_file = RegistryIO._get_config_path()
-        temp_file = config_file.with_suffix(".json.tmp")
-
-        try:
-            temp_file.write_text(
-                json.dumps(registry.model_dump(mode="json"), indent=2),
-                encoding="utf-8",
-            )
-
-            temp_file.replace(config_file)
-            config_file.chmod(0o600)
-
-        except Exception:
-            if temp_file.exists():
-                temp_file.unlink()
-            raise
+        content = json.dumps(registry.model_dump(mode="json"), indent=2)
+        atomic_write_text(config_file, content, mode=0o600)

@@ -31,7 +31,11 @@ class CallbackServer:
         self._runner = web.AppRunner(self._app)
         await self._runner.setup()
         site = web.TCPSite(self._runner, "localhost", self.port)
-        await site.start()
+        try:
+            await site.start()
+        except Exception:
+            await self._runner.cleanup()
+            raise
 
     async def stop(self) -> None:
         """Stop the callback server."""
@@ -108,7 +112,7 @@ class CallbackServer:
         """
         start = asyncio.get_event_loop().time()
         while asyncio.get_event_loop().time() - start < timeout:
-            if self.credentials:
+            if self.credentials is not None:
                 return self.credentials
             await asyncio.sleep(0.5)
         return None

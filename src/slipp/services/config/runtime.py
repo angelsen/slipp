@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from slipp.models.local_config import LocalConfig
 from slipp.models.service import Runtime
 from slipp.services.ansible import run_list_tasks
 from slipp.services.config.local import LocalConfigService
@@ -42,7 +43,7 @@ class RuntimeDetector:
         if config and config.runtime:
             return config.runtime
 
-        detected = self._detect_from_playbook()
+        detected = self._detect_from_playbook(config)
         if detected:
             return detected
 
@@ -53,15 +54,8 @@ class RuntimeDetector:
             f"  runtime: docker  # or one of: {valid}"
         )
 
-    def _detect_from_playbook(self) -> Runtime | None:
-        """Detect docker/podman runtime from ansible-playbook --list-tasks output.
-
-        Returns:
-            Runtime.DOCKER or Runtime.PODMAN if detected unambiguously, None
-            otherwise (including for a systemd project -- it must be set
-            explicitly in slipp.yaml, see class docstring).
-        """
-        config = LocalConfigService.load(self.project_root)
+    def _detect_from_playbook(self, config: LocalConfig | None) -> Runtime | None:
+        """Detect docker/podman runtime from ansible-playbook --list-tasks output."""
         if not config or not config.inventory:
             return None
 

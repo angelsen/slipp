@@ -6,6 +6,7 @@ import typer
 
 from slipp import output
 from slipp.constants import OutputFormat
+from slipp.models.local_config import LocalConfig
 from slipp.services.config import LocalConfigService, PresetResolver
 
 
@@ -15,6 +16,17 @@ tags_app = typer.Typer(
 )
 
 
+def _require_config() -> LocalConfig:
+    """Load slipp.yaml or exit with a helpful message."""
+    root = LocalConfigService.resolve_root()
+    config = LocalConfigService.load(root)
+    if not config:
+        output.error("No slipp.yaml found")
+        output.hint("Run 'slipp projects add' or 'slipp launch' first")
+        raise typer.Exit(1)
+    return config
+
+
 @tags_app.command(name="list")
 def list_presets() -> None:
     """List all tag presets."""
@@ -22,8 +34,7 @@ def list_presets() -> None:
     presets = resolver.list_presets()
 
     if not resolver.config:
-        output.warning("No slipp.yaml found")
-        output.hint("Run 'slipp projects add' or 'slipp launch' first")
+        _require_config()
         return
 
     if not presets:
@@ -56,13 +67,8 @@ def add_preset(
     ] = None,
 ) -> None:
     """Add or update a tag preset."""
+    config = _require_config()
     root = LocalConfigService.resolve_root()
-    config = LocalConfigService.load(root)
-
-    if not config:
-        output.error("No slipp.yaml found")
-        output.hint("Run 'slipp projects add' or 'slipp launch' first")
-        raise typer.Exit(1)
 
     if not tags and not skip_tags:
         output.error("Must specify --tags and/or --skip-tags")
@@ -95,12 +101,8 @@ def remove_preset(
     name: Annotated[str, typer.Argument(help="Preset name to remove")],
 ) -> None:
     """Remove a tag preset."""
+    config = _require_config()
     root = LocalConfigService.resolve_root()
-    config = LocalConfigService.load(root)
-
-    if not config:
-        output.error("No slipp.yaml found")
-        raise typer.Exit(1)
 
     if name not in config.tag_presets:
         output.error(f"Preset '{name}' not found")

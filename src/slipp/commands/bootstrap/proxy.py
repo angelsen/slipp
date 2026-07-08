@@ -46,7 +46,7 @@ def proxy_command(
         )
 
     output.blank()
-    output.stdout(f"Setting up dev proxy on {ansible_host.ansible_host}...")
+    output.info(f"Setting up dev proxy on {ansible_host.ansible_host}...")
     output.blank()
 
     with CaddyProxy(

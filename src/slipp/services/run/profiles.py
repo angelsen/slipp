@@ -30,7 +30,8 @@ def _load_raw_yaml(path: Path) -> dict[str, Any]:
     try:
         with open(path) as f:
             return yaml.safe_load(f) or {}
-    except Exception:
+    except yaml.YAMLError as e:
+        output.warning(f"Ignoring invalid YAML in {path}: {e}")
         return {}
 
 

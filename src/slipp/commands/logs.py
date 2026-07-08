@@ -51,6 +51,8 @@ def logs_command(
                     output.stdout(line)
             else:
                 log_output = ssh.execute(cmd)
+                if not log_output.ok:
+                    output.warning(f"Command exited with code {log_output.exit_code}")
                 output.stdout(log_output.text)
         except KeyboardInterrupt:
             output.success("Stopped following logs")
