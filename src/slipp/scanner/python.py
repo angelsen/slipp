@@ -51,7 +51,6 @@ def configure_python(source_dir: Path) -> SourceInfo | None:
             family="Python",
             port=8080,
             template_url=PYTHON_TEMPLATE,
-            env_vars={"PORT": "8080"},
             dependencies=dependencies,
         )
 
@@ -64,7 +63,6 @@ def configure_python(source_dir: Path) -> SourceInfo | None:
             family="Python",
             port=8080,
             template_url=PYTHON_TEMPLATE,
-            env_vars={"PORT": "8080"},
             dependencies=dependencies,
         )
 

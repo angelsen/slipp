@@ -36,12 +36,7 @@ def ssh_command(
         svc = find_service_or_exit(ssh_config, service, include_system=False)
 
         user_resolver = UserResolver(ssh)
-        resolution = user_resolver.resolve_from_runtime(
-            svc.runtime,
-            svc.unit_name,
-            user,
-            ssh_config.ansible_user,
-        )
+        resolution = user_resolver.resolve(svc, user, ssh_config.ansible_user)
 
         if resolution.warning:
             output.warning(resolution.warning)

@@ -65,10 +65,7 @@ class RegistryIO:
                     registered_at=datetime.fromisoformat(proj_data["registered_at"]),
                 )
 
-            return GlobalRegistry(
-                version=data.get("version", "3.0"),
-                projects=projects,
-            )
+            return GlobalRegistry(projects=projects)
 
         except json.JSONDecodeError as e:
             # Backup corrupted file and recover with empty registry

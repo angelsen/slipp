@@ -10,10 +10,6 @@ services:
       dockerfile: Dockerfile
     ports:
       - "{{ service.port }}:{{ service.port }}"
-    {% if service.env_vars %}
     environment:
-      {% for key, value in service.env_vars.items() %}
-      {{ key }}: {{ value }}
-      {% endfor %}
-    {% endif %}
+      PORT: "{{ service.port }}"
 {% endfor %}

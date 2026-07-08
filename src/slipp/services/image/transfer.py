@@ -33,6 +33,53 @@ def detect_local_runtime(image: str) -> str | None:
     return None
 
 
+def list_images(
+    ssh_config: AnsibleHost,
+    remote_runtime: str,
+    filter_pattern: str | None = None,
+) -> list[dict[str, str]]:
+    """List container images on a remote host.
+
+    Args:
+        ssh_config: Target host
+        remote_runtime: Remote container runtime ("podman" or "docker")
+        filter_pattern: Optional name pattern to filter by
+
+    Returns:
+        List of dicts with image, size, and created keys
+
+    Raises:
+        ImageTransferError: If the remote command fails
+    """
+    fmt = "{{.Repository}}:{{.Tag}}\t{{.Size}}\t{{.CreatedSince}}"
+    if filter_pattern:
+        base_cmd = (
+            f"{remote_runtime} images --filter 'reference={filter_pattern}' "
+            f"--format '{fmt}'"
+        )
+    else:
+        base_cmd = f"{remote_runtime} images --format '{fmt}'"
+
+    cmd = CommandBuilder.vps_command("root", base_cmd, ssh_config.ansible_user)
+
+    with SSHService(ssh_config) as ssh:
+        result = ssh.execute(cmd)
+
+    if not result.ok:
+        raise ImageTransferError(f"Failed to list images: {result.stderr.strip()}")
+
+    if not result.stdout.strip():
+        return []
+
+    rows = []
+    for line in result.stdout.strip().split("\n"):
+        parts = line.split("\t")
+        if len(parts) >= 3:
+            rows.append({"image": parts[0], "size": parts[1], "created": parts[2]})
+
+    return rows
+
+
 def push_image(
     ssh_config: AnsibleHost,
     image: str,

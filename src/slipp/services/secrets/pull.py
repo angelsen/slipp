@@ -54,10 +54,7 @@ class PullService:
         output.info("Opening browser for approval...")
         output.hint(f"Select and approve the export in {self.source.name}")
 
-        server = CallbackServer(session.port, session.session_secret)
-        await server.start()
-
-        try:
+        async with CallbackServer(session.port, session.session_secret) as server:
             with output.spinner("Waiting for approval"):
                 with contextlib.redirect_stdout(io.StringIO()):
                     webbrowser.open(auth_url)
@@ -68,9 +65,6 @@ class PullService:
 
             variables = self.source.parse_credentials(raw_credentials)
             return await self._store_in_vault(variables, target)
-
-        finally:
-            await server.stop()
 
     async def _store_in_vault(
         self,

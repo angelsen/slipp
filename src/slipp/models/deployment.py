@@ -27,7 +27,6 @@ class DetectedService(BaseModel):
         port: Default port number for the service
         template_url: URL to Fly.io Dockerfile template
         dependencies: List of detected dependencies (e.g., ["fastapi", "asyncpg"])
-        env_vars: Environment variables required by the service
     """
 
     name: str
@@ -36,7 +35,6 @@ class DetectedService(BaseModel):
     port: int
     template_url: str
     dependencies: list[str] = Field(default_factory=list)
-    env_vars: dict[str, str] = Field(default_factory=dict)
 
     @field_serializer("path")
     def serialize_path(self, path: Path) -> str:

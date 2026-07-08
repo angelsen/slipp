@@ -40,7 +40,6 @@ def _source_info_to_detected_service(
         port=info.port,
         template_url=info.template_url,
         dependencies=info.dependencies,
-        env_vars=info.env_vars,
     )
 
 

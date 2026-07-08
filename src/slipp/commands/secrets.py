@@ -246,12 +246,7 @@ def add_secret(
         )
         raise typer.Exit(1)
 
-    if jwk:
-        secret = generate_jwk(bits)
-    elif encoding == "ulid":
-        secret = generate_secret(encoding="ulid")
-    else:
-        secret = generate_secret(num_bytes, encoding)
+    secret = generate_jwk(bits) if jwk else generate_secret(num_bytes, encoding.value)
 
     try:
         with vault_password_file(confirm=False) as pw_file:

@@ -4,7 +4,9 @@ This module provides the Pydantic model for the local project configuration
 stored in slipp.yaml at the project root. This file is git-tracked.
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from slipp.models.service import Runtime
 
 
 class LocalConfig(BaseModel):
@@ -39,7 +41,7 @@ class LocalConfig(BaseModel):
         description="Install path for ansible-galaxy (from requirements.yml)",
     )
     vault: str | None = Field(default=None, description="Vault file path")
-    runtime: str | None = Field(
+    runtime: Runtime | None = Field(
         default=None, description="How the app runs (systemd/docker/podman)"
     )
     managed_roles: list[str] = Field(
@@ -53,3 +55,9 @@ class LocalConfig(BaseModel):
     )
 
     model_config = {"extra": "ignore"}
+
+    @field_validator("runtime", mode="before")
+    @classmethod
+    def _lowercase_runtime(cls, value: object) -> object:
+        """Tolerate hand-edited slipp.yaml with mixed-case runtime values."""
+        return value.lower() if isinstance(value, str) else value

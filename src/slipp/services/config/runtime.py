@@ -40,13 +40,7 @@ class RuntimeDetector:
         """
         config = LocalConfigService.load(self.project_root)
         if config and config.runtime:
-            try:
-                return Runtime(config.runtime.lower())
-            except ValueError:
-                valid = ", ".join(r.value for r in Runtime)
-                raise RuntimeDetectionError(
-                    f"Invalid runtime '{config.runtime}' in slipp.yaml (use: {valid})"
-                )
+            return config.runtime
 
         detected = self._detect_from_playbook()
         if detected:

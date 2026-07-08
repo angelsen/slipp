@@ -38,6 +38,13 @@ class CallbackServer:
         if self._runner:
             await self._runner.cleanup()
 
+    async def __aenter__(self) -> "CallbackServer":
+        await self.start()
+        return self
+
+    async def __aexit__(self, *args: object) -> None:
+        await self.stop()
+
     async def _handle_callback(self, request: web.Request) -> web.Response:
         """Handle credential callback from nor-auth.
 

@@ -43,7 +43,6 @@ class GlobalRegistry(BaseModel):
     including hosts is stored in local slipp.yaml files.
     """
 
-    version: str = Field(default="3.0")  # Bumped for local-first refactor
     projects: dict[str, RegisteredProject] = Field(default_factory=dict)
 
     def to_json_dict(self) -> dict:
@@ -53,7 +52,6 @@ class GlobalRegistry(BaseModel):
             Dictionary with all fields converted to JSON-compatible types
         """
         return {
-            "version": self.version,
             "projects": {
                 name: {
                     "name": proj.name,

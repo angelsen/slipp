@@ -20,11 +20,9 @@ class SourceInfo(BaseModel):
         port: Default port number (e.g., 8080, 3000)
         template_url: Dockerfile template URL from Fly.io
         dependencies: List of detected dependencies
-        env_vars: Environment variables required by the service
     """
 
     family: str
     port: int
     template_url: str
     dependencies: list[str] = Field(default_factory=list)
-    env_vars: dict[str, str] = Field(default_factory=dict)

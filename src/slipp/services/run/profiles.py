@@ -288,5 +288,4 @@ def merge_runtime_options(
         vaults=merged_vaults,
         tunnels=merged_tunnels,
         proxy=merged_proxy,
-        acme_email=profile.acme_email,
     )

@@ -111,10 +111,7 @@ class SecretSynchronizer:
         try:
             with vault_password_file() as pw_file:
                 for name in names:
-                    if self.encoding == "ulid":
-                        secret = generate_secret(encoding="ulid")
-                    else:
-                        secret = generate_secret(self.num_bytes, self.encoding)
+                    secret = generate_secret(self.num_bytes, self.encoding)
                     encrypted = encrypt_string(secret, name, password_file=pw_file)
                     secrets[name] = encrypted
         except PasswordMismatchError:

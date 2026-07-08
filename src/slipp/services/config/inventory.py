@@ -7,8 +7,55 @@ supporting the standard inventory.yml format used by slipp.
 from pathlib import Path
 
 from slipp.models.deployment import InventoryConfig
+from slipp.models.host import AnsibleHost
 from slipp.services.ansible import run_inventory
-from slipp.utils.errors import InventoryParseError
+from slipp.utils.errors import HostNotFoundError, InventoryParseError
+
+
+def load_project_ansible_hosts(project_path: Path) -> list[AnsibleHost]:
+    """Load hosts from a project's local config and inventory.
+
+    Args:
+        project_path: Path to project directory
+
+    Returns:
+        List of AnsibleHost from inventory
+
+    Raises:
+        HostNotFoundError: If config or inventory invalid
+    """
+    from slipp.services.config.local import LocalConfigService
+
+    local_config = LocalConfigService.load(project_path)
+    if not local_config:
+        raise HostNotFoundError(f"No slipp.yaml found in {project_path}")
+    if not local_config.inventory:
+        raise HostNotFoundError(f"No inventory configured in {project_path}")
+
+    inventory_path = project_path / local_config.inventory
+    if not inventory_path.exists():
+        raise HostNotFoundError(f"Inventory not found: {inventory_path}")
+
+    try:
+        inventory_config = InventoryService.parse(inventory_path)
+    except Exception as e:
+        raise HostNotFoundError(f"Failed to parse inventory: {e}")
+
+    hosts = [
+        AnsibleHost(
+            inventory_hostname=hostname,
+            ansible_host=host.ansible_host,
+            ansible_user=host.ansible_user,
+            ansible_port=host.ansible_port,
+            key_file=host.key_file,
+        )
+        for hostname, host in inventory_config.hosts.items()
+    ]
+
+    if not hosts:
+        raise HostNotFoundError(f"No hosts found in inventory: {inventory_path}")
+
+    return hosts
 
 
 def load_project_hosts(project_path: Path) -> list[dict[str, str | int]]:
@@ -26,30 +73,20 @@ def load_project_hosts(project_path: Path) -> list[dict[str, str | int]]:
         List of dicts with inventory_hostname, ansible_host, ansible_user,
         and ansible_port - one per host in the inventory.
     """
-    from slipp.services.config.local import LocalConfigService
-
-    local_config = LocalConfigService.load(project_path)
-    if not local_config or not local_config.inventory:
-        return []
-
-    inventory_path = project_path / local_config.inventory
-    if not inventory_path.exists():
-        return []
-
     try:
-        inventory_config = InventoryService.parse(inventory_path)
-        return [
-            {
-                "inventory_hostname": hostname,
-                "ansible_host": host.ansible_host,
-                "ansible_user": host.ansible_user,
-                "ansible_port": host.ansible_port,
-            }
-            for hostname, host in inventory_config.hosts.items()
-        ]
-    except InventoryParseError:
-        # Unparsable inventory shouldn't block displaying the rest
+        hosts = load_project_ansible_hosts(project_path)
+    except HostNotFoundError:
         return []
+
+    return [
+        {
+            "inventory_hostname": host.inventory_hostname,
+            "ansible_host": host.ansible_host,
+            "ansible_user": host.ansible_user,
+            "ansible_port": host.ansible_port,
+        }
+        for host in hosts
+    ]
 
 
 class InventoryService:

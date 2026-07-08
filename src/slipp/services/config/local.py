@@ -11,6 +11,7 @@ import yaml
 
 from slipp import output
 from slipp.models.local_config import LocalConfig
+from slipp.models.service import Runtime
 from slipp.utils.errors import ConfigParseError
 from slipp.utils.files import atomic_write_text
 
@@ -170,7 +171,7 @@ class LocalConfigService:
             roles_path=roles_list,
             galaxy_path=galaxy_path,
             vault=vault_path,
-            runtime=runtime,
+            runtime=Runtime(runtime.lower()) if runtime else None,
             managed_roles=managed_roles,
         )
 
@@ -225,7 +226,9 @@ class LocalConfigService:
         """
         config_path = LocalConfigService.get_config_path(project_root)
 
-        data = config.model_dump(exclude_none=True)
+        # mode="json" so the Runtime enum field dumps as a plain string
+        # (yaml.dump would otherwise emit a !!python/object tag for it).
+        data = config.model_dump(exclude_none=True, mode="json")
 
         if not data.get("roles_path"):
             data.pop("roles_path", None)
@@ -282,3 +285,34 @@ class LocalConfigService:
 
         if logs_dir.exists() and not gitignore.exists():
             gitignore.write_text("*\n!.gitignore\n")
+
+
+def collect_managed_roles(project: str | None = None) -> list[str] | None:
+    """Collect managed_roles for one project, or the union across all projects.
+
+    Args:
+        project: Project name to look up, or None to union across every
+            registered project
+
+    Returns:
+        List of managed role names, or None if none are configured
+    """
+    from slipp.services.registry import ProjectRegistry
+
+    project_registry = ProjectRegistry()
+
+    if project:
+        proj = project_registry.get(project)
+        if proj:
+            local_config = LocalConfigService.load(proj.project_path)
+            if local_config and local_config.managed_roles:
+                return local_config.managed_roles
+        return None
+
+    all_managed_roles: set[str] = set()
+    for proj in project_registry.list_all():
+        local_config = LocalConfigService.load(proj.project_path)
+        if local_config and local_config.managed_roles:
+            all_managed_roles.update(local_config.managed_roles)
+
+    return list(all_managed_roles) if all_managed_roles else None

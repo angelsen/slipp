@@ -6,7 +6,8 @@ import typer
 
 from slipp import output
 from slipp.commands.common import resolve_host_or_exit, resolve_runtime
-from slipp.services.ssh import CommandBuilder, SSHService
+from slipp.services.image import list_images
+from slipp.utils.errors import ImageTransferError
 
 images_app = typer.Typer(name="images", help="Manage container images on VPS")
 
@@ -28,37 +29,14 @@ def list_command(
         output.error(f"Project runtime is '{runtime}' -- no container images to list")
         raise typer.Exit(1)
 
-    fmt = "{{.Repository}}:{{.Tag}}\t{{.Size}}\t{{.CreatedSince}}"
-    if filter_pattern:
-        base_cmd = (
-            f"{runtime} images --filter 'reference={filter_pattern}' --format '{fmt}'"
-        )
-    else:
-        base_cmd = f"{runtime} images --format '{fmt}'"
-
-    cmd = CommandBuilder.vps_command("root", base_cmd, ssh_config.ansible_user)
-
-    with SSHService(ssh_config) as ssh:
-        result = ssh.execute(cmd)
-
-    if not result.ok:
-        output.error(f"Failed to list images: {result.stderr.strip()}")
+    try:
+        rows = list_images(ssh_config, runtime.value, filter_pattern)
+    except ImageTransferError as e:
+        output.error(str(e))
         raise typer.Exit(1)
 
-    if not result.stdout.strip():
+    if not rows:
         output.info("No images found")
         return
-
-    rows = []
-    for line in result.stdout.strip().split("\n"):
-        parts = line.split("\t")
-        if len(parts) >= 3:
-            rows.append(
-                {
-                    "image": parts[0],
-                    "size": parts[1],
-                    "created": parts[2],
-                }
-            )
 
     output.table(rows)

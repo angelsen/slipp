@@ -11,7 +11,7 @@ from slipp.services.discovery.discovery import (
     find_service,
     parse_systemctl_status,
 )
-from slipp.services.discovery.registry import ServiceRegistry
+from slipp.services.discovery.lookup import lookup_host_by_service
 
 __all__ = [
     "discover_across_hosts",
@@ -20,5 +20,5 @@ __all__ = [
     "filter_services",
     "find_service",
     "parse_systemctl_status",
-    "ServiceRegistry",
+    "lookup_host_by_service",
 ]

@@ -12,7 +12,7 @@ from slipp.services.discovery import (
     discover_and_enrich,
     filter_services,
 )
-from slipp.services.config import HostResolver
+from slipp.services.config import HostResolver, collect_managed_roles
 
 
 def ps_command(
@@ -28,22 +28,11 @@ def ps_command(
     ),
 ):
     """List running services (like docker ps)."""
-    from slipp.services.registry import ProjectRegistry
-
     resolver = HostResolver()
 
     if project:
         ssh_config = resolve_host_or_exit(project=project)
-
-        from slipp.services.config import LocalConfigService
-
-        project_registry = ProjectRegistry()
-        proj = project_registry.get(project)
-        managed_roles: list[str] | None = None
-        if proj:
-            local_config = LocalConfigService.load(proj.project_path)
-            if local_config and local_config.managed_roles:
-                managed_roles = local_config.managed_roles
+        managed_roles = collect_managed_roles(project)
 
         if refresh:
             output.info(f"Re-discovering services on {ssh_config.ansible_host}...")
@@ -70,15 +59,7 @@ def ps_command(
             )
             raise typer.Exit(0)
 
-        from slipp.services.config import LocalConfigService
-
-        project_registry = ProjectRegistry()
-        all_managed_roles: set[str] = set()
-        for proj in project_registry.list_all():
-            local_config = LocalConfigService.load(proj.project_path)
-            if local_config and local_config.managed_roles:
-                all_managed_roles.update(local_config.managed_roles)
-        managed_roles = list(all_managed_roles) if all_managed_roles else None
+        managed_roles = collect_managed_roles()
 
         if refresh:
             output.info(f"Re-discovering services across {len(hosts)} host(s)...")

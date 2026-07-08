@@ -44,5 +44,4 @@ def configure_sveltekit(source_dir: Path) -> SourceInfo | None:
         port=3000,
         template_url=SVELTEKIT_TEMPLATE,
         dependencies=dependencies,
-        env_vars={"PORT": "3000"},
     )

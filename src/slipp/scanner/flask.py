@@ -43,6 +43,5 @@ def configure_flask(source_dir: Path) -> SourceInfo | None:
         family="Flask",
         port=8080,
         template_url=FLASK_TEMPLATE,
-        env_vars={"PORT": "8080"},
         dependencies=dependencies,  # Include for metadata
     )

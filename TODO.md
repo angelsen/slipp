@@ -417,6 +417,16 @@ network/routing it's exposed through.
 - [x] Tunnel auth (`--tunnel-auth user:pass`)
 - [ ] `slipp bootstrap auth` - SSH CA + TOTP setup (requires nor-auth)
 - [ ] Provider integrations (Gigahost, Cloudflare)
+- [ ] Full SSH test session against a real (arbitrary) VPS once one's available.
+      Round-2 health-remediation pass (2026-07-08) touched several SSH-dependent
+      paths that could only be verified via `--dry-run`/unit-level checks in the
+      sandbox (no reachable host): `discover_across_hosts`'s threaded
+      `host_to_projects` map (`services/discovery/discovery.py`), `HostResolver`/
+      `by_service` after the `lookup_host_by_service` rename, `UserResolver.resolve()`
+      now used for both `exec` and `ssh` (`commands/ssh.py`), `slipp images` via the
+      new `list_images()` service call, `slipp launch` (non-dry-run) writing/
+      re-running against customized Dockerfiles + requirements.yml on a live host,
+      and the `CallbackServer` async-context-manager change in the secrets-pull flow.
 
 ---
 

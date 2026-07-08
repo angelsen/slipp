@@ -100,6 +100,29 @@ class ScaffoldPromptStage:
         )
 
 
+def _write_unless_exists(path: Path, content: str, context: ScaffoldContext) -> None:
+    """Write a scaffold file, never overwriting an existing one.
+
+    Unlike the generated-file stages, scaffold inventory files (hosts,
+    vars.yml, vault.yml) carry no regeneration marker -- vault.yml in
+    particular may hold real secrets from a prior run, so any existing file
+    is always left alone.
+
+    Args:
+        path: Destination file path.
+        content: File content to write if the file doesn't already exist.
+        context: Stage execution context with output_dir, generated_files.
+    """
+    display_path = str(path.relative_to(context.output_dir))
+    if path.exists():
+        output.info(f"Already exists, not overwriting: {display_path}")
+        return
+
+    path.write_text(content)
+    output.list_items([display_path], bullet=output.ICON_CHECK)
+    context.generated_files.append(path)
+
+
 class ScaffoldInventoryStage:
     """Generate inventory files (hosts, vars.yml, vault.yml)."""
 
@@ -117,52 +140,21 @@ class ScaffoldInventoryStage:
         inventory_dir = context.output_dir / "inventory"
         inventory_dir.mkdir(parents=True, exist_ok=True)
 
-        hosts_path = inventory_dir / "hosts"
         hosts_content = f"""[{context.host_group}]
 {context.hostname} ansible_host={context.host_ip} ansible_user=slipp ansible_become=true ansible_become_user=root
 """
-        if hosts_path.exists():
-            output.info(
-                f"Already exists, not overwriting: {hosts_path.relative_to(context.output_dir)}"
-            )
-        else:
-            hosts_path.write_text(hosts_content)
-            output.list_items(
-                [str(hosts_path.relative_to(context.output_dir))],
-                bullet=output.ICON_CHECK,
-            )
-            context.generated_files.append(hosts_path)
+        _write_unless_exists(inventory_dir / "hosts", hosts_content, context)
 
-        vars_path = context.inventory_dir / "vars.yml"
         vars_content = """---
 # Add your host variables here
 # Reference vault secrets with: "{{ vault_secret_name }}"
 """
-        if vars_path.exists():
-            output.info(
-                f"Already exists, not overwriting: {vars_path.relative_to(context.output_dir)}"
-            )
-        else:
-            vars_path.write_text(vars_content)
-            output.list_items(
-                [str(vars_path.relative_to(context.output_dir))],
-                bullet=output.ICON_CHECK,
-            )
-            context.generated_files.append(vars_path)
+        _write_unless_exists(context.inventory_dir / "vars.yml", vars_content, context)
 
-        # Never overwrite an existing vault.yml -- it may hold real secrets
-        # from a prior scaffold run.
-        vault_path = context.inventory_dir / "vault.yml"
-        if vault_path.exists():
-            output.info(
-                f"Already exists, not overwriting: {vault_path.relative_to(context.output_dir)}"
-            )
-            return
-        vault_path.write_text("---\n# Add secrets with: slipp secrets add <name>\n")
-        output.list_items(
-            [str(vault_path.relative_to(context.output_dir))], bullet=output.ICON_CHECK
+        vault_content = "---\n# Add secrets with: slipp secrets add <name>\n"
+        _write_unless_exists(
+            context.inventory_dir / "vault.yml", vault_content, context
         )
-        context.generated_files.append(vault_path)
 
 
 class ScaffoldRegistrationStage:

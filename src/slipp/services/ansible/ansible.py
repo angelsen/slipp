@@ -146,8 +146,6 @@ def get_host_group(playbook_path: Path, roles_path: list[str] | None = None) -> 
 
     for line in result.stdout.splitlines():
         if "pattern:" in line:
-            import re
-
             match = re.search(r"pattern:\s*\['([^']+)'\]", line)
             if match:
                 return match.group(1)

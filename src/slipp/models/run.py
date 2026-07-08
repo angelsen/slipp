@@ -72,7 +72,6 @@ class RunProfile(BaseModel):
         env: Environment variables as KEY=VALUE strings
         tunnels: SSH tunnel configuration
         proxy: Proxy route configurations
-        acme_email: Email for Let's Encrypt certificate registration
     """
 
     cmd: str = Field(..., description="Command to execute")
@@ -82,6 +81,3 @@ class RunProfile(BaseModel):
     )
     tunnels: TunnelConfig | None = None
     proxy: list[ProxyRoute] = Field(default_factory=list)
-    acme_email: str | None = Field(
-        default=None, description="Email for ACME/Let's Encrypt"
-    )

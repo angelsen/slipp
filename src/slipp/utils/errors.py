@@ -223,12 +223,6 @@ class LaunchError(SlippError):
     pass
 
 
-class DeployError(SlippError):
-    """Deployment operation failed."""
-
-    pass
-
-
 class BootstrapError(SlippError):
     """Account/host bootstrap provisioning failed."""
 

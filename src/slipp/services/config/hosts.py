@@ -1,7 +1,7 @@
 """Unified host resolution for all commands.
 
 This module provides a single source of truth for resolving hosts from:
-- Service names (via ServiceRegistry)
+- Service names (via lookup_host_by_service)
 - Project names (via ProjectRegistry → local config → inventory)
 - Current working directory context
 
@@ -40,39 +40,9 @@ class HostResolver:
         Raises:
             HostNotFoundError: If config or inventory invalid
         """
-        from slipp.services.config.inventory import InventoryService
-        from slipp.services.config.local import LocalConfigService
+        from slipp.services.config.inventory import load_project_ansible_hosts
 
-        local_config = LocalConfigService.load(project_path)
-        if not local_config:
-            raise HostNotFoundError(f"No slipp.yaml found in {project_path}")
-        if not local_config.inventory:
-            raise HostNotFoundError(f"No inventory configured in {project_path}")
-
-        inventory_path = project_path / local_config.inventory
-        if not inventory_path.exists():
-            raise HostNotFoundError(f"Inventory not found: {inventory_path}")
-
-        try:
-            inventory_config = InventoryService.parse(inventory_path)
-        except Exception as e:
-            raise HostNotFoundError(f"Failed to parse inventory: {e}")
-
-        hosts = [
-            AnsibleHost(
-                inventory_hostname=hostname,
-                ansible_host=host.ansible_host,
-                ansible_user=host.ansible_user,
-                ansible_port=host.ansible_port,
-                key_file=host.key_file,
-            )
-            for hostname, host in inventory_config.hosts.items()
-        ]
-
-        if not hosts:
-            raise HostNotFoundError(f"No hosts found in inventory: {inventory_path}")
-
-        return hosts
+        return load_project_ansible_hosts(project_path)
 
     def all_hosts(self) -> list[tuple[str, AnsibleHost]]:
         """Get all registered hosts across all projects.
@@ -119,11 +89,11 @@ class HostResolver:
             HostNotFoundError: If service not found
             AmbiguousServiceError: If multiple matches found
         """
-        from slipp.services.discovery import ServiceRegistry
+        from slipp.services.discovery import lookup_host_by_service
 
         service_name, host_filter, project_filter = parse_service_identifier(service)
 
-        host = ServiceRegistry().lookup_host_by_service(
+        host = lookup_host_by_service(
             service_name, host=host_filter, project=project_filter
         )
 

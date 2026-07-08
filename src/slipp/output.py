@@ -30,9 +30,6 @@ Usage:
     output.table([{"col": "val"}])            # formatted table
 
     # Long operations
-    with output.status("Building image"):
-        build_image()
-
     with output.spinner("Installing") as update:
         for line in process.stdout:
             update(line.strip()[:60])
@@ -43,8 +40,8 @@ Usage:
 Available Primitives:
     Data (stdout): stdout
     UI (stderr): success, error, info, warning, task, hint, blank
-    Display (stderr): kv, bullet, table, list_items, group, suggestions
-    Progress (stderr): status, spinner
+    Display (stderr): kv, bullet, table, list_items, suggestions
+    Progress (stderr): spinner
     Input: prompt, prompt_password
     Logging: get_log_dir
     Format: set_output_format, get_output_format

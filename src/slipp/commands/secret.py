@@ -27,13 +27,13 @@ def secret_command(
         secret = generate_jwk(bits)
         output.stdout(secret)
         output.hint(f"RSA-{bits} JWK (private key)")
-    elif ulid:
-        secret = generate_secret(encoding="ulid")
-        output.stdout(secret)
+        return
+
+    encoding = "ulid" if ulid else ("base64" if base64_encode else "hex")
+    secret = generate_secret(num_bytes, encoding)
+    output.stdout(secret)
+    if ulid:
         output.hint("26 char ULID")
     else:
-        encoding = "base64" if base64_encode else "hex"
-        secret = generate_secret(num_bytes, encoding)
         bits_entropy = num_bytes * 8
-        output.stdout(secret)
         output.hint(f"{len(secret)} {encoding} chars, {bits_entropy}-bit")
