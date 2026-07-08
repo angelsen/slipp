@@ -7,16 +7,13 @@ Mirrors flyctl's jsFramework.go SvelteKit detection (lines 255-264).
 from pathlib import Path
 
 from slipp.scanner.helpers import extract_nodejs_dependencies
-from slipp.scanner.models import ScannerConfig, SourceInfo
+from slipp.scanner.models import SourceInfo
 
 # Fly.io template URL (matches flyctl)
 SVELTEKIT_TEMPLATE = "https://raw.githubusercontent.com/superfly/flyctl/master/scanner/templates/node/Dockerfile"
 
 
-def configure_sveltekit(
-    source_dir: Path,
-    config: ScannerConfig,
-) -> SourceInfo | None:
+def configure_sveltekit(source_dir: Path) -> SourceInfo | None:
     """Configure SvelteKit application.
 
     Mirrors flyctl's SvelteKit detection (jsFramework.go lines 255-264).
@@ -27,13 +24,12 @@ def configure_sveltekit(
 
     Args:
         source_dir: Directory to scan
-        config: Scanner configuration (unused in MVP)
 
     Returns:
         SourceInfo if SvelteKit detected, None otherwise
 
     Example:
-        >>> info = configure_sveltekit(Path("/path/to/sveltekit-app"), ScannerConfig())
+        >>> info = configure_sveltekit(Path("/path/to/sveltekit-app"))
         >>> info.family
         'SvelteKit'
         >>> info.port

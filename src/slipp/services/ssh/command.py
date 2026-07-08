@@ -4,6 +4,46 @@ Extracts command building logic from exec.py into a shared service.
 Provides static methods for building properly formatted shell commands.
 """
 
+from slipp.models.host import AnsibleHost
+
+
+def build_ssh_command(
+    host: AnsibleHost,
+    *,
+    flags: list[str] | None = None,
+    remote_command: str | None = None,
+) -> list[str]:
+    """Build an `ssh` argv list honoring a host's port and key_file.
+
+    Single source of truth for the subprocess-ssh paths (tunnels, interactive
+    sessions, image transfer) - unlike SSHService (paramiko), these shell out
+    to the `ssh` binary directly and previously built their argv by hand,
+    which meant `key_file` was silently ignored outside of SSHService.
+
+    Args:
+        host: Target host configuration
+        flags: Extra ssh flags/options to insert before the target
+            (e.g. ["-t"], or ["-R", "5173:localhost:5173", "-N"])
+        remote_command: Optional command to run on the remote host
+
+    Returns:
+        Full argv list, ready for subprocess
+
+    Example:
+        >>> build_ssh_command(host, flags=["-t"])
+        ['ssh', 'root@example.com', '-t']
+    """
+    cmd = ["ssh"]
+    if host.ansible_port != 22:
+        cmd += ["-p", str(host.ansible_port)]
+    if host.key_file:
+        cmd += ["-i", str(host.key_file)]
+    cmd += flags or []
+    cmd.append(f"{host.ansible_user}@{host.ansible_host}")
+    if remote_command:
+        cmd.append(remote_command)
+    return cmd
+
 
 class CommandBuilder:
     """Build commands for VPS and container execution.

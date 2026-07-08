@@ -1,57 +1,46 @@
 """Registration and summary stages."""
 
-from typing import Any
-
 from slipp import output
 from slipp.constants import get_inventory_filename
 from slipp.models.service import Runtime
-from slipp.services.config import LocalConfigService
-from slipp.services.registry import ProjectRegistry
+from slipp.services.launch.context import FullContext
+from slipp.services.launch.registration import register_project
 
 
 class RegistrationStage:
     """Write local config and register project in global registry."""
 
-    def execute(self, context: Any) -> None:
+    def execute(self, context: FullContext) -> None:
         """Execute registration stage.
 
         Writes local slipp.yaml config and registers the project
-        in the global registry. Gracefully handles errors.
+        in the global registry.
 
         Args:
             context: Launch context with project configuration.
+
+        Raises:
+            LaunchError: If config creation or registration fails.
         """
         if context.dry_run:
             return
 
-        try:
-            inventory_filename = get_inventory_filename(context.environment)
-            first_host = list(context.inventory_config.hosts.values())[0]
-            LocalConfigService.create(
-                name=context.project_name,
-                inventory_path=inventory_filename,
-                playbook_path="playbook.yml",
-                runtime=first_host.runtime.value,
-                project_root=context.output_dir,
-            )
-            output.success(f"Created slipp.yaml with name '{context.project_name}'")
-        except Exception as e:
-            output.warning(f"Failed to create local config: {e}")
-
-        try:
-            ProjectRegistry().register(
-                name=context.project_name,
-                project_path=context.output_dir,
-            )
-            output.info(f"Registered '{context.project_name}' in global registry")
-        except Exception as e:
-            output.warning(f"Failed to register project: {e}")
+        assert context.inventory_config is not None, "Inventory config must be loaded"
+        inventory_filename = get_inventory_filename(context.environment)
+        first_host = list(context.inventory_config.hosts.values())[0]
+        register_project(
+            name=context.project_name,
+            project_root=context.output_dir,
+            inventory_path=inventory_filename,
+            playbook_path="playbook.yml",
+            runtime=first_host.runtime.value,
+        )
 
 
 class SummaryStage:
     """Display summary of generated files and next steps."""
 
-    def execute(self, context: Any) -> None:
+    def execute(self, context: FullContext) -> None:
         """Execute summary stage.
 
         Displays generated files, next steps, and final app URL.

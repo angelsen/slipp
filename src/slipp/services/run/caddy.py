@@ -66,8 +66,9 @@ def _push_route(host: AnsibleHost, route_config: dict, error_prefix: str) -> Non
         with SSHService(host) as ssh:
             result = ssh.execute(add_cmd)
 
-            if result and "error" in result.lower():
-                raise CaddyProxyError(f"{error_prefix}: {result}")
+            if not result.ok:
+                detail = result.stderr.strip() or result.stdout.strip()
+                raise CaddyProxyError(f"{error_prefix}: {detail}")
 
     except CaddyProxyError:
         raise
@@ -132,21 +133,27 @@ class CaddyProxy:
         self.fallback_port = fallback_port
         self.route_ids: list[str] = []
 
+    def __enter__(self) -> "CaddyProxy":
+        return self
+
+    def __exit__(self, exc_type: object, exc_val: object, exc_tb: object) -> None:
+        self.cleanup()
+
     def is_port_443_free(self) -> bool:
         """Check if port 443 is available on the host.
 
         Returns:
             True if port 443 is free, False if bound
-        """
-        check_cmd = "ss -tln 2>/dev/null | grep -q ':443 ' && echo bound || echo free"
 
-        try:
-            with SSHService(self.host) as ssh:
-                result = ssh.execute(check_cmd).strip()
-                return result == "free"
-        except Exception:
-            # Assume free if check fails (install will fail later with better error)
-            return True
+        Raises:
+            SSHConnectionError: Host unreachable
+            SSHAuthenticationError: SSH authentication failed
+        """
+        check_cmd = "ss -tln 2>/dev/null | grep -q ':443 '"
+
+        with SSHService(self.host) as ssh:
+            # grep -q exits 0 when the port is bound, 1 when free
+            return not ssh.execute(check_cmd).ok
 
     def is_installed(self) -> bool:
         """Check if Caddy dev proxy is installed and healthy.
@@ -159,6 +166,10 @@ class CaddyProxy:
 
         Returns:
             True if installed and healthy
+
+        Raises:
+            SSHConnectionError: Host unreachable
+            SSHAuthenticationError: SSH authentication failed
         """
         check_cmd = (
             "systemctl is-active caddy 2>/dev/null | grep -qx active && "
@@ -167,12 +178,8 @@ class CaddyProxy:
             "curl -sf http://localhost:2020/check >/dev/null"
         )
 
-        try:
-            with SSHService(self.host) as ssh:
-                result = ssh.execute(f"bash -c '{check_cmd}' && echo OK")
-                return "OK" in result
-        except Exception:
-            return False
+        with SSHService(self.host) as ssh:
+            return ssh.execute(f"bash -c '{check_cmd}'").ok
 
     def ensure_installed(self) -> bool:
         """Install Caddy dev proxy if not already installed.
@@ -356,7 +363,11 @@ class CaddyProxy:
 
         try:
             with SSHService(self.host) as ssh:
-                ssh.execute(remove_cmd)
+                result = ssh.execute(remove_cmd)
+                if not result.ok:
+                    logger.warning(
+                        f"Failed to remove route {route_id}: {result.text.strip()}"
+                    )
         except Exception as e:
             # Best-effort cleanup - log warning but don't fail
             logger.warning(f"Failed to remove route {route_id}: {e}")

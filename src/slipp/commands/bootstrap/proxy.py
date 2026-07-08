@@ -10,7 +10,12 @@ from slipp import output
 from slipp.models.host import AnsibleHost
 from slipp.services.config import HostResolver
 from slipp.services.run import CaddyProxy
-from slipp.utils.errors import CaddyProxyError, HostNotFoundError
+from slipp.utils.errors import (
+    CaddyProxyError,
+    HostNotFoundError,
+    SSHAuthenticationError,
+    SSHConnectionError,
+)
 
 
 def proxy_command(
@@ -43,7 +48,12 @@ def proxy_command(
     proxy = CaddyProxy(ansible_host, acme_email=email, fallback_port=fallback_port)
 
     output.info("1. Checking port 443...")
-    if not proxy.is_port_443_free():
+    try:
+        port_free = proxy.is_port_443_free()
+    except (SSHConnectionError, SSHAuthenticationError) as e:
+        output.error(f"Could not reach {ansible_host.ansible_host}: {e}")
+        raise typer.Exit(1)
+    if not port_free:
         output.error("Port 443 in use")
         output.blank()
         output.hint("Free port 443 and retry")
@@ -53,7 +63,7 @@ def proxy_command(
     output.info("2. Installing Caddy dev proxy...")
     try:
         proxy.ensure_installed()
-    except CaddyProxyError as e:
+    except (CaddyProxyError, SSHConnectionError, SSHAuthenticationError) as e:
         output.error(f"Installation failed: {e}")
         raise typer.Exit(1)
 

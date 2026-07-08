@@ -12,17 +12,15 @@ from slipp.generator.extractors.python_extractor import PythonVariableExtractor
 from slipp.models.deployment import DetectedService
 
 # Registry: Maps framework name → extractor instance
-# Mirrors scanner's SCANNERS list architecture
+# Mirrors scanner's SCANNERS list architecture. Keys match what
+# slipp.scanner.scanner.SCANNERS can actually emit (flask, sveltekit,
+# python, node) - fastapi/django/nextjs/nuxtjs have no scanner detector.
 EXTRACTORS: dict[str, VariableExtractor] = {
     # Python frameworks (all use PythonVariableExtractor)
     "flask": PythonVariableExtractor(),
-    "fastapi": PythonVariableExtractor(),
-    "django": PythonVariableExtractor(),
     "python": PythonVariableExtractor(),
     # Node.js frameworks (all use NodeJSVariableExtractor)
     "sveltekit": NodeJSVariableExtractor(),
-    "nextjs": NodeJSVariableExtractor(),
-    "nuxtjs": NodeJSVariableExtractor(),
     "node": NodeJSVariableExtractor(),
 }
 

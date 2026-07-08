@@ -1,14 +1,14 @@
 """Registry authentication bootstrap commands."""
 
 import os
+import shlex
 from typing import Annotated
 
 import typer
 
 from slipp import output
-from slipp.services.config import HostResolver
+from slipp.commands.common import resolve_host_or_exit
 from slipp.services.ssh import SSHService
-from slipp.utils.errors import HostNotFoundError
 
 registry_app = typer.Typer(name="registry", help="Setup container registry auth on VPS")
 
@@ -22,17 +22,7 @@ def _bootstrap_registry(
     token_env_var: str,
 ) -> None:
     """Common registry bootstrap logic."""
-    resolver = HostResolver()
-
-    try:
-        if host:
-            ssh_config = resolver.by_project(host)
-        else:
-            ssh_config = resolver.current()
-    except HostNotFoundError as e:
-        output.error(str(e))
-        output.hint("Specify --host <project> or run from project directory")
-        raise typer.Exit(1)
+    ssh_config = resolve_host_or_exit(project=host)
 
     if not user:
         user = output.prompt(f"{registry_name} username")
@@ -50,15 +40,19 @@ def _bootstrap_registry(
     output.info(f"Setting up {registry_name} auth on {target}")
 
     with SSHService(ssh_config) as ssh:
-        # Use stdin to avoid token in process list
-        cmd = f"echo '{token}' | docker login {registry_url} -u {user} --password-stdin"
-        result = ssh.execute(cmd)
+        # Token is piped over the SSH channel's stdin, never appearing in the
+        # remote command line (where it would be visible via `ps`/process lists)
+        cmd = (
+            f"docker login {shlex.quote(registry_url)} "
+            f"-u {shlex.quote(user)} --password-stdin"
+        )
+        result = ssh.execute(cmd, stdin_data=token)
 
-        if "Login Succeeded" in result or "Authenticating" in result:
+        if result.ok:
             output.success(f"{registry_name} authentication configured")
         else:
             output.error("Authentication failed")
-            output.hint(result.strip())
+            output.hint(result.text.strip())
             raise typer.Exit(1)
 
 

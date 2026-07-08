@@ -51,17 +51,17 @@ class UserResolver:
         try:
             result = self.ssh.execute(
                 f"sudo systemctl show -p User --value {unit_name}"
-            ).strip()
+            ).stdout.strip()
 
             if result:
                 return result
 
             pid = self.ssh.execute(
                 f"sudo systemctl show -p MainPID --value {unit_name}"
-            ).strip()
+            ).stdout.strip()
 
             if pid and pid.isdigit() and pid != "0":
-                user = self.ssh.execute(f"sudo stat -c '%U' /proc/{pid}").strip()
+                user = self.ssh.execute(f"sudo stat -c '%U' /proc/{pid}").stdout.strip()
                 if user and user != "root":
                     return user
 

@@ -46,17 +46,17 @@ def test_ssh_connectivity(host: str, user: str, port: int) -> bool:
 
     except SSHAuthenticationError as e:
         output.warning(f"SSH authentication failed: {e}")
-        print("Ensure SSH key is configured: ssh-copy-id {user}@{host}")
+        output.hint(f"Ensure SSH key is configured: ssh-copy-id {user}@{host}")
         return False
 
     except SSHConnectionError as e:
         output.warning(f"SSH connection failed: {e}")
-        print("Ensure SSH is enabled and host is reachable")
+        output.hint("Ensure SSH is enabled and host is reachable")
         return False
 
     except socket.gaierror as e:
         output.warning(f"DNS resolution failed: {e}")
-        print("Check hostname is correct and DNS is working")
+        output.hint("Check hostname is correct and DNS is working")
         return False
 
     except Exception as e:

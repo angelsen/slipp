@@ -1,87 +1,18 @@
 """List running services (like docker ps) across registered projects."""
 
 import json
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import typer
 
 from slipp import output
 from slipp.commands.common import display_services_table, resolve_host_or_exit
 from slipp.constants import OutputFormat
-from slipp.models.host import AnsibleHost
-from slipp.models.service import Service
-from slipp.services.discovery import discover_and_enrich, filter_services
+from slipp.services.discovery import (
+    discover_across_hosts,
+    discover_and_enrich,
+    filter_services,
+)
 from slipp.services.config import HostResolver
-
-
-def _discover_on_host(
-    project: str,
-    host: AnsibleHost,
-    include_system: bool,
-    force: bool,
-) -> tuple[str, list[Service], str | None]:
-    """Discover services on a single host.
-
-    Args:
-        project: Project name
-        host: Host to query
-        include_system: Include system services
-        force: Force re-discovery
-
-    Returns:
-        Tuple of (project_name, services, error_message)
-    """
-    try:
-        services = discover_and_enrich(host, include_system=include_system, force=force)
-        return (project, services, None)
-    except Exception as e:
-        # One unreachable host shouldn't abort discovery of the others.
-        return (project, [], str(e))
-
-
-def _discover_all_hosts_parallel(
-    hosts: list[tuple[str, AnsibleHost]],
-    include_system: bool,
-    force: bool,
-    max_workers: int = 5,
-) -> tuple[list[Service], list[str]]:
-    """Discover services across all hosts in parallel.
-
-    Args:
-        hosts: List of (project_name, AnsibleHost) tuples
-        include_system: Include system services
-        force: Force re-discovery
-        max_workers: Maximum parallel connections
-
-    Returns:
-        Tuple of (all_services, error_messages)
-    """
-    all_services: list[Service] = []
-    errors: list[str] = []
-
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {
-            executor.submit(_discover_on_host, project, host, include_system, force): (
-                project,
-                host,
-            )
-            for project, host in hosts
-        }
-
-        for future in as_completed(futures):
-            project, host = futures[future]
-            try:
-                _, services, error = future.result(timeout=30)
-                if error:
-                    errors.append(f"{project} ({host.ansible_host}): {error}")
-                else:
-                    all_services.extend(services)
-            except Exception as e:
-                # Thread pool surfaces arbitrary errors (e.g. timeout); one
-                # host's failure shouldn't abort discovery of the others.
-                errors.append(f"{project} ({host.ansible_host}): {e}")
-
-    return all_services, errors
 
 
 def ps_command(
@@ -152,7 +83,7 @@ def ps_command(
         if refresh:
             output.info(f"Re-discovering services across {len(hosts)} host(s)...")
 
-        services, errors = _discover_all_hosts_parallel(
+        services, errors = discover_across_hosts(
             hosts, include_system=all_services, force=refresh
         )
 

@@ -5,42 +5,13 @@ Loads host details from each project's inventory on-demand.
 """
 
 import json
-from pathlib import Path
 
 import typer
 
 from slipp import output
 from slipp.constants import OutputFormat
+from slipp.services.config import load_project_hosts
 from slipp.services.registry import ProjectRegistry
-from slipp.utils.errors import InventoryParseError
-
-
-def _load_hosts_for_project(project_path: Path) -> list[dict[str, str | int]]:
-    """Load hosts from project's local config and inventory."""
-    from slipp.services.config import InventoryService, LocalConfigService
-
-    local_config = LocalConfigService.load(project_path)
-    if not local_config or not local_config.inventory:
-        return []
-
-    inventory_path = project_path / local_config.inventory
-    if not inventory_path.exists():
-        return []
-
-    try:
-        inventory_config = InventoryService.parse(inventory_path)
-        return [
-            {
-                "inventory_hostname": hostname,
-                "ansible_host": host.ansible_host,
-                "ansible_user": host.ansible_user,
-                "ansible_port": host.ansible_port,
-            }
-            for hostname, host in inventory_config.hosts.items()
-        ]
-    except InventoryParseError:
-        # Unparsable inventory shouldn't block listing the rest of the projects
-        return []
 
 
 def list_command(
@@ -55,9 +26,7 @@ def list_command(
         output.hint("Deploy a project with 'slipp deploy' to register it automatically")
         return
 
-    projects_with_hosts = [
-        (p, _load_hosts_for_project(p.project_path)) for p in projects
-    ]
+    projects_with_hosts = [(p, load_project_hosts(p.project_path)) for p in projects]
 
     if output.get_output_format() == OutputFormat.json:
         data = [

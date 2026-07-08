@@ -11,6 +11,47 @@ from slipp.services.ansible import run_inventory
 from slipp.utils.errors import InventoryParseError
 
 
+def load_project_hosts(project_path: Path) -> list[dict[str, str | int]]:
+    """Load a summarized host list from a project's local config and inventory.
+
+    Best-effort: returns an empty list rather than raising if the project has
+    no config, no configured inventory, a missing inventory file, or an
+    unparsable one - callers use this for display (project listings) where
+    one bad project's inventory shouldn't block the rest.
+
+    Args:
+        project_path: Root directory of the project
+
+    Returns:
+        List of dicts with inventory_hostname, ansible_host, ansible_user,
+        and ansible_port - one per host in the inventory.
+    """
+    from slipp.services.config.local import LocalConfigService
+
+    local_config = LocalConfigService.load(project_path)
+    if not local_config or not local_config.inventory:
+        return []
+
+    inventory_path = project_path / local_config.inventory
+    if not inventory_path.exists():
+        return []
+
+    try:
+        inventory_config = InventoryService.parse(inventory_path)
+        return [
+            {
+                "inventory_hostname": hostname,
+                "ansible_host": host.ansible_host,
+                "ansible_user": host.ansible_user,
+                "ansible_port": host.ansible_port,
+            }
+            for hostname, host in inventory_config.hosts.items()
+        ]
+    except InventoryParseError:
+        # Unparsable inventory shouldn't block displaying the rest
+        return []
+
+
 class InventoryService:
     """Service for loading and managing Ansible inventory.
 

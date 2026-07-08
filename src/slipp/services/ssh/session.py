@@ -7,6 +7,7 @@ Provides methods for starting interactive SSH and container sessions.
 import subprocess
 
 from slipp.models.host import AnsibleHost
+from slipp.services.ssh.command import build_ssh_command
 
 
 class InteractiveSessionManager:
@@ -19,20 +20,18 @@ class InteractiveSessionManager:
     connection messages before calling these methods.
     """
 
-    def ssh_session(self, host: str, user: str, port: int = 22) -> int:
+    def ssh_session(self, host: AnsibleHost) -> int:
         """Start interactive SSH session.
 
         Uses subprocess for proper TTY handling.
 
         Args:
-            host: Remote host
-            user: SSH user
-            port: SSH port
+            host: Remote host configuration
 
         Returns:
             Exit code from SSH session
         """
-        cmd = ["ssh", "-t", f"{user}@{host}", "-p", str(port)]
+        cmd = build_ssh_command(host, flags=["-t"])
 
         try:
             result = subprocess.run(cmd, check=False)
@@ -40,38 +39,24 @@ class InteractiveSessionManager:
         except KeyboardInterrupt:
             return 130
 
-    def ssh_as_user(
-        self,
-        host: str,
-        ssh_user: str,
-        target_user: str,
-        port: int = 22,
-    ) -> int:
+    def ssh_as_user(self, host: AnsibleHost, target_user: str) -> int:
         """SSH then sudo to target user.
 
-        If target_user == ssh_user, just SSH directly.
+        If target_user == host.ansible_user, just SSH directly.
         Otherwise, SSH then sudo to target user with /bin/sh.
 
         Args:
-            host: Remote host
-            ssh_user: User to SSH as
+            host: Remote host configuration (connects as host.ansible_user)
             target_user: User to switch to after SSH
-            port: SSH port
 
         Returns:
             Exit code from session
         """
-        if target_user == ssh_user:
-            return self.ssh_session(host, ssh_user, port)
+        if target_user == host.ansible_user:
+            return self.ssh_session(host)
 
-        cmd = [
-            "ssh",
-            "-t",
-            f"{ssh_user}@{host}",
-            "-p",
-            str(port),
-            f"sudo -u {target_user} sh -c 'cd ~ && exec /bin/sh'",
-        ]
+        remote_cmd = f"sudo -u {target_user} sh -c 'cd ~ && exec /bin/sh'"
+        cmd = build_ssh_command(host, flags=["-t"], remote_command=remote_cmd)
 
         try:
             result = subprocess.run(cmd, check=False)
@@ -102,17 +87,10 @@ class InteractiveSessionManager:
         user_flag = f"-u {user}" if user and user != "root" else ""
         exec_cmd = f"{runtime} exec -it {user_flag} {container_name} /bin/sh".strip()
 
-        ssh_cmd = [
-            "ssh",
-            "-t",
-            f"{host_config.ansible_user}@{host_config.ansible_host}",
-            "-p",
-            str(host_config.ansible_port or 22),
-            exec_cmd,
-        ]
+        cmd = build_ssh_command(host_config, flags=["-t"], remote_command=exec_cmd)
 
         try:
-            result = subprocess.run(ssh_cmd, check=False)
+            result = subprocess.run(cmd, check=False)
             return result.returncode
         except KeyboardInterrupt:
             return 130

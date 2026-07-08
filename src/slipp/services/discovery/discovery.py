@@ -5,6 +5,9 @@ business logic functions for filtering, lookup, and discovery pipeline.
 These are the single source of truth for service discovery logic used by commands.
 """
 
+import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 from slipp.models.host import AnsibleHost
 from slipp.models.service import Runtime, Service, ServiceState
 from slipp.services.ssh import SSHService
@@ -92,20 +95,55 @@ class DiscoveryService:
             cmd_list = (
                 "sudo systemctl list-units --type=service --all --no-pager --plain"
             )
-            output_list = ssh.execute(cmd_list)
+            # systemctl list-units legitimately exits non-zero in some setups
+            # while still returning usable stdout - don't check the exit code
+            output_list = ssh.execute(cmd_list).stdout
             unit_names, states = self._parse_list_units(output_list)
 
             if not unit_names:
                 return []
 
             services_arg = " ".join(unit_names)
-            cmd_show = f"sudo systemctl show {services_arg} -p ExecStart -p ActiveEnterTimestamp"
-            output_show = ssh.execute(cmd_show)
-            metadata = self._parse_show_output(output_show, len(unit_names))
+            cmd_show = (
+                f"sudo systemctl show {services_arg} "
+                "-p ExecStart -p ActiveEnterTimestampMonotonic; "
+                "echo __UPTIME__=$(cut -d' ' -f1 /proc/uptime)"
+            )
+            output_show = ssh.execute(cmd_show).stdout
+            show_text, boot_uptime_seconds = self._split_uptime_marker(output_show)
+            metadata = self._parse_show_output(show_text, len(unit_names))
 
             return self._build_services_from_batch(
-                unit_names, states, metadata, host_config
+                unit_names, states, metadata, host_config, boot_uptime_seconds
             )
+
+    def _split_uptime_marker(self, output: str) -> tuple[str, float | None]:
+        """Split the appended `__UPTIME__=<seconds>` marker from systemctl show output.
+
+        The marker carries /proc/uptime (seconds since boot, monotonic clock)
+        so uptime can be computed without parsing a server-local wall-clock
+        timestamp string, whose trailing %Z abbreviation is not reliably
+        parseable and whose comparison against UTC "now" is wrong on any
+        non-UTC server.
+
+        Args:
+            output: Raw combined output of the systemctl show + echo command
+
+        Returns:
+            Tuple of (systemctl show output with marker line removed, boot uptime
+            in seconds, or None if the marker was missing/unparseable)
+        """
+        boot_uptime_seconds = None
+        show_lines = []
+        for line in output.splitlines():
+            if line.startswith("__UPTIME__="):
+                try:
+                    boot_uptime_seconds = float(line.split("=", 1)[1].strip())
+                except ValueError:
+                    boot_uptime_seconds = None
+            else:
+                show_lines.append(line)
+        return "\n".join(show_lines), boot_uptime_seconds
 
     def _filter_system_services(self, services: list[Service]) -> list[Service]:
         """Filter out system/noise services.
@@ -169,44 +207,42 @@ class DiscoveryService:
 
         return services
 
-    def _calculate_uptime_from_timestamp(self, timestamp: str) -> str | None:
-        """Calculate uptime from ActiveEnterTimestamp.
+    def _calculate_uptime_from_monotonic(
+        self, monotonic_usec: str, boot_uptime_seconds: float | None
+    ) -> str | None:
+        """Calculate uptime from ActiveEnterTimestampMonotonic.
 
         Args:
-            timestamp: Timestamp string from systemd (e.g., "Sun 2025-11-23 18:07:23 UTC")
+            monotonic_usec: Microseconds since boot when the unit became active
+                (systemd's ActiveEnterTimestampMonotonic value)
+            boot_uptime_seconds: Current /proc/uptime seconds-since-boot, captured
+                in the same SSH round-trip as monotonic_usec so both share a clock
 
         Returns:
             Formatted uptime (e.g., "2h 31m", "5d 3h") or None
         """
-        from datetime import datetime
+        if not monotonic_usec or monotonic_usec == "0" or boot_uptime_seconds is None:
+            return None
 
         try:
-            if not timestamp or timestamp == "n/a":
-                return None
-
-            parts = timestamp.strip().split()
-            if len(parts) >= 4:
-                dt_str = " ".join(parts[1:4])
-                dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S %Z")
-            else:
-                return None
-
-            now = datetime.utcnow()
-            delta = now - dt
-
-            days = delta.days
-            hours = delta.seconds // 3600
-            minutes = (delta.seconds % 3600) // 60
-
-            if days > 0:
-                return f"{days}d {hours}h"
-            elif hours > 0:
-                return f"{hours}h {minutes}m"
-            else:
-                return f"{minutes}m"
-
-        except Exception:
+            active_seconds_since_boot = float(monotonic_usec) / 1_000_000
+        except ValueError:
             return None
+
+        uptime_seconds = boot_uptime_seconds - active_seconds_since_boot
+        if uptime_seconds < 0:
+            return None
+
+        days = int(uptime_seconds // 86400)
+        hours = int((uptime_seconds % 86400) // 3600)
+        minutes = int((uptime_seconds % 3600) // 60)
+
+        if days > 0:
+            return f"{days}d {hours}h"
+        elif hours > 0:
+            return f"{hours}h {minutes}m"
+        else:
+            return f"{minutes}m"
 
     def _parse_list_units(self, output: str) -> tuple[list[str], list[str]]:
         """Parse systemctl list-units output.
@@ -249,24 +285,26 @@ class DiscoveryService:
 
         When showing multiple properties for multiple services, systemd outputs:
             ExecStart={ path=/usr/bin/podman ... }
-            ActiveEnterTimestamp=Sun 2025-11-23 18:07:23 UTC
+            ActiveEnterTimestampMonotonic=12345678
             (blank line)
             ExecStart={ path=/usr/sbin/nginx ... }
-            ActiveEnterTimestamp=Mon 2025-11-17 09:59:12 UTC
+            ActiveEnterTimestampMonotonic=98765432
             (blank line)
 
         NOTE: If ExecStart is missing, systemd omits the property entirely.
 
         Args:
-            output: Raw output from 'systemctl show -p ExecStart -p ActiveEnterTimestamp'
+            output: Raw output from
+                'systemctl show -p ExecStart -p ActiveEnterTimestampMonotonic'
+                (with the `__UPTIME__=` marker line already stripped)
             expected_count: Number of services queried (for validation)
 
         Returns:
-            List of metadata dicts: [{'exec': '...', 'timestamp': '...'}, ...]
+            List of metadata dicts: [{'exec': '...', 'monotonic': '...'}, ...]
 
         Edge cases:
             - Missing ExecStart (oneshot services): Property omitted, use empty string
-            - Blank timestamp (inactive services): Use 'n/a'
+            - Missing/zero monotonic timestamp (inactive services): Use '0'
             - Extra blank lines: Skip
         """
         lines = output.splitlines()
@@ -275,27 +313,29 @@ class DiscoveryService:
 
         while i < len(lines) and len(metadata) < expected_count:
             exec_cmd = ""
-            timestamp = "n/a"
+            monotonic = "0"
 
             while i < len(lines) and lines[i].strip():
                 line = lines[i].strip()
 
                 if line.startswith("ExecStart="):
                     exec_cmd = line.replace("ExecStart=", "", 1).strip()
-                elif line.startswith("ActiveEnterTimestamp="):
-                    timestamp = line.replace("ActiveEnterTimestamp=", "", 1).strip()
-                    if not timestamp:
-                        timestamp = "n/a"
+                elif line.startswith("ActiveEnterTimestampMonotonic="):
+                    monotonic = line.replace(
+                        "ActiveEnterTimestampMonotonic=", "", 1
+                    ).strip()
+                    if not monotonic:
+                        monotonic = "0"
 
                 i += 1
 
-            metadata.append({"exec": exec_cmd, "timestamp": timestamp})
+            metadata.append({"exec": exec_cmd, "monotonic": monotonic})
 
             if i < len(lines) and not lines[i].strip():
                 i += 1
 
         while len(metadata) < expected_count:
-            metadata.append({"exec": "", "timestamp": "n/a"})
+            metadata.append({"exec": "", "monotonic": "0"})
 
         return metadata[:expected_count]
 
@@ -325,14 +365,17 @@ class DiscoveryService:
         states: list[str],
         metadata: list[dict],
         host_config: AnsibleHost,
+        boot_uptime_seconds: float | None,
     ) -> list[Service]:
         """Build Service objects from batched data.
 
         Args:
             unit_names: List of unit names ['nginx.service', 'postgres.service']
             states: List of active states ['active', 'active', 'inactive']
-            metadata: List of metadata dicts [{'exec': '...', 'timestamp': '...'}, ...]
+            metadata: List of metadata dicts [{'exec': '...', 'monotonic': '...'}, ...]
             host_config: Host configuration
+            boot_uptime_seconds: /proc/uptime seconds-since-boot captured alongside
+                the metadata query, used to compute each service's uptime
 
         Returns:
             List of Service objects
@@ -355,7 +398,9 @@ class DiscoveryService:
 
             uptime = None
             if state == ServiceState.ACTIVE:
-                uptime = self._calculate_uptime_from_timestamp(meta["timestamp"])
+                uptime = self._calculate_uptime_from_monotonic(
+                    meta["monotonic"], boot_uptime_seconds
+                )
 
             # NOTE: projects=[] by default, enriched later via enrich_with_projects()
             services.append(
@@ -400,6 +445,77 @@ def discover_and_enrich(
     )
     services = discovery.enrich_with_projects(services)
     return services
+
+
+def _discover_on_host(
+    project: str,
+    host: AnsibleHost,
+    include_system: bool,
+    force: bool,
+) -> tuple[str, list[Service], str | None]:
+    """Discover services on a single host.
+
+    Args:
+        project: Project name
+        host: Host to query
+        include_system: Include system services
+        force: Force re-discovery
+
+    Returns:
+        Tuple of (project_name, services, error_message)
+    """
+    try:
+        services = discover_and_enrich(host, include_system=include_system, force=force)
+        return (project, services, None)
+    except Exception as e:
+        # One unreachable host shouldn't abort discovery of the others.
+        return (project, [], str(e))
+
+
+def discover_across_hosts(
+    hosts: list[tuple[str, AnsibleHost]],
+    *,
+    include_system: bool = False,
+    force: bool = False,
+    max_workers: int = 5,
+) -> tuple[list[Service], list[str]]:
+    """Discover services across multiple hosts in parallel.
+
+    Args:
+        hosts: List of (project_name, AnsibleHost) tuples
+        include_system: Include system services
+        force: Force re-discovery
+        max_workers: Maximum parallel connections
+
+    Returns:
+        Tuple of (all_services, error_messages)
+    """
+    all_services: list[Service] = []
+    errors: list[str] = []
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(_discover_on_host, project, host, include_system, force): (
+                project,
+                host,
+            )
+            for project, host in hosts
+        }
+
+        for future in as_completed(futures):
+            project, host = futures[future]
+            try:
+                _, services, error = future.result(timeout=30)
+                if error:
+                    errors.append(f"{project} ({host.ansible_host}): {error}")
+                else:
+                    all_services.extend(services)
+            except Exception as e:
+                # Thread pool surfaces arbitrary errors (e.g. timeout); one
+                # host's failure shouldn't abort discovery of the others.
+                errors.append(f"{project} ({host.ansible_host}): {e}")
+
+    return all_services, errors
 
 
 def _fuzzy_match_roles(
@@ -477,6 +593,75 @@ def filter_services(
         result = [s for s in result if s.projects]
 
     return result
+
+
+def parse_systemctl_status(output_text: str) -> dict:
+    """Parse systemctl status output to extract key details.
+
+    Args:
+        output_text: Raw output from systemctl status command.
+
+    Returns:
+        Dictionary with keys: loaded, active, pid, memory, tasks.
+    """
+    details = {}
+
+    for line in output_text.splitlines():
+        line = line.strip()
+
+        if line.startswith("Loaded:"):
+            details["loaded"] = line.replace("Loaded:", "").strip()
+        elif line.startswith("Active:"):
+            details["active"] = line.replace("Active:", "").strip()
+        elif line.startswith("Main PID:"):
+            match = re.search(r"Main PID:\s+(\d+)", line)
+            if match:
+                details["pid"] = match.group(1)
+        elif line.startswith("Memory:"):
+            match = re.search(r"Memory:\s+([\d.]+\w+)", line)
+            if match:
+                details["memory"] = match.group(1)
+        elif line.startswith("Tasks:"):
+            match = re.search(r"Tasks:\s+(\d+)", line)
+            if match:
+                details["tasks"] = match.group(1)
+
+    return details
+
+
+def extract_status_log_lines(output_text: str) -> list[str]:
+    """Extract log lines from systemctl status output.
+
+    Args:
+        output_text: Raw output from systemctl status command.
+
+    Returns:
+        List of log lines from the systemctl output.
+    """
+    log_lines = []
+    in_logs = False
+
+    months = [
+        "Jan",
+        "Feb",
+        "Mar",
+        "Apr",
+        "May",
+        "Jun",
+        "Jul",
+        "Aug",
+        "Sep",
+        "Oct",
+        "Nov",
+        "Dec",
+    ]
+
+    for line in output_text.splitlines():
+        if in_logs or any(line.strip().startswith(m) for m in months):
+            in_logs = True
+            log_lines.append(line)
+
+    return log_lines
 
 
 def find_service(

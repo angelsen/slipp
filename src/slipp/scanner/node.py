@@ -9,16 +9,13 @@ Mirrors flyctl's node.go (simplified for MVP).
 from pathlib import Path
 
 from slipp.scanner.helpers import extract_nodejs_dependencies
-from slipp.scanner.models import ScannerConfig, SourceInfo
+from slipp.scanner.models import SourceInfo
 
 # Fly.io template URL (matches flyctl)
 NODE_TEMPLATE = "https://raw.githubusercontent.com/superfly/flyctl/master/scanner/templates/node/Dockerfile"
 
 
-def configure_node(
-    source_dir: Path,
-    config: ScannerConfig,
-) -> SourceInfo | None:
+def configure_node(source_dir: Path) -> SourceInfo | None:
     """Configure generic Node.js application.
 
     Detects Node.js projects by checking for package.json with dependencies.
@@ -26,13 +23,12 @@ def configure_node(
 
     Args:
         source_dir: Directory to scan.
-        config: Scanner configuration (unused in MVP).
 
     Returns:
         SourceInfo if Node.js project detected, None otherwise.
 
     Example:
-        >>> info = configure_node(Path("/path/to/node-app"), ScannerConfig())
+        >>> info = configure_node(Path("/path/to/node-app"))
         >>> info.family
         'Node'
         >>> info.port

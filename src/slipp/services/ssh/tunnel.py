@@ -14,6 +14,7 @@ import time
 from slipp.models.host import AnsibleHost
 from slipp.services.config import HostResolver
 from slipp.services.ssh.client import SSHService
+from slipp.services.ssh.command import build_ssh_command
 from slipp.utils.errors import HostNotFoundError, TunnelError
 
 # Pattern for container tunnel specs: docker://container:port:local@host
@@ -139,19 +140,17 @@ def _spawn_ssh_tunnel(
     Raises:
         TunnelError: If the tunnel process exits immediately
     """
-    cmd = [
-        "ssh",
-        *forward_args,
-        "-N",
-        "-o",
-        "ExitOnForwardFailure=yes",
-        "-o",
-        "ServerAliveInterval=30",
-        f"{host.ansible_user}@{host.ansible_host}",
-    ]
-
-    if host.ansible_port != 22:
-        cmd.extend(["-p", str(host.ansible_port)])
+    cmd = build_ssh_command(
+        host,
+        flags=[
+            *forward_args,
+            "-N",
+            "-o",
+            "ExitOnForwardFailure=yes",
+            "-o",
+            "ServerAliveInterval=30",
+        ],
+    )
 
     proc = subprocess.Popen(
         cmd,
@@ -263,7 +262,12 @@ class TunnelManager:
 
         try:
             with SSHService(root_host) as ssh:
-                result = ssh.execute(inspect_cmd).strip().strip('"')
+                result = (
+                    ssh.execute(inspect_cmd)
+                    .check(f"Failed to inspect container '{container}'")
+                    .stdout.strip()
+                    .strip('"')
+                )
                 # Take first IP if container is on multiple networks
                 container_ip = result.split()[0] if result.split() else ""
         except Exception as e:

@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import IO, Any, Callable
 
+from slipp import output
 from slipp.utils.cli_tools import check_tool_installed
 from slipp.utils.errors import AnsibleError, AnsibleNotFoundError
 
@@ -263,6 +264,52 @@ def install_requirements(
     finally:
         if log_handle:
             log_handle.close()
+
+
+def ensure_requirements_installed(
+    requirements_file: str,
+    roles_path: str,
+    *,
+    log_dir: Path,
+    force: bool = False,
+) -> None:
+    """Install galaxy requirements unless already present, with progress UI.
+
+    Shared by deploy and launch/scaffold, which both need "skip if already
+    installed, show a spinner, raise with the log path on failure" - the
+    only prior difference was deploy re-implementing check_roles_installed()
+    inline instead of calling it.
+
+    Args:
+        requirements_file: Path to requirements.yml
+        roles_path: Directory to install roles into
+        log_dir: Directory for install logs
+        force: Force reinstall even if roles are already present
+
+    Raises:
+        AnsibleError: If installation fails
+    """
+    if not force and check_roles_installed(roles_path):
+        output.info(f"Roles already installed in {roles_path}")
+        return
+
+    with output.spinner("Installing requirements") as update:
+        result = install_requirements(
+            requirements_file,
+            roles_path,
+            log_dir=log_dir,
+            force=force,
+            on_progress=update,
+        )
+
+    if result.exit_code == 0:
+        output.success("Installing requirements")
+        return
+
+    message = "Installing requirements failed"
+    if result.log_path:
+        message += f"\nSee log: {result.log_path}"
+    raise AnsibleError(message)
 
 
 def run_playbook(

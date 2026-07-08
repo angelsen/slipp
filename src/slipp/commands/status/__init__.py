@@ -1,6 +1,6 @@
 """Status command for checking service and system status.
 
-Provides the `ac status` command to display health and status information
+Provides the `slipp status` command to display health and status information
 for managed services and infrastructure.
 """
 

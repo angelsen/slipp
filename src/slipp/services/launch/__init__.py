@@ -5,16 +5,13 @@ scaffold) and runs them via LaunchPipeline. Stage failures raise LaunchError.
 """
 
 from slipp.generator import TemplateGenerator
-from slipp.generator.inventory_generator import InventoryGenerator
-from slipp.generator.playbook_generator import PlaybookGenerator
-from slipp.generator.requirements_generator import RequirementsGenerator
 from slipp.services.launch.context import (
     BaseContext,
     DockerfileContext,
     FullContext,
     ScaffoldContext,
 )
-from slipp.services.launch.pipeline import LaunchPipeline
+from slipp.services.launch.pipeline import LaunchPipeline, PipelineStage
 from slipp.services.launch.stages import (
     AppRolesStage,
     CaddyConfigStage,
@@ -41,19 +38,19 @@ from slipp.services.launch.stages import (
 
 def run_full_pipeline(context: FullContext) -> None:
     """Scan the codebase and generate a complete Ansible project."""
-    stages = [
+    stages: list[PipelineStage[FullContext]] = [
         ValidationStage(),
         ProjectScanStage(),
         InventoryLoadStage(),
         InventoryValidationStage(),
         DockerfileGenerationStage(TemplateGenerator()),
         CaddyConfigStage(),
-        InventoryFileStage(InventoryGenerator()),
-        PlaybookGenerationStage(PlaybookGenerator()),
+        InventoryFileStage(),
+        PlaybookGenerationStage(),
         GroupVarsStage(),
         CaddyRoleStage(),
         AppRolesStage(),
-        RequirementsFileStage(RequirementsGenerator()),
+        RequirementsFileStage(),
         ComposeGenerationStage(),
         RegistrationStage(),
         SummaryStage(),
@@ -63,7 +60,7 @@ def run_full_pipeline(context: FullContext) -> None:
 
 def run_dockerfile_pipeline(context: DockerfileContext) -> None:
     """Scan the codebase and generate Dockerfiles only."""
-    stages = [
+    stages: list[PipelineStage[DockerfileContext]] = [
         ValidationStage(),
         ProjectScanStage(),
         DockerfileGenerationStage(TemplateGenerator()),
@@ -73,7 +70,7 @@ def run_dockerfile_pipeline(context: DockerfileContext) -> None:
 
 def run_scaffold_pipeline(context: ScaffoldContext) -> None:
     """Create Ansible inventory for an existing project."""
-    stages = [
+    stages: list[PipelineStage[ScaffoldContext]] = [
         ScaffoldValidationStage(),
         ScaffoldPromptStage(),
         ScaffoldInventoryStage(),

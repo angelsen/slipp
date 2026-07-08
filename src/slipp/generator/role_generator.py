@@ -2,10 +2,7 @@
 
 from pathlib import Path
 
-from jinja2 import TemplateError
-
-from slipp.generator.env import make_env
-from slipp.generator.errors import TemplateGenerationError
+from slipp.generator.env import render_template
 from slipp.models.deployment import DetectedService
 from slipp.models.service import Runtime
 
@@ -39,10 +36,6 @@ class RoleGenerator:
         >>> generator = RoleGenerator()
         >>> files = generator.generate_app_role(service, "my-app")
     """
-
-    def __init__(self):
-        """Initialize RoleGenerator with Jinja2 environment."""
-        self.env = make_env()
 
     def _template_dir(self, runtime: Runtime) -> str:
         """Pick the source template set for a runtime.
@@ -149,27 +142,17 @@ class RoleGenerator:
             project_root if project_root is not None else service.path,
         )
 
-        try:
-            # Generate role files
-            files[Path(f"roles/{role_name}/tasks/main.yml")] = self._render_tasks(
-                service, project_name, runtime, sync_excludes
-            )
-            files[Path(f"roles/{role_name}/templates/systemd.service.j2")] = (
-                self._render_systemd(service, project_name, runtime)
-            )
-            files[Path(f"roles/{role_name}/handlers/main.yml")] = self._render_handlers(
-                service, project_name
-            )
+        files[Path(f"roles/{role_name}/tasks/main.yml")] = self._render_tasks(
+            service, project_name, runtime, sync_excludes
+        )
+        files[Path(f"roles/{role_name}/templates/systemd.service.j2")] = (
+            self._render_systemd(service, project_name, runtime)
+        )
+        files[Path(f"roles/{role_name}/handlers/main.yml")] = self._render_handlers(
+            service, project_name
+        )
 
-            return files
-        except TemplateError as e:
-            raise TemplateGenerationError(
-                f"Failed to render role for {service.name}: {e}"
-            ) from e
-        except Exception as e:
-            raise TemplateGenerationError(
-                f"Unexpected error generating role for {service.name}: {e}"
-            ) from e
+        return files
 
     def _render_tasks(
         self,
@@ -190,14 +173,15 @@ class RoleGenerator:
         Returns:
             Rendered tasks YAML content
         """
-        template = self.env.get_template(
-            f"{self._template_dir(runtime)}/tasks/main.yml.j2"
-        )
-        return template.render(
-            service=service.model_dump(),
-            project_name=project_name,
-            runtime=runtime.value,
-            sync_excludes=sync_excludes,
+        return render_template(
+            f"{self._template_dir(runtime)}/tasks/main.yml.j2",
+            {
+                "service": service.model_dump(),
+                "project_name": project_name,
+                "runtime": runtime.value,
+                "sync_excludes": sync_excludes,
+            },
+            label=f"role for {service.name} (tasks)",
         )
 
     def _render_systemd(
@@ -213,13 +197,14 @@ class RoleGenerator:
         Returns:
             Rendered systemd unit content
         """
-        template = self.env.get_template(
-            f"{self._template_dir(runtime)}/templates/systemd.service.j2"
-        )
-        return template.render(
-            service=service.model_dump(),
-            project_name=project_name,
-            runtime=runtime.value,
+        return render_template(
+            f"{self._template_dir(runtime)}/templates/systemd.service.j2",
+            {
+                "service": service.model_dump(),
+                "project_name": project_name,
+                "runtime": runtime.value,
+            },
+            label=f"role for {service.name} (systemd unit)",
         )
 
     def _render_handlers(self, service: DetectedService, project_name: str) -> str:
@@ -232,8 +217,8 @@ class RoleGenerator:
         Returns:
             Rendered handlers YAML content
         """
-        template = self.env.get_template("roles/app-container/handlers/main.yml.j2")
-        return template.render(
-            service=service.model_dump(),
-            project_name=project_name,
+        return render_template(
+            "roles/app-container/handlers/main.yml.j2",
+            {"service": service.model_dump(), "project_name": project_name},
+            label=f"role for {service.name} (handlers)",
         )

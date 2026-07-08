@@ -41,12 +41,16 @@ def list_command(
     with SSHService(ssh_config) as ssh:
         result = ssh.execute(cmd)
 
-    if not result.strip():
+    if not result.ok:
+        output.error(f"Failed to list images: {result.stderr.strip()}")
+        raise typer.Exit(1)
+
+    if not result.stdout.strip():
         output.info("No images found")
         return
 
     rows = []
-    for line in result.strip().split("\n"):
+    for line in result.stdout.strip().split("\n"):
         parts = line.split("\t")
         if len(parts) >= 3:
             rows.append(

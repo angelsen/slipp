@@ -5,7 +5,7 @@ from pathlib import Path
 from slipp.models.service import Runtime
 from slipp.services.ansible import run_list_tasks
 from slipp.services.config.local import LocalConfigService
-from slipp.utils.errors import AnsibleError, SlippError
+from slipp.utils.errors import AnsibleError, RuntimeDetectionError
 
 
 class RuntimeDetector:
@@ -92,9 +92,3 @@ class RuntimeDetector:
 
         except AnsibleError:
             return None
-
-
-class RuntimeDetectionError(SlippError):
-    """Runtime could not be determined."""
-
-    pass

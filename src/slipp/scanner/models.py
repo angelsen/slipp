@@ -7,21 +7,6 @@ Mirrors flyctl's scanner types but using Pydantic instead of Go structs.
 from pydantic import BaseModel, Field
 
 
-class ScannerConfig(BaseModel):
-    """Configuration for scanner behavior.
-
-    Mirrors flyctl's ScannerConfig but adapted for Python.
-    Empty for MVP, will be populated when adding configuration features.
-
-    Future features:
-    - enable/disable specific frameworks
-    - custom template URLs
-    - override port assignments
-    """
-
-    pass
-
-
 class SourceInfo(BaseModel):
     """Source code information detected by scanner.
 

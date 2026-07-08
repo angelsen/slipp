@@ -7,16 +7,13 @@ Extracts dependencies internally using language-specific helper.
 from pathlib import Path
 
 from slipp.scanner.helpers import extract_python_dependencies
-from slipp.scanner.models import ScannerConfig, SourceInfo
+from slipp.scanner.models import SourceInfo
 
 # Fly.io template URL (matches flyctl)
 FLASK_TEMPLATE = "https://raw.githubusercontent.com/superfly/flyctl/master/scanner/templates/python-docker/Dockerfile"
 
 
-def configure_flask(
-    source_dir: Path,
-    config: ScannerConfig,
-) -> SourceInfo | None:
+def configure_flask(source_dir: Path) -> SourceInfo | None:
     """Configure Flask application.
 
     Extracts Python dependencies internally and checks for "flask" package.
@@ -27,13 +24,12 @@ def configure_flask(
 
     Args:
         source_dir: Directory to scan
-        config: Scanner configuration (unused in MVP)
 
     Returns:
         SourceInfo if Flask detected, None otherwise
 
     Example:
-        >>> info = configure_flask(Path("/path/to/flask-app"), ScannerConfig())
+        >>> info = configure_flask(Path("/path/to/flask-app"))
         >>> info.family
         'Flask'
         >>> info.port

@@ -5,7 +5,7 @@ from pathlib import Path
 from slipp import output
 from slipp.models.host import AnsibleHost
 from slipp.services.ssh import SSHService
-from slipp.utils.errors import BootstrapError, SSHConnectionError
+from slipp.utils.errors import BootstrapError, SSHCommandError, SSHConnectionError
 
 
 def _create_user(ssh: SSHService, username: str, dry_run: bool) -> None:
@@ -22,16 +22,16 @@ def _create_user(ssh: SSHService, username: str, dry_run: bool) -> None:
         output.hint(f"Would run: useradd -m -s /bin/bash {username}")
         return
 
-    check_user = ssh.execute(f"id {username} 2>/dev/null || echo NOTFOUND")
-
-    if "NOTFOUND" not in check_user:
+    if ssh.execute(f"id {username}").ok:
         output.warning(f"User '{username}' already exists (skipping)")
         return
 
-    ssh.execute(f"useradd -m -s /bin/bash {username}")
+    ssh.execute(f"useradd -m -s /bin/bash {username}").check(
+        f"Failed to create user '{username}'"
+    )
 
-    verify = ssh.execute(f"id {username}")
-    output.success(f"User created: {verify.strip()}")
+    verify = ssh.execute(f"id {username}").check("Failed to verify created user")
+    output.success(f"User created: {verify.stdout.strip()}")
 
 
 def _copy_ssh_keys(
@@ -54,21 +54,27 @@ def _copy_ssh_keys(
         output.hint(f"Would copy /root/.ssh to /home/{slipp_user}/.ssh")
         return
 
-    check_ssh = ssh.execute("test -d /root/.ssh && echo EXISTS || echo NOTFOUND")
-
-    if "NOTFOUND" in check_ssh:
+    if not ssh.execute("test -d /root/.ssh").ok:
         raise BootstrapError("Root user must have SSH keys configured")
 
-    ssh.execute(f"cp -r /root/.ssh /home/{slipp_user}/")
+    ssh.execute(f"cp -r /root/.ssh /home/{slipp_user}/").check(
+        "Failed to copy SSH keys"
+    )
+    ssh.execute(f"chown -R {slipp_user}:{slipp_user} /home/{slipp_user}/.ssh").check(
+        "Failed to chown SSH keys"
+    )
+    ssh.execute(f"chmod 700 /home/{slipp_user}/.ssh").check(
+        "Failed to chmod SSH directory"
+    )
+    ssh.execute(f"chmod 600 /home/{slipp_user}/.ssh/*").check(
+        "Failed to chmod SSH files"
+    )
 
-    ssh.execute(f"chown -R {slipp_user}:{slipp_user} /home/{slipp_user}/.ssh")
-
-    ssh.execute(f"chmod 700 /home/{slipp_user}/.ssh")
-    ssh.execute(f"chmod 600 /home/{slipp_user}/.ssh/*")
-
-    perms = ssh.execute(f"ls -ld /home/{slipp_user}/.ssh")
+    perms = ssh.execute(f"ls -ld /home/{slipp_user}/.ssh").check(
+        "Failed to verify SSH directory permissions"
+    )
     output.success("SSH keys copied and secured")
-    output.hint(f"  {perms.strip()}")
+    output.hint(f"  {perms.stdout.strip()}")
 
 
 def _configure_sudoers(ssh: SSHService, username: str, dry_run: bool) -> None:
@@ -103,15 +109,18 @@ def _configure_sudoers(ssh: SSHService, username: str, dry_run: bool) -> None:
 {sudoers_content}
 SUDOERS_EOF
 """
-    )
+    ).check("Failed to write sudoers temp file")
 
     validation = ssh.execute(f"visudo -c -f /tmp/sudoers-{username}")
+    if not validation.ok:
+        raise BootstrapError(f"Sudoers file has syntax errors\n  {validation.text}")
 
-    if "parsed OK" not in validation:
-        raise BootstrapError(f"Sudoers file has syntax errors\n  {validation}")
-
-    ssh.execute(f"mv /tmp/sudoers-{username} /etc/sudoers.d/{username}")
-    ssh.execute(f"chmod 440 /etc/sudoers.d/{username}")
+    ssh.execute(f"mv /tmp/sudoers-{username} /etc/sudoers.d/{username}").check(
+        "Failed to install sudoers file"
+    )
+    ssh.execute(f"chmod 440 /etc/sudoers.d/{username}").check(
+        "Failed to chmod sudoers file"
+    )
 
     output.success(f"Sudoers configured (/etc/sudoers.d/{username})")
 
@@ -140,22 +149,30 @@ def _verify_setup(host: str, port: int, username: str, ssh_key: Path | None) -> 
 
     try:
         with SSHService(slipp_config) as ssh:
-            whoami = ssh.execute("whoami").strip()
+            whoami = ssh.execute("whoami").check("whoami failed").stdout.strip()
             output.success(f"SSH connection successful (user: {whoami})")
 
-            systemctl = ssh.execute("sudo systemctl --version")
-            version_line = systemctl.split("\n")[0]
+            systemctl = ssh.execute("sudo systemctl --version").check(
+                "sudo systemctl --version failed"
+            )
+            version_line = systemctl.stdout.split("\n")[0]
             output.success(f"Sudo access verified ({version_line})")
 
-            try:
-                user_switch = ssh.execute("sudo -u root whoami").strip()
-                output.success(f"User switching verified (sudo -u root: {user_switch})")
-            except Exception as e:
-                output.warning(f"User switching test failed: {e}")
+            user_switch = ssh.execute("sudo -u root whoami")
+            if user_switch.ok:
+                output.success(
+                    f"User switching verified (sudo -u root: {user_switch.stdout.strip()})"
+                )
+            else:
+                output.warning(
+                    f"User switching test failed: {user_switch.text.strip()}"
+                )
                 output.hint("  (This is expected with read-only sudoers)")
 
     except SSHConnectionError as e:
         raise BootstrapError(f"Failed to connect as slipp user: {e}") from e
+    except SSHCommandError as e:
+        raise BootstrapError(f"Setup verification command failed: {e}") from e
 
 
 def provision_account(

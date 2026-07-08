@@ -8,14 +8,14 @@ from slipp.constants import DEFAULT_GALAXY_PATH
 from slipp.output import format_path
 from slipp.services.ansible import (
     AnsibleResult,
-    install_requirements,
+    ensure_requirements_installed,
     parse_playbook_progress,
     run_playbook,
 )
 from slipp.services.config import ConfigResolver, InventoryService, ResolvedConfig
 from slipp.services.vault import has_vault_content
 from slipp.services.vault import vault_password_file as get_vault_password_file
-from slipp.utils.errors import ConfigError, DeployError, InventoryParseError
+from slipp.utils.errors import ConfigError, InventoryParseError
 
 
 def validate_deploy_files(
@@ -115,35 +115,15 @@ def install_galaxy_requirements(
         log_dir: Directory for install logs.
 
     Raises:
-        DeployError: If install fails.
+        AnsibleError: If install fails.
     """
     reqs_file = requirements or "requirements.yml"
     if not Path(reqs_file).exists():
         return
 
-    galaxy_path = galaxy_path or DEFAULT_GALAXY_PATH
-
-    galaxy_dir = Path(galaxy_path)
-    if not force and galaxy_dir.exists() and any(galaxy_dir.iterdir()):
-        output.info(f"Roles already installed in {galaxy_path}")
-        return
-
-    with output.spinner("Installing requirements") as update:
-        result = install_requirements(
-            reqs_file,
-            galaxy_path,
-            log_dir=log_dir,
-            force=force,
-            on_progress=update,
-        )
-
-    if result.exit_code == 0:
-        output.success("Installing requirements")
-    else:
-        message = "Installing requirements failed"
-        if result.log_path:
-            message += f"\nSee log: {result.log_path}"
-        raise DeployError(message)
+    ensure_requirements_installed(
+        reqs_file, galaxy_path or DEFAULT_GALAXY_PATH, log_dir=log_dir, force=force
+    )
 
 
 def execute_playbook(

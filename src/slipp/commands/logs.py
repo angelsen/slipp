@@ -46,7 +46,7 @@ def logs_command(
                     output.stdout(line)
             else:
                 log_output = ssh.execute(cmd)
-                output.stdout(log_output)
+                output.stdout(log_output.text)
         except KeyboardInterrupt:
             output.success("Stopped following logs")
             raise typer.Exit(0)

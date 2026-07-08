@@ -1,15 +1,15 @@
 """Inventory-related stages."""
 
 from pathlib import Path
-from typing import Any
 
 import yaml
 
 from slipp import output
 from slipp.constants import get_inventory_filename
-from slipp.generator.inventory_generator import InventoryGenerator
+from slipp.generator.inventory_generator import generate_inventory
 from slipp.models.deployment import DeploymentHostConfig, InventoryConfig
 from slipp.models.service import Runtime
+from slipp.services.launch.context import FullContext
 from slipp.services.launch.stages.common import FileGenerationStage
 from slipp.utils.errors import LaunchError
 from slipp.utils.prompts import get_inventory_config
@@ -18,7 +18,7 @@ from slipp.utils.prompts import get_inventory_config
 class InventoryLoadStage:
     """Load or prompt for inventory configuration."""
 
-    def execute(self, context: Any) -> None:
+    def execute(self, context: FullContext) -> None:
         """Load inventory config from file or prompt user.
 
         Loads existing inventory if available and not reconfiguring,
@@ -67,7 +67,7 @@ class InventoryLoadStage:
 class InventoryValidationStage:
     """Validate required deployment fields in inventory."""
 
-    def execute(self, context: Any) -> None:
+    def execute(self, context: FullContext) -> None:
         """Validate that inventory has required fields for launch.
 
         Ensures inventory contains app_domain and admin_email which are
@@ -99,19 +99,13 @@ class InventoryValidationStage:
             )
 
 
-class InventoryFileStage(FileGenerationStage):
+class InventoryFileStage(FileGenerationStage[FullContext]):
     """Generate inventory.yml file."""
 
-    def __init__(self, inventory_generator: InventoryGenerator):
-        """Initialize with inventory generator.
-
-        Args:
-            inventory_generator: Generator for creating inventory content.
-        """
+    def __init__(self):
         super().__init__("Generating inventory file")
-        self.generator = inventory_generator
 
-    def generate_content(self, context: Any) -> dict[Path, str]:
+    def generate_content(self, context: FullContext) -> dict[Path, str]:
         """Generate inventory file content.
 
         Args:
@@ -123,7 +117,7 @@ class InventoryFileStage(FileGenerationStage):
         assert context.inventory_config is not None, "Inventory config must be loaded"
 
         inventory_filename = get_inventory_filename(context.environment)
-        inventory_content = self.generator.generate(context.inventory_config)
+        inventory_content = generate_inventory(context.inventory_config)
         inventory_path = context.output_dir / inventory_filename
 
         return {inventory_path: inventory_content}

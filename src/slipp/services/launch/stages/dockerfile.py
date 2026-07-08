@@ -1,11 +1,12 @@
 """Dockerfile generation stage."""
 
 from pathlib import Path
-from typing import Any
 
 from slipp import output
 from slipp.generator import TemplateGenerator
 from slipp.models.service import Runtime
+from slipp.services.launch.context import DockerfileContext, ScanContext
+from slipp.utils.errors import LaunchError
 
 
 def _should_regenerate_dockerfile(dockerfile_path: Path) -> bool:
@@ -43,7 +44,7 @@ class DockerfileGenerationStage:
     def __init__(self, template_generator: TemplateGenerator):
         self.generator = template_generator
 
-    def execute(self, context: Any) -> None:
+    def execute(self, context: ScanContext) -> None:
         """Generate and write Dockerfiles for all services.
 
         Iterates through services, generates their Dockerfiles based on
@@ -57,8 +58,12 @@ class DockerfileGenerationStage:
         if context.inventory_config is not None:
             first_host = list(context.inventory_config.hosts.values())[0]
             runtime = first_host.runtime
-        else:
+        elif isinstance(context, DockerfileContext):
             runtime = Runtime(context.container_runtime)
+        else:
+            raise LaunchError(
+                "No inventory config loaded and no container_runtime available"
+            )
 
         if runtime == Runtime.SYSTEMD:
             output.info("Skipping Dockerfiles (systemd runtime, no container image)")
@@ -76,11 +81,7 @@ class DockerfileGenerationStage:
                 )
 
                 for file in files:
-                    display_path = (
-                        str(file.path.relative_to(context.output_dir))
-                        if hasattr(context, "output_dir")
-                        else str(file.path)
-                    )
+                    display_path = str(file.path.relative_to(context.output_dir))
 
                     if context.dry_run:
                         output.hint(f"  Would create: {display_path}")

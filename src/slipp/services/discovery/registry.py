@@ -19,11 +19,7 @@ class ServiceRegistry:
     def lookup_host_by_service(
         self, service_name: str, host: str | None = None, project: str | None = None
     ) -> AnsibleHost | None:
-        """Find host for a service using discovery cache.
-
-        NOTE: This method now requires live discovery data to work.
-        Use HostResolver.by_service() for most use cases, which handles
-        discovery automatically.
+        """Find host actually running a service, using discovery (cached).
 
         Args:
             service_name: Service name to lookup
@@ -34,11 +30,14 @@ class ServiceRegistry:
             AnsibleHost if unique match found, None otherwise
 
         Raises:
-            AmbiguousServiceError: If multiple matches found
+            AmbiguousServiceError: If the service runs on multiple matching hosts
         """
         from slipp.services.config import HostResolver
+        from slipp.services.discovery.discovery import DiscoveryService
+        from slipp.utils.errors import SSHAuthenticationError, SSHConnectionError
 
         resolver = HostResolver()
+        discovery = DiscoveryService()
 
         matches: list[tuple[str, AnsibleHost]] = []
 
@@ -53,7 +52,14 @@ class ServiceRegistry:
                 ):
                     continue
 
-            matches.append((project_name, ansible_host))
+            try:
+                services = discovery.discover(ansible_host, include_system=True)
+            except (SSHConnectionError, SSHAuthenticationError):
+                # Host unreachable - can't confirm the service runs here, skip it
+                continue
+
+            if any(s.name == service_name for s in services):
+                matches.append((project_name, ansible_host))
 
         if not matches:
             return None

@@ -71,7 +71,7 @@ class NodeJSVariableExtractor(VariableExtractor):
         # Feature detection
         variables["prisma"] = "@prisma/client" in service.dependencies
         variables["build"] = self._has_build_script(service.path)
-        variables["devDependencies"] = len(service.dependencies) > 0
+        variables["devDependencies"] = self._has_dev_dependencies(service.path)
 
         return variables
 
@@ -137,6 +137,31 @@ class NodeJSVariableExtractor(VariableExtractor):
         except (json.JSONDecodeError, IOError):
             return False
 
+    def _has_dev_dependencies(self, service_path: Path) -> bool:
+        """Check if package.json declares any devDependencies.
+
+        Reads package.json directly rather than service.dependencies, which
+        merges dependencies and devDependencies together (see
+        scanner/helpers.py:extract_nodejs_dependencies) and would be true
+        for nearly any Node project regardless of whether it has dev-only
+        packages.
+
+        Args:
+            service_path: Path to service directory
+
+        Returns:
+            True if package.json has a non-empty devDependencies section
+        """
+        package_json = service_path / "package.json"
+        if not package_json.exists():
+            return False
+
+        try:
+            data = json.loads(package_json.read_text())
+            return bool(data.get("devDependencies"))
+        except (json.JSONDecodeError, IOError):
+            return False
+
     def _get_runtime_name(self, framework: str) -> str:
         """Get human-readable runtime name for Docker label.
 
@@ -146,13 +171,11 @@ class NodeJSVariableExtractor(VariableExtractor):
         Returns:
             Runtime name string
         """
+        # Keys match what slipp.scanner can actually emit (sveltekit, node) -
+        # nextjs/nuxtjs/express/remix have no scanner detector.
         runtime_map = {
             "sveltekit": "SvelteKit",
-            "nextjs": "Next.js",
-            "nuxtjs": "Nuxt.js",
             "node": "Node.js",
-            "express": "Express",
-            "remix": "Remix",
         }
 
         return runtime_map.get(framework, "Node.js")

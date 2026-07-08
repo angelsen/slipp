@@ -63,23 +63,29 @@ def exec_command(
         output.blank()
 
         try:
-            cmd_output = ssh.execute(exec_cmd)
+            result = ssh.execute(exec_cmd)
 
-            if cmd_output.strip():
-                output.stdout(cmd_output)
+            if result.text.strip():
+                output.stdout(result.text)
             else:
                 output.info("(no output)")
+
+            if not result.ok:
+                output.blank()
+                output.error(f"Command failed (exit {result.exit_code})")
+
+                if "Permission denied" in result.stderr or "not permitted" in (
+                    result.stderr
+                ):
+                    output.blank()
+                    output.hint("Hint: Try running as root: slipp exec -u root ...")
+
+                raise typer.Exit(result.exit_code)
 
             output.blank()
             output.success("Command completed successfully")
 
         except SlippError as e:
             output.blank()
-            output.error("Command failed")
-
-            error_str = str(e)
-            if "Permission denied" in error_str or "not permitted" in error_str:
-                output.blank()
-                output.hint("Hint: Try running as root: slipp exec -u root ...")
-
+            output.error(f"Command failed: {e}")
             raise typer.Exit(1)

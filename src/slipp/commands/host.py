@@ -5,9 +5,7 @@ from typing import Annotated
 import typer
 
 from slipp import output
-from slipp.services.config import HostResolver
-from slipp.services.registry import ProjectRegistry
-from slipp.utils.errors import HostNotFoundError
+from slipp.commands.common import resolve_host_or_exit
 
 
 def host_command(
@@ -17,19 +15,7 @@ def host_command(
     port_only: Annotated[bool, typer.Option("--port", help="Output port only")] = False,
 ) -> None:
     """Output host connection info (pipeable)."""
-    resolver = HostResolver()
-
-    try:
-        if project:
-            host = resolver.by_project(project)
-        else:
-            host = resolver.current()
-    except HostNotFoundError as e:
-        output.error(str(e))
-        projects = ProjectRegistry().list_all()
-        if projects:
-            output.hint(f"Available: {', '.join(p.name for p in projects)}")
-        raise typer.Exit(1)
+    host = resolve_host_or_exit(project=project)
 
     if ip_only:
         output.stdout(host.ansible_host)

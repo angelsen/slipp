@@ -23,6 +23,8 @@ class ScaffoldContext(BaseContext):
         hostname: Target host name for the deployment.
         host_ip: IP address of the target host.
         inventory_dir: Path to the inventory directory being scaffolded.
+        host_group: Ansible inventory group name, detected from the
+            existing playbook by ScaffoldValidationStage.
     """
 
     playbook_path: Path | None = None
@@ -32,3 +34,4 @@ class ScaffoldContext(BaseContext):
     hostname: str = ""
     host_ip: str = ""
     inventory_dir: Path | None = None
+    host_group: str = "servers"

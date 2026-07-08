@@ -64,8 +64,6 @@ from slipp.constants import OutputFormat
 ICON_BULLET = "•"
 ICON_CHECK = "✓"
 ICON_REFRESH = "↻"
-ICON_CROSS = "✗"
-ICON_ARROW = "→"
 
 LAUNCH_FRAMES = [
     "🌍",
@@ -246,22 +244,6 @@ def list_items(
         _err_console.print(line)
 
 
-def group(name: str) -> None:
-    """Display indented group header. Outputs to stderr.
-
-    Used for grouping items by category (e.g., project name).
-
-    Args:
-        name: Group name to display
-
-    Example:
-        >>> output.group("PoC")
-        # Output:
-        #   PoC:
-    """
-    _print_ui(f"\n  [bold]{name}:[/bold]")
-
-
 def suggestions(header: str, items: list[str]) -> None:
     """Display actionable command suggestions. Outputs to stderr.
 
@@ -284,18 +266,6 @@ def suggestions(header: str, items: list[str]) -> None:
     _print_ui(f"\n{header}")
     for item in items:
         _print_ui(f"  [dim]{item}[/dim]")
-
-
-@contextmanager
-def status(msg: str) -> Generator[None, None, None]:
-    """Animated spinner for long operations. Uses stderr.
-
-    Usage:
-        with output.status("Building image"):
-            build_image()
-    """
-    with _err_console.status(f"[bold green]{msg}..."):
-        yield
 
 
 @contextmanager

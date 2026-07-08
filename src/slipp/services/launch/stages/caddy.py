@@ -5,12 +5,70 @@ configuration files during the launch/deployment process.
 """
 
 from pathlib import Path
-from typing import Any
 
 from slipp import output
 from slipp.generator.caddy_generator import CaddyGenerator
-from slipp.models.deployment import CaddyConfig, ProvisionConfig
+from slipp.models.deployment import (
+    CaddyConfig,
+    CaddySite,
+    DetectedService,
+    ProvisionConfig,
+)
+from slipp.services.launch.context import FullContext
 from slipp.services.launch.stages.common import FileGenerationStage
+
+# Framework sets match what slipp.scanner can actually emit (sveltekit/node
+# for frontend, flask/python for backend) - fastapi/django/nextjs/gatsby
+# have no scanner detector and would never match here.
+_FRONTEND_FRAMEWORKS = {"sveltekit", "node"}
+_BACKEND_FRAMEWORKS = {"flask", "python"}
+
+
+def build_caddy_sites(services: list[DetectedService], domain: str) -> list[CaddySite]:
+    """Build Caddy site configs based on detected services.
+
+    Strategy:
+    - Single service: domain → service
+    - Multiple services: domain/api → backend, domain → frontend
+
+    Args:
+        services: List of detected services
+        domain: Application domain
+
+    Returns:
+        List of CaddySite configurations
+    """
+    if len(services) == 1:
+        return [
+            CaddySite(domain=domain, upstream_port=services[0].port, path_prefix="/")
+        ]
+
+    sites = []
+    frontend = next((s for s in services if s.framework in _FRONTEND_FRAMEWORKS), None)
+    backend = next((s for s in services if s.framework in _BACKEND_FRAMEWORKS), None)
+
+    if backend:
+        sites.append(
+            CaddySite(domain=domain, upstream_port=backend.port, path_prefix="/api")
+        )
+
+    if frontend:
+        sites.append(
+            CaddySite(domain=domain, upstream_port=frontend.port, path_prefix="/")
+        )
+
+    # Add any remaining services as subdomains
+    for service in services:
+        if service != frontend and service != backend:
+            sites.append(
+                CaddySite(
+                    domain=f"{service.name}.{domain}",
+                    upstream_port=service.port,
+                    path_prefix="/",
+                )
+            )
+
+    return sites
 
 
 class CaddyConfigStage:
@@ -20,7 +78,7 @@ class CaddyConfigStage:
     ProvisionConfig with the resulting site mappings.
     """
 
-    def execute(self, context: Any) -> None:
+    def execute(self, context: FullContext) -> None:
         """Execute the Caddy configuration stage.
 
         Builds Caddy sites from services and sets context.provision_config
@@ -39,9 +97,7 @@ class CaddyConfigStage:
 
             assert first_host.app_domain is not None, "app_domain must be set for Caddy"
 
-            caddy_sites = CaddyGenerator.build_caddy_sites(
-                context.services, first_host.app_domain
-            )
+            caddy_sites = build_caddy_sites(context.services, first_host.app_domain)
             caddy_config = CaddyConfig(
                 sites=caddy_sites,
                 auto_https=True,
@@ -69,7 +125,7 @@ class CaddyConfigStage:
         )
 
 
-class CaddyRoleStage(FileGenerationStage):
+class CaddyRoleStage(FileGenerationStage[FullContext]):
     """Generate Caddy role files.
 
     Creates Caddy role configuration files for Ansible deployment,
@@ -80,7 +136,7 @@ class CaddyRoleStage(FileGenerationStage):
         """Initialize Caddy role generation stage."""
         super().__init__("Generating Caddy role")
 
-    def generate_content(self, context: Any) -> dict[Path, str]:
+    def generate_content(self, context: FullContext) -> dict[Path, str]:
         """Generate Caddy role files.
 
         Args:

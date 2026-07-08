@@ -10,26 +10,16 @@ from pathlib import Path
 
 from slipp.scanner.helpers import (
     checks_pass,
+    detect_python_dep_manager,
     extract_python_dependencies,
     file_exists,
-    has_uv_project,
 )
-from slipp.scanner.models import ScannerConfig, SourceInfo
+from slipp.scanner.models import SourceInfo
 
 PYTHON_TEMPLATE = "https://raw.githubusercontent.com/superfly/flyctl/master/scanner/templates/python-docker/Dockerfile"
 
 
-def _has_poetry_project(source_dir: Path) -> bool:
-    """Check if directory is a Poetry project (requires poetry.lock and pyproject.toml)."""
-    return (source_dir / "poetry.lock").exists() and (
-        source_dir / "pyproject.toml"
-    ).exists()
-
-
-def configure_python(
-    source_dir: Path,
-    config: ScannerConfig,
-) -> SourceInfo | None:
+def configure_python(source_dir: Path) -> SourceInfo | None:
     """Configure generic Python application.
 
     Enhanced priority-based detection (supersedes flyctl with uv support):
@@ -44,71 +34,18 @@ def configure_python(
 
     Args:
         source_dir: Directory to scan
-        config: Scanner configuration (unused in MVP)
 
     Returns:
         SourceInfo if Python project detected, None otherwise
 
     Example:
-        >>> info = configure_python(Path("/path/to/python-app"), ScannerConfig())
+        >>> info = configure_python(Path("/path/to/python-app"))
         >>> info.family
         'Python'
         >>> info.port
         8080
     """
-    if has_uv_project(source_dir):
-        dependencies = extract_python_dependencies(source_dir)
-        return SourceInfo(
-            family="Python",
-            port=8080,
-            template_url=PYTHON_TEMPLATE,
-            env_vars={"PORT": "8080"},
-            dependencies=dependencies,
-            # TODO: Use uv-optimized template in future
-        )
-
-    if _has_poetry_project(source_dir):
-        dependencies = extract_python_dependencies(source_dir)
-        return SourceInfo(
-            family="Python",
-            port=8080,
-            template_url=PYTHON_TEMPLATE,
-            env_vars={"PORT": "8080"},
-            dependencies=dependencies,
-            # TODO: Use poetry-optimized template in future
-        )
-
-    pyproject = source_dir / "pyproject.toml"
-    if pyproject.exists():
-        try:
-            import tomllib
-
-            with open(pyproject, "rb") as f:
-                data = tomllib.load(f)
-
-            if "project" in data:
-                dependencies = extract_python_dependencies(source_dir)
-                return SourceInfo(
-                    family="Python",
-                    port=8080,
-                    template_url=PYTHON_TEMPLATE,
-                    env_vars={"PORT": "8080"},
-                    dependencies=dependencies,
-                )
-        except (ImportError, IOError, Exception):
-            pass
-
-    if (source_dir / "Pipfile").exists():
-        dependencies = extract_python_dependencies(source_dir)
-        return SourceInfo(
-            family="Python",
-            port=8080,
-            template_url=PYTHON_TEMPLATE,
-            env_vars={"PORT": "8080"},
-            dependencies=dependencies,
-        )
-
-    if (source_dir / "requirements.txt").exists():
+    if detect_python_dep_manager(source_dir) is not None:
         dependencies = extract_python_dependencies(source_dir)
         return SourceInfo(
             family="Python",

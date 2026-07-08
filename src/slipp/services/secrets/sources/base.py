@@ -7,29 +7,6 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
 
-from slipp.utils.errors import SourceNotFoundError
-
-SOURCES: dict[str, type["SecretSource"]] = {}
-
-
-def register_source(source_cls: type["SecretSource"]) -> type["SecretSource"]:
-    """Decorator to register a source class."""
-    SOURCES[source_cls.name] = source_cls
-    return source_cls
-
-
-def get_source(name: str) -> "SecretSource":
-    """Get source instance by name."""
-    if name not in SOURCES:
-        available = ", ".join(SOURCES.keys()) or "(none)"
-        raise SourceNotFoundError(f"Unknown source '{name}'. Available: {available}")
-    return SOURCES[name]()
-
-
-def list_sources() -> list[str]:
-    """List available source names."""
-    return list(SOURCES.keys())
-
 
 @dataclass
 class PullSession:

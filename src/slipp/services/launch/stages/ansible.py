@@ -5,36 +5,31 @@ the main playbook, group variables, and app role definitions.
 """
 
 from pathlib import Path
-from typing import Any
 
 from slipp import output
-from slipp.generator.env import make_env
-from slipp.generator.playbook_generator import PlaybookGenerator
+from slipp.generator.env import render_template
+from slipp.generator.playbook_generator import generate_playbook
 from slipp.generator.role_generator import RoleGenerator
+from slipp.services.launch.context import FullContext
 from slipp.services.launch.stages.common import FileGenerationStage
 
 
-class PlaybookGenerationStage(FileGenerationStage):
-    """Generate playbook.yml file from provisioning config.
+class PlaybookGenerationStage(FileGenerationStage[FullContext]):
+    """Generate playbook.yml file from provisioning config."""
 
-    Attributes:
-        generator: PlaybookGenerator instance for rendering playbook content.
-    """
-
-    def __init__(self, playbook_generator: PlaybookGenerator):
+    def __init__(self):
         super().__init__("Generating playbook.yml")
-        self.generator = playbook_generator
 
-    def generate_content(self, context: Any) -> dict[Path, str]:
+    def generate_content(self, context: FullContext) -> dict[Path, str]:
         assert context.provision_config is not None, "Provision config must be set"
 
-        playbook_content = self.generator.generate(context.provision_config)
+        playbook_content = generate_playbook(context.provision_config)
         playbook_path = context.output_dir / "playbook.yml"
 
         return {playbook_path: playbook_content}
 
 
-class GroupVarsStage(FileGenerationStage):
+class GroupVarsStage(FileGenerationStage[FullContext]):
     """Generate group_vars/all.yml from provisioning config template.
 
     Renders the group_vars template with provision configuration data.
@@ -43,11 +38,14 @@ class GroupVarsStage(FileGenerationStage):
     def __init__(self):
         super().__init__("Generating group_vars/all.yml")
 
-    def generate_content(self, context: Any) -> dict[Path, str]:
+    def generate_content(self, context: FullContext) -> dict[Path, str]:
         assert context.provision_config is not None, "Provision config must be set"
 
-        template = make_env().get_template("group_vars/all.yml.j2")
-        group_vars_content = template.render(**context.provision_config.to_dict())
+        group_vars_content = render_template(
+            "group_vars/all.yml.j2",
+            context.provision_config.to_dict(),
+            label="group_vars/all.yml",
+        )
 
         group_vars_dir = context.output_dir / "group_vars"
         group_vars_path = group_vars_dir / "all.yml"
@@ -55,7 +53,7 @@ class GroupVarsStage(FileGenerationStage):
         return {group_vars_path: group_vars_content}
 
 
-class AppRolesStage(FileGenerationStage):
+class AppRolesStage(FileGenerationStage[FullContext]):
     """Generate app role files for all services.
 
     Creates role definitions for each service in the deployment,
@@ -67,7 +65,7 @@ class AppRolesStage(FileGenerationStage):
     def __init__(self):
         super().__init__("Generating app roles")
 
-    def generate_content(self, context: Any) -> dict[Path, str]:
+    def generate_content(self, context: FullContext) -> dict[Path, str]:
         assert context.inventory_config is not None, "Inventory config must be loaded"
 
         first_host = list(context.inventory_config.hosts.values())[0]

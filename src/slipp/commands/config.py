@@ -10,9 +10,8 @@ import typer
 
 from slipp import output
 from slipp.constants import OutputFormat
-from slipp.services.config import ConfigResolver, LocalConfigService
+from slipp.services.config import ConfigResolver, LocalConfigService, load_project_hosts
 from slipp.services.registry import ProjectRegistry
-from slipp.utils.errors import InventoryParseError
 
 
 def config_command() -> None:
@@ -23,39 +22,6 @@ def config_command() -> None:
         _show_json(project_root)
     else:
         _show_table(project_root)
-
-
-def _load_hosts_for_project(project_path: Path) -> list[dict[str, str | int]]:
-    """Load hosts from project's local config and inventory.
-
-    Returns:
-        List of dicts with inventory_hostname, ansible_host, ansible_user,
-        and ansible_port.
-    """
-    from slipp.services.config import InventoryService
-
-    local_config = LocalConfigService.load(project_path)
-    if not local_config or not local_config.inventory:
-        return []
-
-    inventory_path = project_path / local_config.inventory
-    if not inventory_path.exists():
-        return []
-
-    try:
-        inventory_config = InventoryService.parse(inventory_path)
-        return [
-            {
-                "inventory_hostname": hostname,
-                "ansible_host": host.ansible_host,
-                "ansible_user": host.ansible_user,
-                "ansible_port": host.ansible_port,
-            }
-            for hostname, host in inventory_config.hosts.items()
-        ]
-    except InventoryParseError:
-        # Unparsable inventory shouldn't block showing the rest of the config
-        return []
 
 
 def _show_table(project_root: Path) -> None:
@@ -97,12 +63,12 @@ def _show_table(project_root: Path) -> None:
     ]
     output.table(rows)
 
-    hosts = _load_hosts_for_project(project_root)
+    hosts = load_project_hosts(project_root)
     output.blank()
     if hosts:
         output.info(f"Hosts ({len(hosts)}):")
         for host in hosts:
-            output.stdout(f"  - {host['inventory_hostname']}: {host['ansible_host']}")
+            output.info(f"  - {host['inventory_hostname']}: {host['ansible_host']}")
     else:
         output.warning("No hosts found in inventory")
 
@@ -140,7 +106,7 @@ def _show_json(project_root: Path) -> None:
 
     if resolver.has_local_config and local_config:
         result["local_config"] = local_config.model_dump()
-        result["hosts"] = _load_hosts_for_project(project_root)
+        result["hosts"] = load_project_hosts(project_root)
 
     if project:
         result["global_registry"] = {

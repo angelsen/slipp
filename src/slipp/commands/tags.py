@@ -75,8 +75,8 @@ def add_preset(
     if name in config.tag_presets:
         old_args = config.tag_presets[name]
         output.warning(f"Updating preset '{name}'")
-        output.stdout(f"  Was: {old_args}")
-        output.stdout(f"  Now: {args}")
+        output.info(f"  Was: {old_args}")
+        output.info(f"  Now: {args}")
     else:
         output.success(f"Added preset '{name}'")
 

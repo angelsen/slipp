@@ -17,6 +17,17 @@ class OutputFormat(str, Enum):
     json = "json"
 
 
+class SecretEncoding(str, Enum):
+    """Output encoding for generated secrets.
+
+    Used by: slipp secret / slipp secrets add / slipp secrets sync
+    """
+
+    hex = "hex"
+    base64 = "base64"
+    ulid = "ulid"
+
+
 DEFAULT_ENV = "production"
 
 DEFAULT_GALAXY_PATH = "roles/galaxy"

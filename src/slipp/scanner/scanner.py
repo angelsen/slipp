@@ -9,13 +9,13 @@ from pathlib import Path
 
 from slipp.models.deployment import DetectedService
 from slipp.scanner.flask import configure_flask
-from slipp.scanner.models import ScannerConfig, SourceInfo
+from slipp.scanner.models import SourceInfo
 from slipp.scanner.node import configure_node
 from slipp.scanner.python import configure_python
 from slipp.scanner.sveltekit import configure_sveltekit
 
 # Detectors must extract dependencies internally (not passed as arguments)
-SourceScanner = Callable[[Path, ScannerConfig], SourceInfo | None]
+SourceScanner = Callable[[Path], SourceInfo | None]
 
 
 def _source_info_to_detected_service(
@@ -53,9 +53,7 @@ SCANNERS: list[SourceScanner] = [
 ]
 
 
-def scan(
-    source_dir: Path, config: ScannerConfig | None = None
-) -> DetectedService | None:
+def scan(source_dir: Path) -> DetectedService | None:
     """Scan directory for framework.
 
     Language-specific extraction architecture: Detectors call extraction
@@ -69,7 +67,6 @@ def scan(
 
     Args:
         source_dir: Directory to scan
-        config: Scanner configuration (optional, defaults to empty config)
 
     Returns:
         DetectedService if framework detected, None otherwise
@@ -79,11 +76,8 @@ def scan(
         >>> service.framework
         'flask'
     """
-    if config is None:
-        config = ScannerConfig()
-
     for scanner in SCANNERS:
-        source_info = scanner(source_dir, config)
+        source_info = scanner(source_dir)
         if source_info is not None:
             return _source_info_to_detected_service(
                 source_info, path=source_dir, name=source_dir.name

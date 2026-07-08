@@ -7,7 +7,7 @@ from pathlib import Path
 import typer
 
 from slipp import output
-from slipp.constants import OutputFormat
+from slipp.constants import OutputFormat, SecretEncoding
 from slipp.output import format_path
 from slipp.services.config import ConfigResolver, resolve_vault_target
 from slipp.services.vault import (
@@ -17,6 +17,7 @@ from slipp.services.vault import (
     generate_jwk,
     generate_secret,
     list_keys,
+    list_project_vaults,
     vault_password_file,
 )
 from slipp.utils.errors import (
@@ -90,34 +91,16 @@ def _lookup_vault_keys(target: str) -> _VaultLookup:
 
 def _list_available_vaults() -> None:
     """Show all registered projects that have vaults configured (discovery mode)."""
-    from slipp.services.config import LocalConfigService
-    from slipp.services.registry import ProjectRegistry
     from slipp.services.secrets import get_source, list_sources
 
-    registry = ProjectRegistry()
-    projects = registry.list_all()
-
-    vaults_found: list[dict[str, str]] = []
-    for project in projects:
-        local_config = LocalConfigService.load(project.project_path)
-        if local_config and local_config.vault:
-            vault_path = project.project_path / local_config.vault
-            if vault_path.exists():
-                try:
-                    keys = list_keys(vault_path)
-                    count = str(len(keys))
-                except Exception:
-                    # list_keys can raise FileNotFoundError/YAMLError/AttributeError
-                    # for a malformed vault - degrade to "?" rather than aborting
-                    # the whole listing over one bad vault file.
-                    count = "?"
-                vaults_found.append(
-                    {
-                        "project": project.name,
-                        "vault": local_config.vault,
-                        "secrets": count,
-                    }
-                )
+    vaults_found = [
+        {
+            "project": v.project,
+            "vault": v.vault,
+            "secrets": str(v.secret_count) if v.secret_count is not None else "?",
+        }
+        for v in list_project_vaults()
+    ]
 
     sources = list_sources()
 
@@ -237,8 +220,8 @@ def add_secret(
     num_bytes: int = typer.Option(
         32, "--bytes", "-b", help="Bytes of entropy (default: 32 = 256-bit)"
     ),
-    encoding: str = typer.Option(
-        "hex",
+    encoding: SecretEncoding = typer.Option(
+        SecretEncoding.hex,
         "--encoding",
         "-e",
         help="Output encoding: hex (default), base64, or ulid",
@@ -249,10 +232,6 @@ def add_secret(
     ),
 ) -> None:
     """Generate and add a secret to a vault."""
-    if encoding not in ("hex", "base64", "ulid"):
-        output.error(f"Invalid encoding '{encoding}'. Use: hex, base64, or ulid")
-        raise typer.Exit(1)
-
     resolver, vault_path = _resolve_vault_or_exit(target)
 
     if not vault_path:
@@ -304,8 +283,8 @@ def sync_secrets(
     num_bytes: int = typer.Option(
         32, "--bytes", "-b", help="Bytes of entropy (default: 32 = 256-bit)"
     ),
-    encoding: str = typer.Option(
-        "hex",
+    encoding: SecretEncoding = typer.Option(
+        SecretEncoding.hex,
         "--encoding",
         "-e",
         help="Output encoding: hex (default), base64, or ulid",
@@ -315,10 +294,6 @@ def sync_secrets(
     ),
 ) -> None:
     """Scan YAML for vault references and auto-generate secrets."""
-    if encoding not in ("hex", "base64", "ulid"):
-        output.error(f"Invalid encoding '{encoding}'. Use: hex, base64, or ulid")
-        raise typer.Exit(1)
-
     project_root = Path.cwd()
     vault_path = path.parent / "vault.yml"
 

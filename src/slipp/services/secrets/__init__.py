@@ -6,7 +6,6 @@ from slipp.services.secrets.sources import (
     find_available_port,
     get_source,
     list_sources,
-    register_source,
 )
 
 __all__ = [
@@ -15,5 +14,4 @@ __all__ = [
     "find_available_port",
     "get_source",
     "list_sources",
-    "register_source",
 ]

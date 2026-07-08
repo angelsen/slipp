@@ -5,21 +5,24 @@ including file generation with dry-run support and configuration validation.
 """
 
 from pathlib import Path
-from typing import Any
+from typing import Generic, TypeVar
 
 from slipp import output
 from slipp.constants import VALID_PROXIES
 from slipp.models.service import Runtime
+from slipp.services.launch.context import BaseContext, DockerfileContext, ScanContext
 from slipp.utils.errors import LaunchError
 
+CtxT = TypeVar("CtxT", bound=BaseContext)
 
-class FileGenerationStage:
+
+class FileGenerationStage(Generic[CtxT]):
     """Base class for stages that generate files."""
 
     def __init__(self, description: str):
         self.description = description
 
-    def generate_content(self, context: Any) -> dict[Path, str]:
+    def generate_content(self, context: CtxT) -> dict[Path, str]:
         """Generate file content for this stage.
 
         Args:
@@ -33,7 +36,7 @@ class FileGenerationStage:
         """
         raise NotImplementedError("Subclasses must implement generate_content()")
 
-    def execute(self, context: Any) -> None:
+    def execute(self, context: CtxT) -> None:
         """Execute file generation stage.
 
         Generates files from context, creates parent directories,
@@ -48,11 +51,7 @@ class FileGenerationStage:
             files = self.generate_content(context)
 
             for file_path, content in files.items():
-                display_path = (
-                    str(file_path.relative_to(context.output_dir))
-                    if hasattr(context, "output_dir")
-                    else str(file_path)
-                )
+                display_path = str(file_path.relative_to(context.output_dir))
 
                 if context.dry_run:
                     output.hint(f"  Would create: {display_path}")
@@ -71,14 +70,14 @@ class FileGenerationStage:
 class ValidationStage:
     """Validate proxy choice, runtime, and set skip_caddy flag."""
 
-    def execute(self, context: Any) -> None:
+    def execute(self, context: ScanContext) -> None:
         """Validate proxy and runtime configuration.
 
         Checks that proxy choice is in VALID_PROXIES list and sets
         skip_caddy flag to True when proxy is "none". Also validates
-        context.container_runtime when the context carries that field
-        (only DockerfileContext does - contexts with a loaded inventory
-        get their runtime from there instead).
+        container_runtime when the context is a DockerfileContext
+        (contexts with a loaded inventory get their runtime from there
+        instead).
 
         Args:
             context: Stage execution context with proxy setting.
@@ -97,10 +96,10 @@ class ValidationStage:
         # Only DockerfileContext carries this field, and it's inherently
         # container-only (no Dockerfile to generate for a systemd deploy) --
         # so this deliberately doesn't accept the full Runtime enum.
-        container_runtime = getattr(context, "container_runtime", None)
-        valid_runtimes = [Runtime.DOCKER.value, Runtime.PODMAN.value]
-        if container_runtime is not None and container_runtime not in valid_runtimes:
-            raise LaunchError(
-                f"Invalid container runtime: {container_runtime}\n"
-                f"Valid options: {', '.join(valid_runtimes)}"
-            )
+        if isinstance(context, DockerfileContext):
+            valid_runtimes = [Runtime.DOCKER.value, Runtime.PODMAN.value]
+            if context.container_runtime not in valid_runtimes:
+                raise LaunchError(
+                    f"Invalid container runtime: {context.container_runtime}\n"
+                    f"Valid options: {', '.join(valid_runtimes)}"
+                )

@@ -1,11 +1,50 @@
 """SSH service with Paramiko wrapper and best practices."""
 
 from collections.abc import Generator
+from dataclasses import dataclass
 
 import paramiko
 
 from slipp.models.host import AnsibleHost
-from slipp.utils.errors import SSHAuthenticationError, SSHConnectionError
+from slipp.utils.errors import (
+    SSHAuthenticationError,
+    SSHCommandError,
+    SSHConnectionError,
+)
+
+
+@dataclass(frozen=True)
+class SSHResult:
+    """Result of a remote command execution."""
+
+    exit_code: int
+    stdout: str
+    stderr: str
+
+    @property
+    def ok(self) -> bool:
+        """True if the command exited zero."""
+        return self.exit_code == 0
+
+    @property
+    def text(self) -> str:
+        """Combined stdout+stderr for display (matches the old execute() return)."""
+        return f"{self.stdout}\n{self.stderr}" if self.stderr else self.stdout
+
+    def check(self, context: str) -> "SSHResult":
+        """Raise SSHCommandError if the command exited non-zero.
+
+        Args:
+            context: Human-readable description of what the command was doing,
+                prefixed to the error message
+
+        Returns:
+            self, for chaining
+        """
+        if not self.ok:
+            detail = self.stderr.strip() or self.stdout.strip()
+            raise SSHCommandError(f"{context} (exit {self.exit_code})\n{detail}")
+        return self
 
 
 class SSHService:
@@ -21,8 +60,8 @@ class SSHService:
     Example:
         >>> host_config = AnsibleHost(ansible_host='example.com', ansible_user='root')
         >>> with SSHService(host_config) as ssh:
-        ...     output = ssh.execute('ls -la')
-        ...     print(output)
+        ...     result = ssh.execute('ls -la')
+        ...     print(result.stdout)
     """
 
     def __init__(self, host_config: AnsibleHost):
@@ -98,21 +137,25 @@ class SSHService:
                 f"Failed to connect to {self.config.connection_string()}: {e}"
             ) from e
 
-    def execute(self, command: str) -> str:
-        """Execute command and return buffered output.
+    def execute(self, command: str, stdin_data: str | None = None) -> SSHResult:
+        """Execute command and return its exit code, stdout, and stderr.
 
         Args:
             command: Shell command to execute
+            stdin_data: Optional data to write to the command's stdin (e.g. a
+                secret piped into `docker login --password-stdin`, avoiding
+                the secret ever appearing in the remote command line)
 
         Returns:
-            Command output as string (includes stderr if present)
+            SSHResult with exit_code, stdout, stderr
 
         Raises:
-            SSHConnectionError: Not connected or execution failed
+            SSHConnectionError: Not connected
 
         Example:
-            >>> output = ssh.execute('ls -la')
-            >>> print(output.strip())
+            >>> result = ssh.execute('ls -la')
+            >>> if result.ok:
+            ...     print(result.stdout.strip())
         """
         if not self.client:
             raise SSHConnectionError("Not connected - call connect() first")
@@ -120,12 +163,18 @@ class SSHService:
         stdin, stdout, stderr = self.client.exec_command(command)
 
         try:
-            output = stdout.read().decode("utf-8", errors="ignore")
-            errors = stderr.read().decode("utf-8", errors="ignore")
+            if stdin_data is not None:
+                stdin.write(stdin_data)
+                stdin.flush()
+            stdin.channel.shutdown_write()
 
-            if errors:
-                return f"{output}\n{errors}"
-            return output
+            out = stdout.read().decode("utf-8", errors="ignore")
+            err = stderr.read().decode("utf-8", errors="ignore")
+            # recv_exit_status() must come after draining stdout/stderr, or a
+            # command with output larger than the channel window can deadlock.
+            exit_code = stdout.channel.recv_exit_status()
+
+            return SSHResult(exit_code=exit_code, stdout=out, stderr=err)
         finally:
             stdin.close()
             stdout.close()

@@ -4,7 +4,7 @@ This package provides services for managing configuration, inventory, and host r
 """
 
 from slipp.services.config.hosts import HostResolver
-from slipp.services.config.inventory import InventoryService
+from slipp.services.config.inventory import InventoryService, load_project_hosts
 from slipp.services.config.local import LocalConfigService
 from slipp.services.config.presets import PresetResolver, parse_preset_args
 from slipp.services.config.resolver import (
@@ -18,6 +18,7 @@ from slipp.services.config.runtime import RuntimeDetectionError, RuntimeDetector
 __all__ = [
     "LocalConfigService",
     "InventoryService",
+    "load_project_hosts",
     "ConfigResolver",
     "ResolvedConfig",
     "resolve_project_name",

@@ -6,9 +6,11 @@ helpers.go patterns. All checks are composable and return bool.
 
 import json
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Literal
 
 CheckFn = Callable[[Path], bool]
+
+PythonDepManager = Literal["uv", "poetry", "pep621", "pipenv", "pip"]
 
 
 def checks_pass(source_dir: Path, *checks: CheckFn) -> bool:
@@ -79,6 +81,52 @@ def has_uv_project(source_dir: Path) -> bool:
             pass
 
     return False
+
+
+def detect_python_dep_manager(source_dir: Path) -> PythonDepManager | None:
+    """Detect a Python project's dependency manager, priority-ordered.
+
+    Single source of truth for both the scanner (framework detection) and the
+    Dockerfile extractor (template variable selection) - they previously
+    diverged on Pipfile vs PEP 621 ordering, which could pick the wrong
+    Dockerfile branch for a project containing both files.
+
+    Priority: uv -> Poetry -> PEP 621 pyproject.toml -> Pipenv -> requirements.txt
+
+    Args:
+        source_dir: Directory to check
+
+    Returns:
+        The detected manager, or None if no recognized marker file is found
+    """
+    if has_uv_project(source_dir):
+        return "uv"
+
+    if (source_dir / "poetry.lock").exists() and (
+        source_dir / "pyproject.toml"
+    ).exists():
+        return "poetry"
+
+    pyproject = source_dir / "pyproject.toml"
+    if pyproject.exists():
+        try:
+            import tomllib
+
+            with open(pyproject, "rb") as f:
+                data = tomllib.load(f)
+
+            if "project" in data:
+                return "pep621"
+        except Exception:
+            pass
+
+    if (source_dir / "Pipfile").exists():
+        return "pipenv"
+
+    if (source_dir / "requirements.txt").exists():
+        return "pip"
+
+    return None
 
 
 def file_exists(*filenames: str) -> CheckFn:

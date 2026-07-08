@@ -23,6 +23,12 @@ class SSHAuthenticationError(SlippError):
     pass
 
 
+class SSHCommandError(SlippError):
+    """A remote command exited non-zero."""
+
+    pass
+
+
 class TunnelError(SlippError):
     """SSH tunnel operation failed."""
 
@@ -61,12 +67,6 @@ class PasswordMismatchError(VaultError):
 
 class DuplicateEnvVarError(VaultError):
     """Duplicate environment variable found across vaults."""
-
-    pass
-
-
-class ServiceNotFoundError(SlippError):
-    """Requested service not found."""
 
     pass
 
@@ -153,6 +153,12 @@ class InventoryParseError(ConfigError):
 
 class PresetNotFoundError(ConfigError):
     """Tag preset not found."""
+
+    pass
+
+
+class RuntimeDetectionError(ConfigError):
+    """Runtime (systemd/docker/podman) could not be determined."""
 
     pass
 

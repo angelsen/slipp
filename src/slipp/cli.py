@@ -54,10 +54,7 @@ def main(
         help="Output format: table (default), json",
     ),
 ):
-    """slipp - Operations CLI for Ansible-managed infrastructure.
-
-    Run 'slipp COMMAND --help' for command-specific help.
-    """
+    """slipp - Operations CLI for Ansible-managed infrastructure."""
     if version:
         show_logo()
         from slipp import __version__
@@ -65,8 +62,6 @@ def main(
         output.stdout(f"slipp {__version__}")
         raise typer.Exit()
 
-    ctx.ensure_object(dict)
-    ctx.obj["verbose"] = verbose
     output.set_output_format(output_format)
 
     if verbose:

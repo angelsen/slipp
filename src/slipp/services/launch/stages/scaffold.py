@@ -1,26 +1,25 @@
 """Scaffold stages for existing Ansible projects."""
 
 from pathlib import Path
-from typing import Any
 
 import typer
 
 from slipp import output
 from slipp.output import format_path
 from slipp.services.ansible import (
-    check_roles_installed,
+    ensure_requirements_installed,
     get_host_group,
-    install_requirements,
     syntax_check,
 )
-from slipp.services.registry import ProjectRegistry
+from slipp.services.launch.context import ScaffoldContext
+from slipp.services.launch.registration import register_project
 from slipp.utils.errors import LaunchError
 
 
 class ScaffoldValidationStage:
     """Validate playbook exists and has valid syntax."""
 
-    def execute(self, context: Any) -> None:
+    def execute(self, context: ScaffoldContext) -> None:
         """Verify playbook and install Ansible requirements."""
         output.task(f"Scaffolding inventory for {context.output_dir.name}")
 
@@ -32,23 +31,11 @@ class ScaffoldValidationStage:
                     "Example: slipp generate scaffold -p setup.yml --roles-path roles/galaxy"
                 )
 
-            if check_roles_installed(context.roles_path):
-                output.info(f"Roles already installed in {context.roles_path}")
-            else:
-                with output.spinner("Installing requirements") as update:
-                    result = install_requirements(
-                        str(context.requirements_path),
-                        context.roles_path,
-                        log_dir=output.get_log_dir(context.output_dir),
-                        on_progress=update,
-                    )
-                if result.exit_code == 0:
-                    output.success("Installing requirements")
-                else:
-                    message = "Installing requirements failed"
-                    if result.log_path:
-                        message += f"\nSee log: {result.log_path}"
-                    raise LaunchError(message)
+            ensure_requirements_installed(
+                str(context.requirements_path),
+                context.roles_path,
+                log_dir=output.get_log_dir(context.output_dir),
+            )
 
         if not context.playbook_path:
             raise LaunchError("No playbook specified")
@@ -82,7 +69,7 @@ class ScaffoldValidationStage:
 class ScaffoldPromptStage:
     """Prompt for inventory hostname and host IP."""
 
-    def execute(self, context: Any) -> None:
+    def execute(self, context: ScaffoldContext) -> None:
         """Collect hostname and IP from user or use dry-run placeholders."""
         if context.dry_run:
             context.hostname = "<hostname>"
@@ -116,7 +103,7 @@ class ScaffoldPromptStage:
 class ScaffoldInventoryStage:
     """Generate inventory files (hosts, vars.yml, vault.yml)."""
 
-    def execute(self, context: Any) -> None:
+    def execute(self, context: ScaffoldContext) -> None:
         """Create Ansible inventory structure with templated configuration files."""
         output.info("Generating inventory files...")
 
@@ -131,8 +118,7 @@ class ScaffoldInventoryStage:
         inventory_dir.mkdir(parents=True, exist_ok=True)
 
         hosts_path = inventory_dir / "hosts"
-        host_group = getattr(context, "host_group", "servers")
-        hosts_content = f"""[{host_group}]
+        hosts_content = f"""[{context.host_group}]
 {context.hostname} ansible_host={context.host_ip} ansible_user=slipp ansible_become=true ansible_become_user=root
 """
         if hosts_path.exists():
@@ -182,7 +168,7 @@ class ScaffoldInventoryStage:
 class ScaffoldRegistrationStage:
     """Write local config and register project in global registry."""
 
-    def execute(self, context: Any) -> None:
+    def execute(self, context: ScaffoldContext) -> None:
         """Create slipp.yaml and register project globally.
 
         Raises LaunchError on failure (rather than warning and continuing)
@@ -194,8 +180,7 @@ class ScaffoldRegistrationStage:
             return
 
         assert context.inventory_dir is not None
-
-        from slipp.services.config import LocalConfigService
+        assert context.playbook_path is not None, "Playbook path must be set"
 
         galaxy_path: str | None = None
         if context.roles_path:
@@ -206,45 +191,22 @@ class ScaffoldRegistrationStage:
                 else str(roles_path_obj)
             )
 
-        try:
-            LocalConfigService.create(
-                name=context.project_name,
-                inventory_path="inventory/hosts",
-                playbook_path=str(
-                    context.playbook_path.relative_to(context.output_dir)
-                ),
-                galaxy_path=galaxy_path,
-                vault_path=str(
-                    context.inventory_dir.relative_to(context.output_dir) / "vault.yml"
-                ),
-                project_root=context.output_dir,
-            )
-            output.success(f"Created slipp.yaml with name '{context.project_name}'")
-        except Exception as e:
-            raise LaunchError(f"Failed to create local config: {e}") from e
-
-        registry = ProjectRegistry()
-        existing = registry.get(context.project_name)
-        if existing and existing.project_path != context.output_dir.resolve():
-            output.warning(
-                f"'{context.project_name}' was registered at {existing.project_path}; "
-                f"re-pointing to {context.output_dir}"
-            )
-
-        try:
-            registry.register(
-                name=context.project_name,
-                project_path=context.output_dir,
-            )
-            output.info(f"Registered '{context.project_name}' in global registry")
-        except Exception as e:
-            raise LaunchError(f"Failed to register project: {e}") from e
+        register_project(
+            name=context.project_name,
+            project_root=context.output_dir,
+            inventory_path="inventory/hosts",
+            playbook_path=str(context.playbook_path.relative_to(context.output_dir)),
+            galaxy_path=galaxy_path,
+            vault_path=str(
+                context.inventory_dir.relative_to(context.output_dir) / "vault.yml"
+            ),
+        )
 
 
 class ScaffoldSummaryStage:
     """Display summary and next steps."""
 
-    def execute(self, context: Any) -> None:
+    def execute(self, context: ScaffoldContext) -> None:
         """Print generated files and display post-scaffold instructions."""
         if context.dry_run:
             output.warning("Dry run complete (no files written)")

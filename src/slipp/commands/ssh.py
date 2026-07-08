@@ -29,12 +29,7 @@ def ssh_command(
 
     if not service:
         target_user = user or ssh_config.ansible_user
-        exit_code = session_manager.ssh_as_user(
-            ssh_config.ansible_host,
-            ssh_config.ansible_user,
-            target_user,
-            ssh_config.ansible_port or 22,
-        )
+        exit_code = session_manager.ssh_as_user(ssh_config, target_user)
         sys.exit(exit_code)
 
     with SSHService(ssh_config) as ssh:
@@ -67,11 +62,6 @@ def ssh_command(
                 f"Connecting to {ssh_config.ansible_host} as {resolution.user}..."
             )
             output.blank()
-            exit_code = session_manager.ssh_as_user(
-                ssh_config.ansible_host,
-                ssh_config.ansible_user,
-                resolution.user,
-                ssh_config.ansible_port or 22,
-            )
+            exit_code = session_manager.ssh_as_user(ssh_config, resolution.user)
 
         sys.exit(exit_code)

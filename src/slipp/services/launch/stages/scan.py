@@ -4,25 +4,24 @@ Scans project directories to detect supported frameworks and
 services. Reports detected services or exits if none found.
 """
 
-from typing import Any
-
 from slipp import output
 from slipp.scanner import scan
+from slipp.services.launch.context import ScanContext
 from slipp.utils.errors import LaunchError
 
 
 class ProjectScanStage:
     """Scan project directories to detect services and frameworks.
 
-    Iterates through project directories, scans for supported
-    frameworks (Python: Flask/FastAPI/Django, Node.js: SvelteKit/
-    Express/Next.js), and collects detected services.
+    Iterates through project directories, scans for supported frameworks
+    (Python: Flask, or generic Python; Node.js: SvelteKit, or generic Node),
+    and collects detected services.
 
     Raises:
         LaunchError: If no services are detected or scanning fails.
     """
 
-    def execute(self, context: Any) -> None:
+    def execute(self, context: ScanContext) -> None:
         """Scan project directories and populate context.services.
 
         Args:
@@ -46,8 +45,8 @@ class ProjectScanStage:
             output.stdout("Supported frameworks:")
             output.list_items(
                 [
-                    "Python: Flask, FastAPI, Django",
-                    "Node.js: SvelteKit, Express, Next.js",
+                    "Python: Flask, or generic Python (pyproject.toml)",
+                    "Node.js: SvelteKit, or generic Node (package.json)",
                 ],
                 indent=2,
             )

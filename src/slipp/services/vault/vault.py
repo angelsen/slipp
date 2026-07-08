@@ -13,6 +13,7 @@ import re
 import subprocess
 import tempfile
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator
 
@@ -204,6 +205,58 @@ def list_keys(vault_path: Path) -> list[str]:
         return []
 
     return list(data.keys())
+
+
+@dataclass(frozen=True)
+class VaultInfo:
+    """A registered project's configured vault, for discovery listings."""
+
+    project: str
+    vault: str  # relative path from slipp.yaml
+    secret_count: int | None  # None = unreadable/malformed
+
+
+def list_project_vaults() -> list[VaultInfo]:
+    """List every registered project with an existing, configured vault file.
+
+    Args:
+        (none)
+
+    Returns:
+        VaultInfo for each registered project whose slipp.yaml configures a
+        vault path that exists on disk. secret_count is None if the vault
+        file couldn't be parsed (malformed) rather than aborting the listing.
+    """
+    from slipp.services.config import LocalConfigService
+    from slipp.services.registry import ProjectRegistry
+
+    vaults: list[VaultInfo] = []
+    for project in ProjectRegistry().list_all():
+        local_config = LocalConfigService.load(project.project_path)
+        if not (local_config and local_config.vault):
+            continue
+
+        vault_path = project.project_path / local_config.vault
+        if not vault_path.exists():
+            continue
+
+        try:
+            secret_count = len(list_keys(vault_path))
+        except Exception:
+            # list_keys can raise FileNotFoundError/YAMLError/AttributeError
+            # for a malformed vault - degrade to unknown rather than aborting
+            # the whole listing over one bad vault file.
+            secret_count = None
+
+        vaults.append(
+            VaultInfo(
+                project=project.name,
+                vault=local_config.vault,
+                secret_count=secret_count,
+            )
+        )
+
+    return vaults
 
 
 def append_to_vault(vault_path: Path, encrypted_yaml: str) -> None:

@@ -99,9 +99,10 @@ class PythonVariableExtractor(VariableExtractor):
     def _detect_dependency_manager(self, service_path: Path) -> dict[str, bool]:
         """Detect Python dependency manager from marker files.
 
-        Detection matches the scanner's priority (uv → Poetry → Pipenv → PEP 621).
-        uv projects install via the pep621 template path — the flyctl Dockerfile
-        template has no uv-specific branch.
+        Delegates to the scanner's detect_python_dep_manager - the single
+        source of truth for dependency-manager priority (uv → Poetry →
+        PEP 621 → Pipenv → pip). uv projects install via the pep621 template
+        path - the flyctl Dockerfile template has no uv-specific branch.
 
         Args:
             service_path: Path to service directory
@@ -109,7 +110,7 @@ class PythonVariableExtractor(VariableExtractor):
         Returns:
             Dictionary with boolean flags for each manager
         """
-        from slipp.scanner.helpers import has_uv_project
+        from slipp.scanner.helpers import detect_python_dep_manager
 
         managers = {
             "poetry": False,
@@ -118,25 +119,11 @@ class PythonVariableExtractor(VariableExtractor):
             "pip": False,
         }
 
-        if has_uv_project(service_path):
+        detected = detect_python_dep_manager(service_path)
+        if detected == "uv":
             managers["pep621"] = True
-        elif (service_path / "poetry.lock").exists():
-            managers["poetry"] = True
-        elif (service_path / "Pipfile").exists():
-            managers["pipenv"] = True
-        elif (service_path / "pyproject.toml").exists():
-            try:
-                import tomllib
-
-                with open(service_path / "pyproject.toml", "rb") as f:
-                    if "project" in tomllib.load(f):
-                        managers["pep621"] = True
-            except Exception:
-                pass
-
-        # pip/requirements.txt fallback
-        if (service_path / "requirements.txt").exists():
-            managers["pip"] = True
+        elif detected is not None:
+            managers[detected] = True
 
         return managers
 

@@ -1,15 +1,15 @@
 """Docker Compose generation stage."""
 
 from pathlib import Path
-from typing import Any
 
-from slipp.generator.compose_generator import ComposeGenerator
+from slipp.generator.compose_generator import generate_compose
 from slipp.models.deployment import ComposeConfig
 from slipp.models.service import Runtime
+from slipp.services.launch.context import FullContext
 from slipp.services.launch.stages.common import FileGenerationStage
 
 
-class ComposeGenerationStage(FileGenerationStage):
+class ComposeGenerationStage(FileGenerationStage[FullContext]):
     """Generate docker-compose.yml file.
 
     A no-op when the project's runtime is systemd (native process, no
@@ -19,7 +19,7 @@ class ComposeGenerationStage(FileGenerationStage):
     def __init__(self):
         super().__init__("Generating docker-compose.yml")
 
-    def generate_content(self, context: Any) -> dict[Path, str]:
+    def generate_content(self, context: FullContext) -> dict[Path, str]:
         """Generate docker-compose.yml content from deployment context.
 
         Args:
@@ -35,13 +35,12 @@ class ComposeGenerationStage(FileGenerationStage):
             if first_host.runtime == Runtime.SYSTEMD:
                 return {}
 
-        compose_generator = ComposeGenerator()
         compose_config = ComposeConfig(
             services=context.services,
             project_name=context.project_name,
             project_root=context.output_dir,
         )
-        compose_content = compose_generator.generate(compose_config)
+        compose_content = generate_compose(compose_config)
         compose_path = context.output_dir / "docker-compose.yml"
 
         return {compose_path: compose_content}

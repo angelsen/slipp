@@ -7,14 +7,16 @@ Profile management is in runs.py.
 import shlex
 from typing import Annotated
 
-import bcrypt
 import typer
 
 from slipp import output
-from slipp.models.run import ProxyRoute, RunProfile, TunnelConfig
-from slipp.services.run import RunProfileExecutor, RunProfileService
-from slipp.services.run.proxy import parse_proxy_spec
-from slipp.utils.errors import ConfigError
+from slipp.models.run import RunProfile
+from slipp.services.run import (
+    RunProfileExecutor,
+    RunProfileService,
+    build_profile,
+    merge_runtime_options,
+)
 
 
 RUN_CONTEXT_SETTINGS = {"allow_extra_args": True, "ignore_unknown_options": True}
@@ -51,7 +53,7 @@ def run_command(
     executor = RunProfileExecutor()
 
     if cmd:
-        profile = _build_profile(
+        profile = build_profile(
             cmd,
             list(env),
             list(vault),
@@ -65,7 +67,7 @@ def run_command(
 
     elif service.profile_exists(name):
         profile = service.get_profile(name)
-        merged = _merge_runtime_options(
+        merged = merge_runtime_options(
             profile,
             list(env),
             list(vault),
@@ -96,66 +98,6 @@ def _execute_profile(executor: RunProfileExecutor, profile: RunProfile) -> None:
         raise typer.Exit(result.exit_code)
 
 
-def _hash_tunnel_auth(spec: str) -> str:
-    """Parse a user:pass spec and bcrypt-hash the password.
-
-    Args:
-        spec: Auth spec in user:pass format.
-
-    Returns:
-        "user:<bcrypt-hash>" - safe to persist in a git-tracked slipp.yaml.
-
-    Raises:
-        ConfigError: If spec is malformed.
-    """
-    if ":" not in spec:
-        raise ConfigError(
-            f"Invalid --tunnel-auth format: '{spec}' (expected user:pass)"
-        )
-    user, password = spec.split(":", 1)
-    if not user or not password:
-        raise ConfigError(
-            "Invalid --tunnel-auth format: user and password cannot be empty"
-        )
-    hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-    return f"{user}:{hashed}"
-
-
-def _parse_proxy_routes(specs: list[str]) -> list[ProxyRoute]:
-    """Parse --proxy specs into ProxyRoute models."""
-    routes = []
-    for spec in specs:
-        from_url, to_url, host = parse_proxy_spec(spec)
-        routes.append(ProxyRoute(**{"from": from_url, "to": to_url, "host": host}))
-    return routes
-
-
-def _build_profile(
-    cmd: str,
-    env: list[str],
-    vaults: list[str],
-    tunnel_out: list[str],
-    tunnel_in: list[str],
-    proxy: list[str],
-    tunnel_auth: str | None = None,
-) -> RunProfile:
-    """Build a RunProfile from command options."""
-    tunnels = None
-    if tunnel_out or tunnel_in:
-        auth = _hash_tunnel_auth(tunnel_auth) if tunnel_auth else None
-        tunnels = TunnelConfig.model_validate(
-            {"out": tunnel_out, "in": tunnel_in, "auth": auth}
-        )
-    elif tunnel_auth:
-        raise ConfigError("--tunnel-auth requires --tunnel-out")
-
-    proxy_routes = _parse_proxy_routes(proxy)
-
-    return RunProfile(
-        cmd=cmd, env=env, vaults=vaults, tunnels=tunnels, proxy=proxy_routes
-    )
-
-
 def _save_profile(name: str, profile: RunProfile) -> None:
     """Save profile and display appropriate message."""
     service = RunProfileService()
@@ -166,60 +108,3 @@ def _save_profile(name: str, profile: RunProfile) -> None:
         output.info(f"Updated profile '{name}'")
     else:
         output.info(f"Saved profile '{name}'")
-
-
-def _merge_runtime_options(
-    profile: RunProfile,
-    env: list[str],
-    vault: list[str],
-    tunnel_out: list[str],
-    tunnel_in: list[str],
-    proxy: list[str],
-    tunnel_auth: str | None = None,
-) -> RunProfile:
-    """Merge runtime options with saved profile (not persisted).
-
-    Runtime options are added to saved values, not replacing them:
-    - env: Appended (CLI values override profile values for same key at execution)
-    - vault: Added if not already present
-    - tunnels: Added to existing tunnels
-    - proxy: Added to existing proxy routes
-    - tunnel_auth: Replaces existing auth (requires an existing or new tunnel-out)
-    """
-    if not any([env, vault, tunnel_out, tunnel_in, proxy, tunnel_auth]):
-        return profile
-
-    merged_env = list(profile.env) + list(env)
-    merged_vaults = list(profile.vaults) + [v for v in vault if v not in profile.vaults]
-
-    merged_tunnels = profile.tunnels
-    if tunnel_out or tunnel_in or tunnel_auth:
-        existing_out = merged_tunnels.out if merged_tunnels else []
-        existing_in = merged_tunnels.in_ if merged_tunnels else []
-        existing_auth = merged_tunnels.auth if merged_tunnels else None
-
-        if tunnel_auth and not (existing_out or tunnel_out):
-            raise ConfigError(
-                "--tunnel-auth requires a tunnel-out (existing or via --tunnel-out)"
-            )
-
-        merged_tunnels = TunnelConfig.model_validate(
-            {
-                "out": list(existing_out) + list(tunnel_out),
-                "in": list(existing_in) + list(tunnel_in),
-                "auth": _hash_tunnel_auth(tunnel_auth)
-                if tunnel_auth
-                else existing_auth,
-            }
-        )
-
-    merged_proxy = list(profile.proxy) + _parse_proxy_routes(proxy)
-
-    return RunProfile(
-        cmd=profile.cmd,
-        env=merged_env,
-        vaults=merged_vaults,
-        tunnels=merged_tunnels,
-        proxy=merged_proxy,
-        acme_email=profile.acme_email,
-    )

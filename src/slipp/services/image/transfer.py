@@ -3,7 +3,7 @@
 import subprocess
 
 from slipp.models.host import AnsibleHost
-from slipp.services.ssh import CommandBuilder, SSHService
+from slipp.services.ssh import CommandBuilder, SSHService, build_ssh_command
 from slipp.utils.errors import ImageTransferError
 
 
@@ -52,8 +52,6 @@ def push_image(
     Raises:
         ImageTransferError: If the transfer fails
     """
-    target = f"{ssh_config.ansible_user}@{ssh_config.ansible_host}"
-
     save_proc = subprocess.Popen(
         [local_runtime, "save", image],
         stdout=subprocess.PIPE,
@@ -63,13 +61,7 @@ def push_image(
     load_cmd = CommandBuilder.vps_command(
         "root", f"{remote_runtime} load", ssh_config.ansible_user
     )
-    ssh_cmd = [
-        "ssh",
-        "-p",
-        str(ssh_config.ansible_port),
-        target,
-        load_cmd,
-    ]
+    ssh_cmd = build_ssh_command(ssh_config, remote_command=load_cmd)
 
     load_proc = subprocess.Popen(
         ssh_cmd,
@@ -96,4 +88,8 @@ def push_image(
             "root", f"{remote_runtime} tag {image} {rename}", ssh_config.ansible_user
         )
         with SSHService(ssh_config) as ssh:
-            ssh.execute(tag_cmd)
+            tag_result = ssh.execute(tag_cmd)
+            if not tag_result.ok:
+                raise ImageTransferError(
+                    f"Failed to tag image as {rename}\n{tag_result.text.strip()}"
+                )
