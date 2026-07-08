@@ -228,18 +228,9 @@ class LocalConfigService:
         # (yaml.dump would otherwise emit a !!python/object tag for it).
         data = config.model_dump(exclude_none=True, mode="json")
 
-        if not data.get("roles_path"):
-            data.pop("roles_path", None)
-        if not data.get("galaxy_path"):
-            data.pop("galaxy_path", None)
-        if not data.get("managed_roles"):
-            data.pop("managed_roles", None)
-        if not data.get("tag_presets"):
-            data.pop("tag_presets", None)
-        if not data.get("runtime"):
-            data.pop("runtime", None)
-        if not data.get("runs"):
-            data.pop("runs", None)
+        for key in ("roles_path", "galaxy_path", "managed_roles", "tag_presets", "runtime", "runs"):
+            if not data.get(key):
+                data.pop(key, None)
 
         ordered_data: dict[str, Any] = {}
         field_order = [

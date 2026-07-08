@@ -8,6 +8,7 @@ import typer
 from slipp import output
 from slipp.commands.common import DryRunOption
 from slipp.constants import DEFAULT_ENV, DEFAULT_GALAXY_PATH
+from slipp.utils.files import get_log_dir
 from slipp.output import format_path
 from slipp.services.config import (
     ConfigResolver,
@@ -128,7 +129,7 @@ def deploy_command(
         config, resolver, inventory, playbook
     )
 
-    log_dir = output.get_log_dir(project_root)
+    log_dir = get_log_dir(project_root)
     install_galaxy_requirements(requirements, galaxy_path, force_requirements, log_dir)
 
     result = execute_playbook(

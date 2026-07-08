@@ -3,6 +3,12 @@
 from pathlib import Path
 
 
+def get_log_dir(base: Path | None = None) -> Path:
+    """Return .slipp/logs/ path (does not create the directory)."""
+    base = base or Path.cwd()
+    return base / ".slipp" / "logs"
+
+
 def atomic_write_text(path: Path, content: str, *, mode: int | None = None) -> None:
     """Write text to path atomically via a temp file in the same directory.
 

@@ -144,7 +144,7 @@ def get_inventory_config(
             output.error("SSH connectivity test failed - aborting")
             raise typer.Exit(1)
     else:
-        output.success("✓ SSH connection successful\n")
+        output.success("SSH connection successful")
 
     inventory = InventoryConfig(hosts={environment: host_config})
     return inventory

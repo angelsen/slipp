@@ -6,6 +6,7 @@ import typer
 
 from slipp import output
 from slipp.output import format_path
+from slipp.utils.files import get_log_dir
 from slipp.services.ansible import (
     ensure_requirements_installed,
     get_host_group,
@@ -35,7 +36,7 @@ class ScaffoldValidationStage:
             ensure_requirements_installed(
                 str(context.requirements_path),
                 context.roles_path,
-                log_dir=output.get_log_dir(context.output_dir),
+                log_dir=get_log_dir(context.output_dir),
             )
 
         if not context.playbook_path:

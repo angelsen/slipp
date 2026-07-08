@@ -208,12 +208,6 @@ def success_animation(message: str = "Deploy completed") -> None:
     success(message)
 
 
-def get_log_dir(base: Path | None = None) -> Path:
-    """Return .slipp/logs/ path (does not create the directory)."""
-    base = base or Path.cwd()
-    return base / ".slipp" / "logs"
-
-
 def format_path(path: Path | str, project_root: Path | None = None) -> str:
     """Format path relative to project root when possible, absolute otherwise."""
     path_obj = Path(path) if isinstance(path, str) else path
