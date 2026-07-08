@@ -228,7 +228,14 @@ class LocalConfigService:
         # (yaml.dump would otherwise emit a !!python/object tag for it).
         data = config.model_dump(exclude_none=True, mode="json")
 
-        for key in ("roles_path", "galaxy_path", "managed_roles", "tag_presets", "runtime", "runs"):
+        for key in (
+            "roles_path",
+            "galaxy_path",
+            "managed_roles",
+            "tag_presets",
+            "runtime",
+            "runs",
+        ):
             if not data.get(key):
                 data.pop(key, None)
 

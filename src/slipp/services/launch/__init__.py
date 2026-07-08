@@ -10,7 +10,6 @@ from typing import Protocol, TypeVar
 
 from slipp.generator import TemplateGenerator
 from slipp.services.launch.context import (
-    BaseContext,
     DockerfileContext,
     FullContext,
     ScaffoldContext,
@@ -97,7 +96,6 @@ def run_scaffold_pipeline(context: ScaffoldContext) -> None:
 
 
 __all__ = [
-    "BaseContext",
     "DockerfileContext",
     "FullContext",
     "ScaffoldContext",

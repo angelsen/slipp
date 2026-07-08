@@ -32,6 +32,9 @@ class HostResolver:
     Hosts are loaded on-demand from inventory files via local config.
     """
 
+    def __init__(self) -> None:
+        self._registry = ProjectRegistry()
+
     def _load_hosts_for_project(self, project_path: Path) -> list[AnsibleHost]:
         """Load hosts from project's local config and inventory.
 
@@ -60,7 +63,7 @@ class HostResolver:
             >>> # [("mdad", host1), ("myapp", host2)]
         """
         results: list[tuple[str, AnsibleHost]] = []
-        for project in ProjectRegistry().list_all():
+        for project in self._registry.list_all():
             try:
                 hosts = self._load_hosts_for_project(project.project_path)
                 for host in hosts:
@@ -130,7 +133,7 @@ class HostResolver:
         Raises:
             HostNotFoundError: If project not found or invalid
         """
-        project_obj = ProjectRegistry().get(project)
+        project_obj = self._registry.get(project)
 
         if project_obj is None:
             raise HostNotFoundError(f"Project '{project}' not found in registry")
@@ -162,7 +165,7 @@ class HostResolver:
                 pass
 
             if local_config.name:
-                project_obj = ProjectRegistry().get(local_config.name)
+                project_obj = self._registry.get(local_config.name)
                 if project_obj:
                     try:
                         hosts = self._load_hosts_for_project(project_obj.project_path)

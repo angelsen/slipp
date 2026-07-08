@@ -146,11 +146,9 @@ def show_logo(
 
 __all__ = [
     "COLOR_PALETTES",
-    "DEFAULT_COLORS",
     "DEFAULT_FONT",
     "DEFAULT_TEXT",
     "RECOMMENDED_FONTS",
     "THEMES",
-    "apply_theme",
     "show_logo",
 ]

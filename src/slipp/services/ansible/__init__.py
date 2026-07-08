@@ -5,11 +5,8 @@ This package provides services for running Ansible commands.
 
 from slipp.services.ansible.ansible import (
     AnsibleResult,
-    ProgressCallback,
-    check_roles_installed,
     ensure_requirements_installed,
     get_host_group,
-    install_requirements,
     parse_playbook_progress,
     run_inventory,
     run_list_tasks,
@@ -19,11 +16,8 @@ from slipp.services.ansible.ansible import (
 
 __all__ = [
     "AnsibleResult",
-    "ProgressCallback",
-    "check_roles_installed",
     "ensure_requirements_installed",
     "get_host_group",
-    "install_requirements",
     "parse_playbook_progress",
     "run_inventory",
     "run_list_tasks",

@@ -13,7 +13,7 @@ from slipp.services.ssh import SSHService
 from slipp.utils.errors import SSHAuthenticationError, SSHConnectionError
 
 
-def test_ssh_connectivity(host: str, user: str, port: int) -> bool:
+def _test_ssh_connectivity(host: str, user: str, port: int) -> bool:
     """Test SSH connectivity to target host.
 
     Attempts to establish an SSH connection to verify the host is reachable
@@ -28,7 +28,7 @@ def test_ssh_connectivity(host: str, user: str, port: int) -> bool:
         True if connection succeeds, False otherwise
 
     Example:
-        >>> if test_ssh_connectivity("46.251.249.252", "root", 22):
+        >>> if _test_ssh_connectivity("46.251.249.252", "root", 22):
         ...     print("Connection successful!")
     """
     try:
@@ -138,7 +138,7 @@ def get_inventory_config(
 
     output.info("Testing SSH connectivity...")
 
-    if not test_ssh_connectivity(ansible_host, ansible_user, ansible_port):
+    if not _test_ssh_connectivity(ansible_host, ansible_user, ansible_port):
         retry = typer.confirm("Connection failed. Continue anyway?", default=False)
         if not retry:
             output.error("SSH connectivity test failed - aborting")
