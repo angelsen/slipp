@@ -10,7 +10,7 @@ from typing import Annotated
 import typer
 
 from slipp import output
-from slipp.commands.common import DryRunOption
+from slipp.commands.common import DryRunOption, resolve_project_dirs
 from slipp.models.service import Runtime
 from slipp.services.launch import DockerfileContext, run_dockerfile_pipeline
 
@@ -37,8 +37,7 @@ def dockerfile_command(
     ] = Runtime.DOCKER.value,
 ) -> None:
     """Generate Dockerfiles for specified projects."""
-    dirs = project_dirs if project_dirs else [Path.cwd()]
-    output_dir = Path.cwd() if len(dirs) > 1 else dirs[0]
+    dirs, output_dir = resolve_project_dirs(project_dirs)
 
     context = DockerfileContext(
         output_dir=output_dir,

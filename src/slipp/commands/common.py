@@ -12,6 +12,7 @@ import typer
 from slipp import output
 from slipp.models.host import AnsibleHost
 from slipp.models.service import Runtime, Service
+from slipp.scanner.workspaces import detect_workspace_members
 from slipp.services.discovery import discover_and_enrich, filter_services, find_service
 from slipp.utils.errors import AmbiguousServiceError, HostNotFoundError
 from slipp.utils.identifiers import parse_service_identifier
@@ -20,6 +21,36 @@ DryRunOption = Annotated[
     bool,
     typer.Option("--dry-run", help="Show what would be done without making changes"),
 ]
+
+
+def resolve_project_dirs(
+    project_dirs: list[Path] | None,
+) -> tuple[list[Path], Path]:
+    """Resolve scan directories and the output directory.
+
+    If no directories were given, scans cwd and auto-detects npm/yarn
+    workspace members. The output directory is cwd when scanning multiple
+    directories, or the single directory otherwise.
+
+    Args:
+        project_dirs: Explicit --dir values, or None to auto-detect from cwd
+
+    Returns:
+        Tuple of (directories to scan, output directory)
+    """
+    if project_dirs:
+        dirs = project_dirs
+    else:
+        cwd = Path.cwd()
+        members = detect_workspace_members(cwd)
+        if members:
+            output.info(f"Detected workspace: {len(members)} member(s)")
+            dirs = [cwd, *members]
+        else:
+            dirs = [cwd]
+
+    output_dir = Path.cwd() if len(dirs) > 1 else dirs[0]
+    return dirs, output_dir
 
 
 def resolve_host_or_exit(

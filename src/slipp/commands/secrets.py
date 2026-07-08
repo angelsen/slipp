@@ -24,6 +24,7 @@ from slipp.services.vault import (
 from slipp.utils.errors import (
     AnsibleVaultNotInstalledError,
     ProjectNotFoundError,
+    PullError,
     PullTimeoutError,
     SourceNotFoundError,
     VaultError,
@@ -376,8 +377,11 @@ def pull_secrets(
         for var_name in credentials.keys():
             output.bullet(var_name, indent=1)
     except PullTimeoutError:
-        output.error("Timed out waiting for approval (5 minutes)")
+        output.error(f"Timed out waiting for approval ({timeout}s)")
         output.hint("Make sure to approve the export in your browser")
+        raise typer.Exit(1)
+    except PullError as e:
+        output.error(str(e))
         raise typer.Exit(1)
     except VaultError as e:
         output.error(f"Failed to store credentials: {e}")

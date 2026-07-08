@@ -5,10 +5,8 @@ from typing import Annotated
 
 import typer
 
-from slipp import output
-from slipp.commands.common import DryRunOption
+from slipp.commands.common import DryRunOption, resolve_project_dirs
 from slipp.constants import DEFAULT_ENV
-from slipp.scanner.workspaces import detect_workspace_members
 from slipp.services.launch import FullContext, run_full_pipeline
 
 
@@ -48,17 +46,7 @@ def launch_command(
     ] = "caddy",
 ) -> None:
     """Generate complete Ansible project from codebase."""
-    if project_dirs:
-        dirs = project_dirs
-    else:
-        cwd = Path.cwd()
-        members = detect_workspace_members(cwd)
-        if members:
-            output.info(f"Detected workspace: {len(members)} member(s)")
-            dirs = [cwd, *members]
-        else:
-            dirs = [cwd]
-    output_dir = Path.cwd() if len(dirs) > 1 else dirs[0]
+    dirs, output_dir = resolve_project_dirs(project_dirs)
 
     context = FullContext(
         output_dir=output_dir,

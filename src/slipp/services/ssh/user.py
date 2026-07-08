@@ -48,6 +48,9 @@ class UserResolver:
         Returns:
             Username (e.g., 'www-data', 'postgres') or None if not determinable
         """
+        # Exit codes intentionally unchecked: detection is best-effort here;
+        # any command failure or empty output falls through to None, and the
+        # caller (resolve()) warns and falls back to default_user.
         try:
             result = self.ssh.execute(
                 f"sudo systemctl show -p User --value {unit_name}"

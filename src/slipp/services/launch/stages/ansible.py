@@ -6,12 +6,12 @@ the main playbook, group variables, and app role definitions.
 
 from pathlib import Path
 
-from slipp import output
 from slipp.generator.env import render_template
 from slipp.generator.playbook_generator import generate_playbook
 from slipp.generator.role_generator import RoleGenerator
 from slipp.services.launch.context import FullContext
 from slipp.services.launch.stages.common import FileGenerationStage
+from slipp.utils.errors import LaunchError
 
 
 class PlaybookGenerationStage(FileGenerationStage[FullContext]):
@@ -58,8 +58,7 @@ class AppRolesStage(FileGenerationStage[FullContext]):
 
     Creates role definitions for each service in the deployment,
     determining role structure based on the runtime (systemd, docker, or
-    podman). Continues on role generation errors to process remaining
-    services.
+    podman).
     """
 
     def __init__(self):
@@ -82,12 +81,12 @@ class AppRolesStage(FileGenerationStage[FullContext]):
                     all_services=context.services,
                     project_root=context.output_dir,
                 )
-
-                for path, content in role_files.items():
-                    all_files[context.output_dir / path] = content
-
             except Exception as e:
-                output.error(f"Failed to generate role for {service.name}: {e}")
-                continue
+                raise LaunchError(
+                    f"Failed to generate role for {service.name}: {e}"
+                ) from e
+
+            for path, content in role_files.items():
+                all_files[context.output_dir / path] = content
 
         return all_files

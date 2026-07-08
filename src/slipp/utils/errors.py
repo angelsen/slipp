@@ -217,7 +217,13 @@ class SourceNotFoundError(SlippError):
     pass
 
 
-class PullTimeoutError(SlippError):
+class PullError(SlippError):
+    """Secrets pull flow failed."""
+
+    pass
+
+
+class PullTimeoutError(PullError):
     """Timed out waiting for credentials."""
 
     pass

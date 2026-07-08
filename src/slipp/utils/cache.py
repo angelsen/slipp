@@ -1,6 +1,7 @@
 """Simple JSON-based cache with TTL support."""
 
 import json
+import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -9,7 +10,10 @@ from typing import Any
 class Cache:
     """Simple file-based cache with TTL (Time To Live).
 
-    Cache is stored as JSON in ~/.cache/slipp/cache.json
+    Cache is stored as JSON in ~/.cache/slipp/cache.json. Multiple `Cache`
+    instances (e.g. one per host during parallel discovery) share a
+    class-level lock and reload from disk on every read/write so concurrent
+    instances don't clobber each other's entries.
 
     Example:
         >>> cache = Cache()
@@ -18,6 +22,8 @@ class Cache:
         >>> print(value)
         {'data': 'value'}
     """
+
+    _lock = threading.Lock()
 
     def __init__(self):
         """Initialize cache."""
@@ -54,28 +60,38 @@ class Cache:
     def get(self, key: str) -> Any | None:
         """Get value from cache if not expired.
 
+        Reloads from disk under lock so a concurrent `Cache` instance's
+        writes aren't missed.
+
         Args:
             key: Cache key
 
         Returns:
             Cached value or None if expired/missing
         """
-        if key not in self._cache:
-            return None
+        with self._lock:
+            self._cache = self._load()
 
-        entry = self._cache[key]
-        expires_str = entry.get("expires")
-        if expires_str:
-            expires = datetime.fromisoformat(expires_str)
-            if datetime.now() > expires:
-                del self._cache[key]
-                self._save()
+            if key not in self._cache:
                 return None
 
-        return entry.get("value")
+            entry = self._cache[key]
+            expires_str = entry.get("expires")
+            if expires_str:
+                expires = datetime.fromisoformat(expires_str)
+                if datetime.now() > expires:
+                    del self._cache[key]
+                    self._save()
+                    return None
+
+            return entry.get("value")
 
     def set(self, key: str, value: Any, ttl_seconds: int = 300) -> None:
         """Set value in cache with TTL.
+
+        Reloads from disk and merges under lock so concurrent `Cache`
+        instances (e.g. one per host during parallel discovery) don't
+        overwrite each other's entries.
 
         Args:
             key: Cache key
@@ -84,9 +100,10 @@ class Cache:
         """
         expires = datetime.now() + timedelta(seconds=ttl_seconds)
 
-        self._cache[key] = {
-            "value": value,
-            "expires": expires.isoformat(),
-        }
-
-        self._save()
+        with self._lock:
+            self._cache = self._load()
+            self._cache[key] = {
+                "value": value,
+                "expires": expires.isoformat(),
+            }
+            self._save()

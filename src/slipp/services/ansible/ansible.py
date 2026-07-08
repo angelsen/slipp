@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import IO, Any, Callable
 
 from slipp import output
-from slipp.utils.cli_tools import check_tool_installed
+from slipp.utils.cli_tools import check_tool_installed, run_checked
 from slipp.utils.errors import AnsibleError, AnsibleNotFoundError
 
 ProgressCallback = Callable[[str], None]
@@ -76,17 +76,9 @@ def run_inventory(inventory_path: Path) -> dict[str, Any]:
     """Run ansible-inventory --list, return parsed JSON."""
     check_tool_installed("ansible-inventory", AnsibleNotFoundError)
 
-    result = subprocess.run(
-        ["ansible-inventory", "-i", str(inventory_path), "--list"],
-        capture_output=True,
-        text=True,
-        check=False,
+    result = run_checked(
+        ["ansible-inventory", "-i", str(inventory_path), "--list"], AnsibleError
     )
-
-    if result.returncode != 0:
-        raise AnsibleError(
-            f"'ansible-inventory' failed (exit {result.returncode}): {result.stderr[:200]}"
-        )
 
     return json.loads(result.stdout)
 
@@ -99,18 +91,7 @@ def run_list_tasks(playbook: Path, inventory: Path | None = None) -> str:
     if inventory and inventory.exists():
         cmd.extend(["-i", str(inventory)])
 
-    result = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        check=False,
-        cwd=playbook.parent,
-    )
-
-    if result.returncode != 0:
-        raise AnsibleError(
-            f"'ansible-playbook' failed (exit {result.returncode}): {result.stderr[:200]}"
-        )
+    result = run_checked(cmd, AnsibleError, cwd=playbook.parent)
 
     return result.stdout
 

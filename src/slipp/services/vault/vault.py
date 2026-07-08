@@ -10,7 +10,6 @@ Provides functions for:
 import base64
 import os
 import re
-import subprocess
 import tempfile
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -19,7 +18,7 @@ from typing import Iterator
 
 import yaml
 
-from slipp.utils.cli_tools import check_tool_installed
+from slipp.utils.cli_tools import check_tool_installed, run_checked
 from slipp.utils.errors import (
     AnsibleVaultNotInstalledError,
     DuplicateEnvVarError,
@@ -166,17 +165,7 @@ def encrypt_string(
     if password_file:
         cmd.extend(["--vault-password-file", str(password_file)])
 
-    result = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
-    if result.returncode != 0:
-        raise VaultError(
-            f"'ansible-vault' failed (exit {result.returncode}): {result.stderr[:200]}"
-        )
+    result = run_checked(cmd, VaultError)
 
     return result.stdout
 
@@ -352,7 +341,7 @@ def _decrypt_inline_value(encrypted_value: str, password_file: Path) -> str:
         with os.fdopen(fd, "w") as f:
             f.write(encrypted_value)
 
-        result = subprocess.run(
+        result = run_checked(
             [
                 "ansible-vault",
                 "decrypt",
@@ -362,13 +351,9 @@ def _decrypt_inline_value(encrypted_value: str, password_file: Path) -> str:
                 "--output",
                 "-",
             ],
-            capture_output=True,
-            text=True,
-            check=False,
+            VaultDecryptError,
+            context="Failed to decrypt value",
         )
-
-        if result.returncode != 0:
-            raise VaultDecryptError(f"Failed to decrypt value: {result.stderr}")
 
         return result.stdout.strip()
     finally:
@@ -401,7 +386,7 @@ def decrypt_vault(vault_path: Path, password_file: Path) -> dict[str, str]:
     content = vault_path.read_text()
 
     if content.strip().startswith("$ANSIBLE_VAULT"):
-        result = subprocess.run(
+        result = run_checked(
             [
                 "ansible-vault",
                 "view",
@@ -409,13 +394,9 @@ def decrypt_vault(vault_path: Path, password_file: Path) -> dict[str, str]:
                 "--vault-password-file",
                 str(password_file),
             ],
-            capture_output=True,
-            text=True,
-            check=False,
+            VaultDecryptError,
+            context="Failed to decrypt vault",
         )
-
-        if result.returncode != 0:
-            raise VaultDecryptError(f"Failed to decrypt vault: {result.stderr}")
 
         try:
             secrets = yaml.safe_load(result.stdout)

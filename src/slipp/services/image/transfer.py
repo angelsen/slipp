@@ -123,6 +123,13 @@ def push_image(
 
     _, stderr = load_proc.communicate()
     save_proc.wait()
+    save_stderr = save_proc.stderr.read() if save_proc.stderr else b""
+
+    if save_proc.returncode != 0:
+        message = f"Failed to save local image '{image}'"
+        if save_stderr:
+            message += f"\n{save_stderr.decode().strip()}"
+        raise ImageTransferError(message)
 
     if load_proc.returncode != 0:
         message = "Transfer failed"
