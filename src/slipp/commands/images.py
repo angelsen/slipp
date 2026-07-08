@@ -5,7 +5,7 @@ from typing import Annotated
 import typer
 
 from slipp import output
-from slipp.commands.common import resolve_host_or_exit, resolve_runtime
+from slipp.commands.common import require_container_runtime, resolve_host_or_exit
 from slipp.services.image import list_images
 from slipp.utils.errors import ImageTransferError
 
@@ -23,11 +23,7 @@ def list_command(
 ) -> None:
     """List container images on VPS."""
     ssh_config = resolve_host_or_exit(project=host)
-    _, runtime = resolve_runtime(host)
-
-    if not runtime.is_container():
-        output.error(f"Project runtime is '{runtime}' -- no container images to list")
-        raise typer.Exit(1)
+    runtime = require_container_runtime(host, action="list")
 
     try:
         rows = list_images(ssh_config, runtime.value, filter_pattern)

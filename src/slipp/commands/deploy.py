@@ -1,6 +1,7 @@
 """Execute Ansible playbooks to deploy services and manage infrastructure."""
 
 from pathlib import Path
+from typing import Annotated
 
 import typer
 
@@ -14,60 +15,84 @@ from slipp.services.config import (
 )
 from slipp.services.deploy import (
     ensure_local_config,
+    ensure_project_registered,
     execute_playbook,
     install_galaxy_requirements,
     persist_config_updates,
-    register_project,
     resolve_environment_and_tags,
     validate_deploy_files,
 )
 
 
 def deploy_command(
-    target: str = typer.Argument(
-        DEFAULT_ENV,
-        help="Environment name or tag preset (preset if it exists, else environment)",
-    ),
-    preset: str = typer.Argument(
-        None, help="Tag preset name (when using 'slipp deploy <env> <preset>')"
-    ),
-    name: str = typer.Option(
-        None, "-n", "--name", help="Project name (creates/updates local config)"
-    ),
-    dry_run: bool = typer.Option(
-        False, "--dry-run", help="Show what would be done without making changes"
-    ),
-    inventory: str = typer.Option(
-        None, "-i", "--inventory", help="Custom inventory file path"
-    ),
-    playbook: str = typer.Option(None, "--playbook", help="Custom playbook file path"),
-    vault: str = typer.Option(None, "--vault", help="Path to vault file"),
-    requirements: str = typer.Option(
-        None,
-        "-r",
-        "--requirements",
-        help="Path to requirements.yml (auto-detected if not specified)",
-    ),
-    roles: list[str] = typer.Option(
-        [], "--roles", help="Role search directories (repeatable)"
-    ),
-    galaxy_path_flag: str = typer.Option(
-        None,
-        "--galaxy-path",
-        help="Install path for external roles from requirements.yml",
-    ),
-    force_requirements: bool = typer.Option(
-        False,
-        "--force-requirements",
-        help="Force reinstall roles even if already installed",
-    ),
-    tags: str = typer.Option(
-        None, "--tags", "-t", help="Ansible tags to run (comma-separated)"
-    ),
-    skip_tags: str = typer.Option(
-        None, "--skip-tags", help="Ansible tags to skip (comma-separated)"
-    ),
-):
+    target: Annotated[
+        str,
+        typer.Argument(
+            help="Environment name or tag preset (preset if it exists, else environment)"
+        ),
+    ] = DEFAULT_ENV,
+    preset: Annotated[
+        str | None,
+        typer.Argument(
+            help="Tag preset name (when using 'slipp deploy <env> <preset>')"
+        ),
+    ] = None,
+    name: Annotated[
+        str | None,
+        typer.Option(
+            "-n", "--name", help="Project name (creates/updates local config)"
+        ),
+    ] = None,
+    dry_run: Annotated[
+        bool,
+        typer.Option(
+            "--dry-run", help="Show what would be done without making changes"
+        ),
+    ] = False,
+    inventory: Annotated[
+        str | None,
+        typer.Option("-i", "--inventory", help="Custom inventory file path"),
+    ] = None,
+    playbook: Annotated[
+        str | None, typer.Option("--playbook", help="Custom playbook file path")
+    ] = None,
+    vault: Annotated[
+        str | None, typer.Option("--vault", help="Path to vault file")
+    ] = None,
+    requirements: Annotated[
+        str | None,
+        typer.Option(
+            "-r",
+            "--requirements",
+            help="Path to requirements.yml (auto-detected if not specified)",
+        ),
+    ] = None,
+    roles: Annotated[
+        list[str], typer.Option("--roles", help="Role search directories (repeatable)")
+    ] = [],
+    galaxy_path_flag: Annotated[
+        str | None,
+        typer.Option(
+            "--galaxy-path",
+            help="Install path for external roles from requirements.yml",
+        ),
+    ] = None,
+    force_requirements: Annotated[
+        bool,
+        typer.Option(
+            "--force-requirements",
+            help="Force reinstall roles even if already installed",
+        ),
+    ] = False,
+    tags: Annotated[
+        str | None,
+        typer.Option("--tags", "-t", help="Ansible tags to run (comma-separated)"),
+    ] = None,
+    skip_tags: Annotated[
+        str | None,
+        typer.Option("--skip-tags", help="Ansible tags to skip (comma-separated)"),
+    ] = None,
+) -> None:
     """Execute ansible-playbook to deploy services and manage infrastructure."""
     if name and inventory:
         # Bound to cwd, never a walked root: creates/updates *this* directory's
@@ -142,7 +167,7 @@ def deploy_command(
                 inventory, playbook, roles_list, galaxy_path_flag, vault, project_root
             )
 
-        register_project(project_name, project_root)
+        ensure_project_registered(project_name, project_root)
         LocalConfigService.ensure_logs_gitignore(project_root)
     else:
         output.hint(f"Review log: {format_path(log_dir, resolver.project_root)}")

@@ -31,7 +31,7 @@ class ComposeGenerationStage(FileGenerationStage[FullContext]):
             content, or empty if the runtime is systemd.
         """
         if context.inventory_config is not None:
-            first_host = list(context.inventory_config.hosts.values())[0]
+            first_host = context.inventory_config.first_host
             if first_host.runtime == Runtime.SYSTEMD:
                 return {}
 

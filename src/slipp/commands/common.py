@@ -118,6 +118,28 @@ def resolve_runtime(host: str | None) -> tuple[Path, Runtime]:
     return project_root, runtime
 
 
+def require_container_runtime(project: str | None, *, action: str) -> Runtime:
+    """Resolve the project's runtime, exiting with an error if it's not a container.
+
+    Args:
+        project: Optional project name (defaults to cwd if not given)
+        action: Verb phrase for the error message, e.g. "list" or "push to"
+
+    Returns:
+        The resolved container Runtime (docker/podman)
+
+    Raises:
+        typer.Exit: If the project runtime isn't a container runtime
+    """
+    _, runtime = resolve_runtime(project)
+    if not runtime.is_container():
+        output.error(
+            f"Project runtime is '{runtime}' -- no container images to {action}"
+        )
+        raise typer.Exit(1)
+    return runtime
+
+
 def display_services_table(
     services: list[Service],
     *,

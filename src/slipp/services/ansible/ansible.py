@@ -46,6 +46,28 @@ class AnsibleResult:
     no_hosts_matched: bool = False
 
 
+def _subprocess_env(
+    roles_path: list[str] | None = None, *, unbuffered: bool = False
+) -> dict[str, str]:
+    """Build a subprocess environment with the common ansible-related overrides."""
+    env = os.environ.copy()
+    if roles_path:
+        env["ANSIBLE_ROLES_PATH"] = ":".join(roles_path)
+    if unbuffered:
+        env["PYTHONUNBUFFERED"] = "1"
+    return env
+
+
+def _open_log(log_dir: Path | None, prefix: str) -> tuple[Path | None, IO[str] | None]:
+    """Open a timestamped log file under log_dir, if log_dir is given."""
+    if not log_dir:
+        return None, None
+    log_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+    log_path = log_dir / f"{prefix}-{timestamp}.log"
+    return log_path, log_path.open("w")
+
+
 _NO_HOSTS_SKIP_RE = re.compile(r"skipping: no hosts matched")
 _RECAP_HOST_ROW_RE = re.compile(r"^\S+\s*:\s*ok=\d+")
 
@@ -104,9 +126,7 @@ def syntax_check(playbook: Path, roles_path: list[str] | None = None) -> bool:
     """
     check_tool_installed("ansible-playbook", AnsibleNotFoundError)
 
-    env = os.environ.copy()
-    if roles_path:
-        env["ANSIBLE_ROLES_PATH"] = ":".join(roles_path)
+    env = _subprocess_env(roles_path)
 
     result = subprocess.run(
         ["ansible-playbook", str(playbook), "--syntax-check"],
@@ -131,9 +151,7 @@ def get_host_group(playbook_path: Path, roles_path: list[str] | None = None) -> 
     """
     check_tool_installed("ansible-playbook", AnsibleNotFoundError)
 
-    env = os.environ.copy()
-    if roles_path:
-        env["ANSIBLE_ROLES_PATH"] = ":".join(roles_path)
+    env = _subprocess_env(roles_path)
 
     result = subprocess.run(
         ["ansible-playbook", "--list-hosts", str(playbook_path)],
@@ -219,16 +237,8 @@ def install_requirements(
     """
     check_tool_installed("ansible-galaxy", AnsibleNotFoundError)
 
-    log_path: Path | None = None
-    log_handle = None
-    if log_dir:
-        log_dir.mkdir(parents=True, exist_ok=True)
-        timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-        log_path = log_dir / f"ansible-galaxy-{timestamp}.log"
-        log_handle = log_path.open("w")
-
-    env = os.environ.copy()
-    env["PYTHONUNBUFFERED"] = "1"
+    log_path, log_handle = _open_log(log_dir, "ansible-galaxy")
+    env = _subprocess_env(unbuffered=True)
 
     try:
         roles_cmd = [
@@ -358,18 +368,8 @@ def run_playbook(
         for key, value in extra_vars.items():
             cmd.extend(["-e", f"{key}={json.dumps(value)}"])
 
-    log_path: Path | None = None
-    log_handle = None
-    if log_dir:
-        log_dir.mkdir(parents=True, exist_ok=True)
-        timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-        log_path = log_dir / f"ansible-playbook-{timestamp}.log"
-        log_handle = log_path.open("w")
-
-    env = os.environ.copy()
-    env["PYTHONUNBUFFERED"] = "1"
-    if roles_path:
-        env["ANSIBLE_ROLES_PATH"] = ":".join(roles_path)
+    log_path, log_handle = _open_log(log_dir, "ansible-playbook")
+    env = _subprocess_env(roles_path, unbuffered=True)
 
     proc = subprocess.Popen(
         cmd,

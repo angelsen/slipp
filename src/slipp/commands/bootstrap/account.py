@@ -1,6 +1,7 @@
 """Account command - create slipp service account on VPS."""
 
 from pathlib import Path
+from typing import Annotated
 
 import typer
 
@@ -41,22 +42,35 @@ def _display_completion(host: str, port: int, username: str) -> None:
 
 
 def account_command(
-    host: str = typer.Argument(..., help="VPS hostname or IP address"),
-    root_user: str = typer.Option(
-        "root", "--root-user", help="Root user for initial connection (default: root)"
-    ),
-    ssh_key: Path | None = typer.Option(
-        None,
-        "--ssh-key",
-        help="SSH private key for root connection (default: auto-discover)",
-    ),
-    ssh_port: int = typer.Option(22, "--port", "-p", help="SSH port (default: 22)"),
-    slipp_user: str = typer.Option(
-        "slipp", "--user", help="Name of service account to create (default: slipp)"
-    ),
-    dry_run: bool = typer.Option(
-        False, "--dry-run", help="Show what would be done without making changes"
-    ),
+    host: Annotated[str, typer.Argument(help="VPS hostname or IP address")],
+    root_user: Annotated[
+        str,
+        typer.Option(
+            "--root-user", help="Root user for initial connection (default: root)"
+        ),
+    ] = "root",
+    ssh_key: Annotated[
+        Path | None,
+        typer.Option(
+            "--ssh-key",
+            help="SSH private key for root connection (default: auto-discover)",
+        ),
+    ] = None,
+    ssh_port: Annotated[
+        int, typer.Option("--port", "-p", help="SSH port (default: 22)")
+    ] = 22,
+    slipp_user: Annotated[
+        str,
+        typer.Option(
+            "--user", help="Name of service account to create (default: slipp)"
+        ),
+    ] = "slipp",
+    dry_run: Annotated[
+        bool,
+        typer.Option(
+            "--dry-run", help="Show what would be done without making changes"
+        ),
+    ] = False,
 ) -> None:
     """Create slipp service account on VPS."""
     output.blank()

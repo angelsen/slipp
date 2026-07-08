@@ -84,7 +84,7 @@ class InventoryValidationStage:
             "Inventory config must be loaded before validation"
         )
 
-        first_host = list(context.inventory_config.hosts.values())[0]
+        first_host = context.inventory_config.first_host
 
         if not first_host.app_domain:
             raise LaunchError(

@@ -185,6 +185,16 @@ class InventoryConfig(BaseModel):
             }
         }
 
+    @property
+    def first_host(self) -> DeploymentHostConfig:
+        """The first configured host, for single-host launch stages.
+
+        Raises:
+            StopIteration: If hosts is empty (launch stages only call this
+                after InventoryValidationStage has confirmed hosts exist).
+        """
+        return next(iter(self.hosts.values()))
+
 
 class CaddySite(BaseModel):
     """Caddy site configuration for a service.

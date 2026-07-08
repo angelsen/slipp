@@ -4,18 +4,19 @@ Provides systemctl-style status output for Ansible-managed services,
 including current state, resource usage, and recent logs.
 """
 
+from typing import Annotated
+
 import typer
 
 from slipp import output
 from slipp.commands.common import find_service_or_exit, resolve_host_or_exit
-from slipp.services.discovery import extract_status_log_lines, parse_systemctl_status
 from slipp.services.ssh import SSHService
+from slipp.services.status import extract_status_log_lines, parse_systemctl_status
 
 
 def status_command(
-    ctx: typer.Context,
-    service: str = typer.Argument(..., help="Service name to show status for"),
-):
+    service: Annotated[str, typer.Argument(help="Service name to show status for")],
+) -> None:
     """Display detailed service status (like systemctl status)."""
     ssh_config = resolve_host_or_exit(service=service, command="status")
 

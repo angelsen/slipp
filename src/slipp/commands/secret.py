@@ -3,6 +3,8 @@
 Generates cryptographically secure random secrets for application use.
 """
 
+from typing import Annotated
+
 import typer
 
 from slipp import output
@@ -10,17 +12,22 @@ from slipp.services.vault import generate_jwk, generate_secret
 
 
 def secret_command(
-    num_bytes: int = typer.Option(
-        32, "--bytes", "-b", help="Bytes of entropy (default: 32 = 256-bit)"
-    ),
-    base64_encode: bool = typer.Option(
-        False, "--base64", help="Output as base64 instead of hex"
-    ),
-    ulid: bool = typer.Option(False, "--ulid", help="Output as ULID (ignores --bytes)"),
-    jwk: bool = typer.Option(False, "--jwk", help="Output as RSA JWK keypair"),
-    bits: int = typer.Option(
-        2048, "--bits", help="RSA key size for --jwk (default: 2048)"
-    ),
+    num_bytes: Annotated[
+        int,
+        typer.Option("--bytes", "-b", help="Bytes of entropy (default: 32 = 256-bit)"),
+    ] = 32,
+    base64_encode: Annotated[
+        bool, typer.Option("--base64", help="Output as base64 instead of hex")
+    ] = False,
+    ulid: Annotated[
+        bool, typer.Option("--ulid", help="Output as ULID (ignores --bytes)")
+    ] = False,
+    jwk: Annotated[
+        bool, typer.Option("--jwk", help="Output as RSA JWK keypair")
+    ] = False,
+    bits: Annotated[
+        int, typer.Option("--bits", help="RSA key size for --jwk (default: 2048)")
+    ] = 2048,
 ) -> None:
     """Generate a cryptographically secure secret."""
     if jwk:

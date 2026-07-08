@@ -1,5 +1,7 @@
 """Logs command - view service logs."""
 
+from typing import Annotated
+
 import typer
 
 from slipp import output
@@ -9,16 +11,19 @@ from slipp.services.ssh import SSHService
 
 
 def logs_command(
-    ctx: typer.Context,
-    service: str = typer.Argument(
-        ..., help="Service name (e.g., synapse or synapse@matrix)"
-    ),
-    follow: bool = typer.Option(False, "--follow", "-f", help="Follow log output"),
-    lines: int = typer.Option(50, "--lines", "-n", help="Number of lines to show"),
-    all_services: bool = typer.Option(
-        False, "--all", help="Include system services in discovery"
-    ),
-):
+    service: Annotated[
+        str, typer.Argument(help="Service name (e.g., synapse or synapse@matrix)")
+    ],
+    follow: Annotated[
+        bool, typer.Option("--follow", "-f", help="Follow log output")
+    ] = False,
+    lines: Annotated[
+        int, typer.Option("--lines", "-n", help="Number of lines to show")
+    ] = 50,
+    all_services: Annotated[
+        bool, typer.Option("--all", help="Include system services in discovery")
+    ] = False,
+) -> None:
     """View service logs (journalctl or podman/docker logs)."""
     ssh_config = resolve_host_or_exit(service=service, command="logs")
 

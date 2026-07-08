@@ -1,5 +1,7 @@
 """Manage tag presets for Ansible deployments."""
 
+from typing import Annotated
+
 import typer
 
 from slipp import output
@@ -43,13 +45,15 @@ def list_presets() -> None:
 
 @tags_app.command(name="add")
 def add_preset(
-    name: str = typer.Argument(..., help="Preset name (e.g., setup, install)"),
-    tags: str = typer.Option(
-        None, "--tags", "-t", help="Ansible tags to run (comma-separated)"
-    ),
-    skip_tags: str = typer.Option(
-        None, "--skip-tags", help="Ansible tags to skip (comma-separated)"
-    ),
+    name: Annotated[str, typer.Argument(help="Preset name (e.g., setup, install)")],
+    tags: Annotated[
+        str | None,
+        typer.Option("--tags", "-t", help="Ansible tags to run (comma-separated)"),
+    ] = None,
+    skip_tags: Annotated[
+        str | None,
+        typer.Option("--skip-tags", help="Ansible tags to skip (comma-separated)"),
+    ] = None,
 ) -> None:
     """Add or update a tag preset."""
     root = LocalConfigService.resolve_root()
@@ -88,7 +92,7 @@ def add_preset(
 
 @tags_app.command(name="remove")
 def remove_preset(
-    name: str = typer.Argument(..., help="Preset name to remove"),
+    name: Annotated[str, typer.Argument(help="Preset name to remove")],
 ) -> None:
     """Remove a tag preset."""
     root = LocalConfigService.resolve_root()

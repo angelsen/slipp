@@ -2,10 +2,10 @@
 
 import os
 
-from slipp.services.secrets.sources.base import PullSession, SecretSource
+from slipp.services.secrets.sources.base import PullSession
 
 
-class NorAuthSource(SecretSource):
+class NorAuthSource:
     """Pull secrets from nor-auth console."""
 
     name = "nor-auth"

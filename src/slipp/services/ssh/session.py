@@ -7,7 +7,16 @@ Provides methods for starting interactive SSH and container sessions.
 import subprocess
 
 from slipp.models.host import AnsibleHost
-from slipp.services.ssh.command import build_ssh_command
+from slipp.services.ssh.command import CommandBuilder, build_ssh_command
+
+
+def _run_interactive(cmd: list[str]) -> int:
+    """Run an interactive subprocess, returning 130 on Ctrl-C like a shell would."""
+    try:
+        result = subprocess.run(cmd, check=False)
+        return result.returncode
+    except KeyboardInterrupt:
+        return 130
 
 
 class InteractiveSessionManager:
@@ -32,12 +41,7 @@ class InteractiveSessionManager:
             Exit code from SSH session
         """
         cmd = build_ssh_command(host, flags=["-t"])
-
-        try:
-            result = subprocess.run(cmd, check=False)
-            return result.returncode
-        except KeyboardInterrupt:
-            return 130
+        return _run_interactive(cmd)
 
     def ssh_as_user(self, host: AnsibleHost, target_user: str) -> int:
         """SSH then sudo to target user.
@@ -55,14 +59,12 @@ class InteractiveSessionManager:
         if target_user == host.ansible_user:
             return self.ssh_session(host)
 
-        remote_cmd = f"sudo -u {target_user} sh -c 'cd ~ && exec /bin/sh'"
+        inner_cmd = "sh -c 'cd ~ && exec /bin/sh'"
+        remote_cmd = CommandBuilder.vps_command(
+            target_user, inner_cmd, host.ansible_user
+        )
         cmd = build_ssh_command(host, flags=["-t"], remote_command=remote_cmd)
-
-        try:
-            result = subprocess.run(cmd, check=False)
-            return result.returncode
-        except KeyboardInterrupt:
-            return 130
+        return _run_interactive(cmd)
 
     def container_shell(
         self,
@@ -88,9 +90,4 @@ class InteractiveSessionManager:
         exec_cmd = f"{runtime} exec -it {user_flag} {container_name} /bin/sh".strip()
 
         cmd = build_ssh_command(host_config, flags=["-t"], remote_command=exec_cmd)
-
-        try:
-            result = subprocess.run(cmd, check=False)
-            return result.returncode
-        except KeyboardInterrupt:
-            return 130
+        return _run_interactive(cmd)

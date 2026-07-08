@@ -5,6 +5,7 @@ Supports dry-run mode and reverse proxy configuration.
 """
 
 from pathlib import Path
+from typing import Annotated
 
 import typer
 
@@ -14,31 +15,30 @@ from slipp.services.launch import DockerfileContext, run_dockerfile_pipeline
 
 
 def dockerfile_command(
-    project_dirs: list[Path] = typer.Option(
-        None,
-        "--dir",
-        "-d",
-        help="Directories to scan (default: current directory)",
-        exists=True,
-        file_okay=False,
-        dir_okay=True,
-        resolve_path=True,
-    ),
-    dry_run: bool = typer.Option(
-        False,
-        "--dry-run",
-        help="Show what would be done without making changes",
-    ),
-    proxy: str = typer.Option(
-        "caddy",
-        "--proxy",
-        help="Reverse proxy: caddy, none",
-    ),
-    container_runtime: str = typer.Option(
-        Runtime.DOCKER.value,
-        "--runtime",
-        help="Container runtime: docker, podman",
-    ),
+    project_dirs: Annotated[
+        list[Path] | None,
+        typer.Option(
+            "--dir",
+            "-d",
+            help="Directories to scan (default: current directory)",
+            exists=True,
+            file_okay=False,
+            dir_okay=True,
+            resolve_path=True,
+        ),
+    ] = None,
+    dry_run: Annotated[
+        bool,
+        typer.Option(
+            "--dry-run", help="Show what would be done without making changes"
+        ),
+    ] = False,
+    proxy: Annotated[
+        str, typer.Option("--proxy", help="Reverse proxy: caddy, none")
+    ] = "caddy",
+    container_runtime: Annotated[
+        str, typer.Option("--runtime", help="Container runtime: docker, podman")
+    ] = Runtime.DOCKER.value,
 ) -> None:
     """Generate Dockerfiles for specified projects."""
     dirs = project_dirs if project_dirs else [Path.cwd()]

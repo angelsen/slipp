@@ -1,19 +1,15 @@
 """Secret pull sources registry."""
 
-from slipp.services.secrets.sources.base import (
-    PullSession,
-    SecretSource,
-    find_available_port,
-)
+from slipp.services.secrets.sources.base import PullSession, find_available_port
 from slipp.services.secrets.sources.nor_auth import NorAuthSource
 from slipp.utils.errors import SourceNotFoundError
 
-_SOURCES: dict[str, type[SecretSource]] = {
+_SOURCES: dict[str, type[NorAuthSource]] = {
     NorAuthSource.name: NorAuthSource,
 }
 
 
-def get_source(name: str) -> SecretSource:
+def get_source(name: str) -> NorAuthSource:
     """Get source instance by name."""
     if name not in _SOURCES:
         available = ", ".join(_SOURCES) or "(none)"
@@ -28,7 +24,6 @@ def list_sources() -> list[str]:
 
 __all__ = [
     "PullSession",
-    "SecretSource",
     "find_available_port",
     "get_source",
     "list_sources",

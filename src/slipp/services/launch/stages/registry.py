@@ -27,7 +27,7 @@ class RegistrationStage:
 
         assert context.inventory_config is not None, "Inventory config must be loaded"
         inventory_filename = get_inventory_filename(context.environment)
-        first_host = list(context.inventory_config.hosts.values())[0]
+        first_host = context.inventory_config.first_host
         register_project(
             name=context.project_name,
             project_root=context.output_dir,
@@ -50,7 +50,7 @@ class SummaryStage:
         """
         assert context.inventory_config is not None, "Inventory config must be loaded"
 
-        first_host = list(context.inventory_config.hosts.values())[0]
+        first_host = context.inventory_config.first_host
 
         if context.dry_run:
             output.warning("Dry run complete (no files written)")

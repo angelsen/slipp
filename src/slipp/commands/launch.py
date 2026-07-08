@@ -1,6 +1,7 @@
 """Launch command - generate Ansible deployment configurations."""
 
 from pathlib import Path
+from typing import Annotated
 
 import typer
 
@@ -11,43 +12,44 @@ from slipp.services.launch import FullContext, run_full_pipeline
 
 
 def launch_command(
-    name: str = typer.Option(
-        ...,
-        "--name",
-        "-n",
-        help="Project name (required)",
-    ),
-    environment: str = typer.Option(
-        DEFAULT_ENV,
-        "--env",
-        "-e",
-        help="Environment (production, dev, staging, etc.)",
-    ),
-    project_dirs: list[Path] = typer.Option(
-        None,
-        "--dir",
-        "-d",
-        help="Directories to scan (default: current directory)",
-        exists=True,
-        file_okay=False,
-        dir_okay=True,
-        resolve_path=True,
-    ),
-    dry_run: bool = typer.Option(
-        False,
-        "--dry-run",
-        help="Show what would be done without making changes",
-    ),
-    reconfigure: bool = typer.Option(
-        False,
-        "--reconfigure",
-        help="Prompt for inventory config even if inventory.yml exists",
-    ),
-    proxy: str = typer.Option(
-        "caddy",
-        "--proxy",
-        help="Reverse proxy: caddy, none",
-    ),
+    name: Annotated[
+        str,
+        typer.Option("--name", "-n", help="Project name (required)"),
+    ],
+    environment: Annotated[
+        str,
+        typer.Option(
+            "--env", "-e", help="Environment (production, dev, staging, etc.)"
+        ),
+    ] = DEFAULT_ENV,
+    project_dirs: Annotated[
+        list[Path] | None,
+        typer.Option(
+            "--dir",
+            "-d",
+            help="Directories to scan (default: current directory)",
+            exists=True,
+            file_okay=False,
+            dir_okay=True,
+            resolve_path=True,
+        ),
+    ] = None,
+    dry_run: Annotated[
+        bool,
+        typer.Option(
+            "--dry-run", help="Show what would be done without making changes"
+        ),
+    ] = False,
+    reconfigure: Annotated[
+        bool,
+        typer.Option(
+            "--reconfigure",
+            help="Prompt for inventory config even if inventory.yml exists",
+        ),
+    ] = False,
+    proxy: Annotated[
+        str, typer.Option("--proxy", help="Reverse proxy: caddy, none")
+    ] = "caddy",
 ) -> None:
     """Generate complete Ansible project from codebase."""
     if project_dirs:

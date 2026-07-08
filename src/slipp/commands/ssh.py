@@ -5,6 +5,7 @@ on either the VPS directly or inside a running service container.
 """
 
 import sys
+from typing import Annotated
 
 import typer
 
@@ -15,14 +16,15 @@ from slipp.services.ssh import InteractiveSessionManager, SSHService, UserResolv
 
 
 def ssh_command(
-    ctx: typer.Context,
-    service: str | None = typer.Argument(
-        None, help="Service to shell into (container or systemd)"
-    ),
-    user: str | None = typer.Option(
-        None, "--user", "-u", help="Override user (e.g., root, postgres)"
-    ),
-):
+    service: Annotated[
+        str | None,
+        typer.Argument(help="Service to shell into (container or systemd)"),
+    ] = None,
+    user: Annotated[
+        str | None,
+        typer.Option("--user", "-u", help="Override user (e.g., root, postgres)"),
+    ] = None,
+) -> None:
     """Open interactive shell on VPS or container service."""
     session_manager = InteractiveSessionManager()
     ssh_config = resolve_host_or_exit(service=service, command="ssh")

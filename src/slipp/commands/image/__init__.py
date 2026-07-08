@@ -5,7 +5,7 @@ from typing import Annotated
 import typer
 
 from slipp import output
-from slipp.commands.common import resolve_host_or_exit, resolve_runtime
+from slipp.commands.common import require_container_runtime, resolve_host_or_exit
 from slipp.services.image import detect_local_runtime, push_image
 from slipp.utils.errors import ImageTransferError
 
@@ -31,13 +31,7 @@ def push_command(
         output.hint("Build with: podman build -t <name> .")
         raise typer.Exit(1)
 
-    _, remote_runtime = resolve_runtime(host)
-
-    if not remote_runtime.is_container():
-        output.error(
-            f"Project runtime is '{remote_runtime}' -- no container images to push to"
-        )
-        raise typer.Exit(1)
+    remote_runtime = require_container_runtime(host, action="push to")
 
     target_name = name or image
     target = f"{ssh_config.ansible_user}@{ssh_config.ansible_host}"

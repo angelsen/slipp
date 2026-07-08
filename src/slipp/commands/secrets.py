@@ -3,6 +3,7 @@
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Annotated
 
 import typer
 
@@ -138,12 +139,16 @@ def _list_available_vaults() -> None:
 
 @secrets_app.command(name="list")
 def list_secrets(
-    targets: list[str] = typer.Argument(
-        None, help="Project name(s) or vault file path(s) (discovery mode if omitted)"
-    ),
-    secret_name: str = typer.Option(
-        None, "--name", "-n", help="Secret name to get template string for"
-    ),
+    targets: Annotated[
+        list[str] | None,
+        typer.Argument(
+            help="Project name(s) or vault file path(s) (discovery mode if omitted)"
+        ),
+    ] = None,
+    secret_name: Annotated[
+        str | None,
+        typer.Option("--name", "-n", help="Secret name to get template string for"),
+    ] = None,
 ) -> None:
     """List secrets in vault(s), or show available vaults."""
     if not targets:
@@ -213,23 +218,31 @@ def list_secrets(
 
 @secrets_app.command(name="add")
 def add_secret(
-    name: str = typer.Argument(..., help="Secret name (e.g., vault_db_password)"),
-    target: str = typer.Argument(
-        None, help="Project name or vault file path (uses local config if omitted)"
-    ),
-    num_bytes: int = typer.Option(
-        32, "--bytes", "-b", help="Bytes of entropy (default: 32 = 256-bit)"
-    ),
-    encoding: SecretEncoding = typer.Option(
-        SecretEncoding.hex,
-        "--encoding",
-        "-e",
-        help="Output encoding: hex (default), base64, or ulid",
-    ),
-    jwk: bool = typer.Option(False, "--jwk", help="Generate RSA JWK keypair"),
-    bits: int = typer.Option(
-        2048, "--bits", help="RSA key size for --jwk (default: 2048)"
-    ),
+    name: Annotated[str, typer.Argument(help="Secret name (e.g., vault_db_password)")],
+    target: Annotated[
+        str | None,
+        typer.Argument(
+            help="Project name or vault file path (uses local config if omitted)"
+        ),
+    ] = None,
+    num_bytes: Annotated[
+        int,
+        typer.Option("--bytes", "-b", help="Bytes of entropy (default: 32 = 256-bit)"),
+    ] = 32,
+    encoding: Annotated[
+        SecretEncoding,
+        typer.Option(
+            "--encoding",
+            "-e",
+            help="Output encoding: hex (default), base64, or ulid",
+        ),
+    ] = SecretEncoding.hex,
+    jwk: Annotated[
+        bool, typer.Option("--jwk", help="Generate RSA JWK keypair")
+    ] = False,
+    bits: Annotated[
+        int, typer.Option("--bits", help="RSA key size for --jwk (default: 2048)")
+    ] = 2048,
 ) -> None:
     """Generate and add a secret to a vault."""
     resolver, vault_path = _resolve_vault_or_exit(target)
@@ -274,19 +287,22 @@ def add_secret(
 
 @secrets_app.command(name="sync")
 def sync_secrets(
-    path: Path = typer.Argument(..., help="Path to vars.yml file"),
-    num_bytes: int = typer.Option(
-        32, "--bytes", "-b", help="Bytes of entropy (default: 32 = 256-bit)"
-    ),
-    encoding: SecretEncoding = typer.Option(
-        SecretEncoding.hex,
-        "--encoding",
-        "-e",
-        help="Output encoding: hex (default), base64, or ulid",
-    ),
-    force: bool = typer.Option(
-        False, "--force", "-f", help="Overwrite existing vault.yml"
-    ),
+    path: Annotated[Path, typer.Argument(help="Path to vars.yml file")],
+    num_bytes: Annotated[
+        int,
+        typer.Option("--bytes", "-b", help="Bytes of entropy (default: 32 = 256-bit)"),
+    ] = 32,
+    encoding: Annotated[
+        SecretEncoding,
+        typer.Option(
+            "--encoding",
+            "-e",
+            help="Output encoding: hex (default), base64, or ulid",
+        ),
+    ] = SecretEncoding.hex,
+    force: Annotated[
+        bool, typer.Option("--force", "-f", help="Overwrite existing vault.yml")
+    ] = False,
 ) -> None:
     """Scan YAML for vault references and auto-generate secrets."""
     project_root = Path.cwd()
@@ -326,11 +342,16 @@ def sync_secrets(
 
 @secrets_app.command(name="pull")
 def pull_secrets(
-    source: str = typer.Argument(..., help="Secret source (e.g., nor-auth)"),
-    target: str = typer.Argument(
-        None, help="Target vault (project name or path, uses local config if omitted)"
-    ),
-    timeout: int = typer.Option(300, "--timeout", "-t", help="Timeout in seconds"),
+    source: Annotated[str, typer.Argument(help="Secret source (e.g., nor-auth)")],
+    target: Annotated[
+        str | None,
+        typer.Argument(
+            help="Target vault (project name or path, uses local config if omitted)"
+        ),
+    ] = None,
+    timeout: Annotated[
+        int, typer.Option("--timeout", "-t", help="Timeout in seconds")
+    ] = 300,
 ) -> None:
     """Pull credentials from external source to vault."""
     import asyncio

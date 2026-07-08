@@ -154,7 +154,7 @@ def persist_config_updates(
         )
 
 
-def register_project(project_name: str, project_root: Path) -> None:
+def ensure_project_registered(project_name: str, project_root: Path) -> None:
     """Best-effort registration of the project in the global registry.
 
     Args:

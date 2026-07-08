@@ -4,6 +4,8 @@ Commands layer: args → service → output.
 Business logic delegated to UserResolver and CommandBuilder services.
 """
 
+from typing import Annotated
+
 import typer
 
 from slipp import output
@@ -14,15 +16,19 @@ from slipp.utils.errors import SlippError
 
 
 def exec_command(
-    ctx: typer.Context,
-    first: str = typer.Argument(
-        ..., help="Command to execute (or service if two args)"
-    ),
-    second: str | None = typer.Argument(None, help="Command when service specified"),
-    user: str | None = typer.Option(
-        None, "--user", "-u", help="Override user (e.g., root, postgres, www-data)"
-    ),
-):
+    first: Annotated[
+        str, typer.Argument(help="Command to execute (or service if two args)")
+    ],
+    second: Annotated[
+        str | None, typer.Argument(help="Command when service specified")
+    ] = None,
+    user: Annotated[
+        str | None,
+        typer.Option(
+            "--user", "-u", help="Override user (e.g., root, postgres, www-data)"
+        ),
+    ] = None,
+) -> None:
     """Execute a command on VPS or in a container."""
     if second is None:
         command, service_name = first, None

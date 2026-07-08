@@ -5,6 +5,8 @@ managed with Ansible. Organize commands into singular actions (slipp run)
 and plural management subcommands (slipp runs list).
 """
 
+from typing import Annotated
+
 import typer
 
 from slipp import output
@@ -17,7 +19,7 @@ from slipp.commands.host import host_command
 from slipp.commands.image import image_app
 from slipp.commands.images import images_app
 from slipp.commands.launch import launch_command
-from slipp.commands.logo import logo_command, show_logo
+from slipp.commands.logo import logo_command
 from slipp.commands.logs import logs_command
 from slipp.commands.projects import projects_app
 from slipp.commands.ps import ps_command
@@ -30,6 +32,7 @@ from slipp.commands.status import status_command
 from slipp.commands.tag import tag_command
 from slipp.commands.tags import tags_app
 from slipp.constants import OutputFormat
+from slipp.services.logo import show_logo
 
 app = typer.Typer(
     name="slipp",
@@ -41,19 +44,17 @@ app = typer.Typer(
 @app.callback(invoke_without_command=True)
 def main(
     ctx: typer.Context,
-    version: bool = typer.Option(
-        False, "--version", "-V", help="Show version and exit"
-    ),
-    verbose: bool = typer.Option(
-        False, "--verbose", "-v", help="Enable verbose logging"
-    ),
-    output_format: OutputFormat = typer.Option(
-        OutputFormat.table,
-        "--output",
-        "-o",
-        help="Output format: table (default), json",
-    ),
-):
+    version: Annotated[
+        bool, typer.Option("--version", "-V", help="Show version and exit")
+    ] = False,
+    verbose: Annotated[
+        bool, typer.Option("--verbose", "-v", help="Enable verbose logging")
+    ] = False,
+    output_format: Annotated[
+        OutputFormat,
+        typer.Option("--output", "-o", help="Output format: table (default), json"),
+    ] = OutputFormat.table,
+) -> None:
     """slipp - Operations CLI for Ansible-managed infrastructure."""
     if version:
         show_logo()

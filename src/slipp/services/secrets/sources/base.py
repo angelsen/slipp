@@ -1,9 +1,8 @@
-"""Base classes for secret pull sources."""
+"""Shared helpers for secret pull sources."""
 
 import base64
 import json
 import socket
-from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -25,26 +24,6 @@ class PullSession:
             "timestamp": datetime.now().isoformat(),
         }
         return base64.urlsafe_b64encode(json.dumps(data).encode()).decode()
-
-
-class SecretSource(ABC):
-    """Base class for secret pull sources."""
-
-    name: str
-
-    @abstractmethod
-    def get_auth_url(self, session: PullSession) -> str:
-        """Get URL to open in browser for authentication/selection."""
-        pass
-
-    @abstractmethod
-    def parse_credentials(self, raw: list[dict]) -> dict[str, str]:
-        """Parse raw credentials from callback into vault variables."""
-        pass
-
-    def get_description(self) -> str:
-        """Human-readable description for --help."""
-        return f"Pull secrets from {self.name}"
 
 
 def find_available_port(start: int = 49152, end: int = 65535) -> int:

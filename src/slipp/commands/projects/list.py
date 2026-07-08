@@ -6,17 +6,13 @@ Loads host details from each project's inventory on-demand.
 
 import json
 
-import typer
-
 from slipp import output
 from slipp.constants import OutputFormat
 from slipp.services.config import load_project_hosts
 from slipp.services.registry import ProjectRegistry
 
 
-def list_command(
-    ctx: typer.Context,
-):
+def list_command() -> None:
     """List all registered projects."""
     project_registry = ProjectRegistry()
     projects = project_registry.list_all()

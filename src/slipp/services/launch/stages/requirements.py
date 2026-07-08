@@ -28,7 +28,7 @@ class RequirementsFileStage(FileGenerationStage[FullContext]):
         assert context.inventory_config is not None, "Inventory config must be loaded"
 
         requirements_path = context.output_dir / "requirements.yml"
-        first_host = list(context.inventory_config.hosts.values())[0]
+        first_host = context.inventory_config.first_host
         content = generate_requirements(first_host.runtime)
 
         return {requirements_path: content}

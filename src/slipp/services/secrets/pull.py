@@ -8,11 +8,8 @@ from pathlib import Path
 
 from slipp import output
 from slipp.services.secrets.callback_server import CallbackServer
-from slipp.services.secrets.sources.base import (
-    PullSession,
-    SecretSource,
-    find_available_port,
-)
+from slipp.services.secrets.sources.base import PullSession, find_available_port
+from slipp.services.secrets.sources.nor_auth import NorAuthSource
 from slipp.services.vault import append_to_vault, encrypt_string, vault_password_file
 from slipp.utils.errors import ProjectNotFoundError, PullTimeoutError, VaultError
 
@@ -20,7 +17,7 @@ from slipp.utils.errors import ProjectNotFoundError, PullTimeoutError, VaultErro
 class PullService:
     """Orchestrates the secrets pull flow for any source."""
 
-    def __init__(self, source: SecretSource):
+    def __init__(self, source: NorAuthSource):
         self.source = source
 
     async def pull(

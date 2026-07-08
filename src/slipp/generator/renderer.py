@@ -77,13 +77,13 @@ class GoTemplateRenderer:
     def _convert_go_syntax(self, template: str) -> str:
         """Convert Go template syntax to Jinja2.
 
-        Transformations:
+        Transformations (leading/trailing `-` whitespace-control markers on
+        either side of `{{`/`}}` are preserved on the Jinja `{%`/`%}` side):
         - {{ .Variable }} → {{ Variable }}
         - {{ if .Condition }} → {% if Condition %}
         - {{ else if .Other }} → {% elif Other %}
         - {{ else }} → {% else %}
         - {{ end }} → {% endif %}
-        - {{- whitespace -}} → {%- whitespace -%}
 
         Args:
             template: Go template string
@@ -93,53 +93,21 @@ class GoTemplateRenderer:
         """
         result = template
 
-        # Convert control structures (with whitespace control support)
+        # {{(-) else if .var (-)}} → {%(-) elif var (-)%}
         result = re.sub(
-            r"{{\s*if\s+\.(\w+)\s*-}}", r"{% if \1 -%}", result, flags=re.MULTILINE
+            r"{{(-?)\s*else\s+if\s+\.(\w+)\s*(-?)}}", r"{%\1 elif \2 \3%}", result
         )
 
-        # {{ if .var }} → {% if var %}
-        result = re.sub(
-            r"{{\s*if\s+\.(\w+)\s*}}", r"{% if \1 %}", result, flags=re.MULTILINE
-        )
+        # {{(-) if .var (-)}} → {%(-) if var (-)%}
+        result = re.sub(r"{{(-?)\s*if\s+\.(\w+)\s*(-?)}}", r"{%\1 if \2 \3%}", result)
 
-        # {{ else if .var -}} → {% elif var -%}
-        result = re.sub(
-            r"{{\s*else\s+if\s+\.(\w+)\s*-}}",
-            r"{% elif \1 -%}",
-            result,
-            flags=re.MULTILINE,
-        )
+        # {{(-) else (-)}} → {%(-) else (-)%}
+        result = re.sub(r"{{(-?)\s*else\s*(-?)}}", r"{%\1 else \2%}", result)
 
-        # {{ else if .var }} → {% elif var %}
-        result = re.sub(
-            r"{{\s*else\s+if\s+\.(\w+)\s*}}",
-            r"{% elif \1 %}",
-            result,
-            flags=re.MULTILINE,
-        )
+        # {{(-) end (-)}} → {%(-) endif (-)%}
+        result = re.sub(r"{{(-?)\s*end\s*(-?)}}", r"{%\1 endif \2%}", result)
 
-        # {{ else -}} → {% else -%}
-        result = re.sub(r"{{\s*else\s*-}}", r"{% else -%}", result, flags=re.MULTILINE)
-
-        # {{ else }} → {% else %}
-        result = re.sub(r"{{\s*else\s*}}", r"{% else %}", result, flags=re.MULTILINE)
-
-        # {{ end -}} → {% endif -%}
-        result = re.sub(r"{{\s*end\s*-}}", r"{% endif -%}", result, flags=re.MULTILINE)
-
-        # {{ end }} → {% endif %}
-        result = re.sub(r"{{\s*end\s*}}", r"{% endif %}", result, flags=re.MULTILINE)
-
-        # Convert variables (with whitespace control)
-        result = re.sub(r"{{\s*\.(\w+)\s*-}}", r"{{ \1 -}}", result, flags=re.MULTILINE)
-
-        # {{ .Variable }} → {{ Variable }}
-        result = re.sub(r"{{\s*\.(\w+)\s*}}", r"{{ \1 }}", result, flags=re.MULTILINE)
-
-        # Handle left whitespace control (trim left)
-        result = re.sub(r"{{-\s*if\s+", r"{%- if ", result)
-        result = re.sub(r"{{-\s*else", r"{%- else", result)
-        result = re.sub(r"{{-\s*end", r"{%- endif", result)
+        # {{(-) .Variable (-)}} → {{(-) Variable (-)}}
+        result = re.sub(r"{{(-?)\s*\.(\w+)\s*(-?)}}", r"{{\1 \2 \3}}", result)
 
         return result

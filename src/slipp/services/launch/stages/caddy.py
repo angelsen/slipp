@@ -90,7 +90,7 @@ class CaddyConfigStage:
         """
         assert context.inventory_config is not None, "Inventory config must be loaded"
 
-        first_host = list(context.inventory_config.hosts.values())[0]
+        first_host = context.inventory_config.first_host
 
         if not context.skip_caddy:
             output.info("Configuring Caddy reverse proxy...")
@@ -151,7 +151,7 @@ class CaddyRoleStage(FileGenerationStage[FullContext]):
         assert context.inventory_config is not None, "Inventory config must be loaded"
         assert context.provision_config is not None, "Provision config must be set"
 
-        first_host = list(context.inventory_config.hosts.values())[0]
+        first_host = context.inventory_config.first_host
 
         assert first_host.app_domain is not None, "app_domain must be set"
         assert first_host.admin_email is not None, "admin_email must be set"

@@ -1,32 +1,32 @@
 """List running services (like docker ps) across registered projects."""
 
 import json
+from typing import Annotated
 
 import typer
 
 from slipp import output
 from slipp.commands.common import display_services_table, resolve_host_or_exit
 from slipp.constants import OutputFormat
+from slipp.services.config import HostResolver, collect_managed_roles
 from slipp.services.discovery import (
     discover_across_hosts,
     discover_and_enrich,
     filter_services,
 )
-from slipp.services.config import HostResolver, collect_managed_roles
 
 
 def ps_command(
-    ctx: typer.Context,
-    project: str | None = typer.Option(
-        None, "--project", "-p", help="Filter by project name"
-    ),
-    refresh: bool = typer.Option(
-        False, "--refresh", help="Force re-discovery (bypass cache)"
-    ),
-    all_services: bool = typer.Option(
-        False, "--all", help="Include system services in discovery"
-    ),
-):
+    project: Annotated[
+        str | None, typer.Option("--project", "-p", help="Filter by project name")
+    ] = None,
+    refresh: Annotated[
+        bool, typer.Option("--refresh", help="Force re-discovery (bypass cache)")
+    ] = False,
+    all_services: Annotated[
+        bool, typer.Option("--all", help="Include system services in discovery")
+    ] = False,
+) -> None:
     """List running services (like docker ps)."""
     resolver = HostResolver()
 

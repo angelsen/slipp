@@ -68,7 +68,7 @@ class AppRolesStage(FileGenerationStage[FullContext]):
     def generate_content(self, context: FullContext) -> dict[Path, str]:
         assert context.inventory_config is not None, "Inventory config must be loaded"
 
-        first_host = list(context.inventory_config.hosts.values())[0]
+        first_host = context.inventory_config.first_host
         runtime = first_host.runtime
         role_generator = RoleGenerator()
 

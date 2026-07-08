@@ -4,6 +4,8 @@ Configures Caddy reverse proxy on a remote host to enable local development
 with remote services via slipp run --tunnel-out.
 """
 
+from typing import Annotated
+
 import typer
 
 from slipp import output
@@ -19,16 +21,18 @@ from slipp.utils.errors import (
 
 
 def proxy_command(
-    host: str = typer.Argument(..., help="Host name or registered project"),
-    email: str = typer.Option(
-        ..., "--email", "-e", help="Email for Let's Encrypt certificates"
-    ),
-    fallback_port: int = typer.Option(
-        9443,
-        "--fallback-port",
-        "-p",
-        help="Port where existing service listens for HTTPS",
-    ),
+    host: Annotated[str, typer.Argument(help="Host name or registered project")],
+    email: Annotated[
+        str, typer.Option("--email", "-e", help="Email for Let's Encrypt certificates")
+    ],
+    fallback_port: Annotated[
+        int,
+        typer.Option(
+            "--fallback-port",
+            "-p",
+            help="Port where existing service listens for HTTPS",
+        ),
+    ] = 9443,
 ) -> None:
     """Setup dev proxy infrastructure for slipp run --tunnel-out."""
     try:

@@ -6,6 +6,7 @@ for later use.
 """
 
 from pathlib import Path
+from typing import Annotated
 
 import typer
 
@@ -34,29 +35,39 @@ def _detect_path(
 
 
 def add_command(
-    name: str = typer.Argument(..., help="Project name"),
-    inventory: str | None = typer.Option(
-        None,
-        "-i",
-        "--inventory",
-        help="Inventory file path (auto-detected if not specified)",
-    ),
-    playbook: str | None = typer.Option(
-        None, "--playbook", help="Playbook file path (auto-detected if not specified)"
-    ),
-    roles: list[str] | None = typer.Option(
-        None,
-        "--roles",
-        help="Role search directories (auto-detected if not specified)",
-    ),
-    galaxy_path: str | None = typer.Option(
-        None,
-        "--galaxy-path",
-        help="Install path for external roles from requirements.yml",
-    ),
-    vault: str | None = typer.Option(
-        None, "--vault", help="Path to vault.yml for secret management"
-    ),
+    name: Annotated[str, typer.Argument(help="Project name")],
+    inventory: Annotated[
+        str | None,
+        typer.Option(
+            "-i",
+            "--inventory",
+            help="Inventory file path (auto-detected if not specified)",
+        ),
+    ] = None,
+    playbook: Annotated[
+        str | None,
+        typer.Option(
+            "--playbook", help="Playbook file path (auto-detected if not specified)"
+        ),
+    ] = None,
+    roles: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--roles",
+            help="Role search directories (auto-detected if not specified)",
+        ),
+    ] = None,
+    galaxy_path: Annotated[
+        str | None,
+        typer.Option(
+            "--galaxy-path",
+            help="Install path for external roles from requirements.yml",
+        ),
+    ] = None,
+    vault: Annotated[
+        str | None,
+        typer.Option("--vault", help="Path to vault.yml for secret management"),
+    ] = None,
 ) -> None:
     """Register an Ansible project with slipp."""
     # Intentionally no root discovery: this command creates/claims THIS

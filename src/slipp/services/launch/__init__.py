@@ -1,8 +1,12 @@
 """Launch pipeline orchestration.
 
-Assembles pipeline stages for the three launch modes (full, dockerfile-only,
-scaffold) and runs them via LaunchPipeline. Stage failures raise LaunchError.
+Assembles ordered stage lists for the three launch modes (full,
+dockerfile-only, scaffold) and runs each stage in sequence. Stage failures
+raise LaunchError.
 """
+
+from collections.abc import Sequence
+from typing import Protocol, TypeVar
 
 from slipp.generator import TemplateGenerator
 from slipp.services.launch.context import (
@@ -11,7 +15,6 @@ from slipp.services.launch.context import (
     FullContext,
     ScaffoldContext,
 )
-from slipp.services.launch.pipeline import LaunchPipeline, PipelineStage
 from slipp.services.launch.stages import (
     AppRolesStage,
     CaddyConfigStage,
@@ -35,10 +38,20 @@ from slipp.services.launch.stages import (
     ValidationStage,
 )
 
+C_contra = TypeVar("C_contra", contravariant=True)
+
+
+class PipelineStage(Protocol[C_contra]):
+    """Protocol for pipeline stages."""
+
+    def execute(self, context: C_contra) -> None:
+        """Execute stage, modifying context in place."""
+        ...
+
 
 def run_full_pipeline(context: FullContext) -> None:
     """Scan the codebase and generate a complete Ansible project."""
-    stages: list[PipelineStage[FullContext]] = [
+    stages: Sequence[PipelineStage[FullContext]] = [
         ValidationStage(),
         ProjectScanStage(),
         InventoryLoadStage(),
@@ -55,29 +68,32 @@ def run_full_pipeline(context: FullContext) -> None:
         RegistrationStage(),
         SummaryStage(),
     ]
-    LaunchPipeline(stages).execute(context)
+    for stage in stages:
+        stage.execute(context)
 
 
 def run_dockerfile_pipeline(context: DockerfileContext) -> None:
     """Scan the codebase and generate Dockerfiles only."""
-    stages: list[PipelineStage[DockerfileContext]] = [
+    stages: Sequence[PipelineStage[DockerfileContext]] = [
         ValidationStage(),
         ProjectScanStage(),
         DockerfileGenerationStage(TemplateGenerator()),
     ]
-    LaunchPipeline(stages).execute(context)
+    for stage in stages:
+        stage.execute(context)
 
 
 def run_scaffold_pipeline(context: ScaffoldContext) -> None:
     """Create Ansible inventory for an existing project."""
-    stages: list[PipelineStage[ScaffoldContext]] = [
+    stages: Sequence[PipelineStage[ScaffoldContext]] = [
         ScaffoldValidationStage(),
         ScaffoldPromptStage(),
         ScaffoldInventoryStage(),
         ScaffoldRegistrationStage(),
         ScaffoldSummaryStage(),
     ]
-    LaunchPipeline(stages).execute(context)
+    for stage in stages:
+        stage.execute(context)
 
 
 __all__ = [
