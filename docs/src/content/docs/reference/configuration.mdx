@@ -20,6 +20,13 @@ The `slipp.yaml` file configures a project for slipp operations.
 
 Created automatically by `slipp launch` or `slipp deploy --name`.
 
+:::tip[Subdirectory support]
+slipp commands work from any subdirectory of a project — they walk up the directory
+tree to find `slipp.yaml`, like git or npm. Write operations (config updates, run
+profile saves) target the discovered root. Only `slipp projects add` binds to the
+current directory (to avoid accidentally writing into a parent project's config).
+:::
+
 ## Full Example
 
 ```yaml title="slipp.yaml"
@@ -36,8 +43,8 @@ galaxy_path: roles/galaxy
 # Secrets
 vault: inventory/host_vars/myserver/vault.yml
 
-# Container runtime (auto-detected if omitted)
-runtime: podman
+# Runtime (auto-detected if omitted)
+runtime: docker
 
 # Managed roles (for filtering in slipp ps)
 managed_roles:
@@ -50,6 +57,18 @@ tag_presets:
   setup: "--tags setup-all --skip-tags start"
   restart: "--tags restart"
   update: "--tags update-app"
+
+# Run profiles for local development
+runs:
+  dev:
+    cmd: npm run dev
+    tunnels:
+      out: [5173:app.example.com@myserver]
+    vaults: [myapp]
+  dev-staging:
+    extends: dev
+    env:
+      - VITE_ENV=staging
 ```
 
 ## Fields
@@ -73,7 +92,8 @@ Path to Ansible inventory file, relative to project root.
 inventory: inventory/hosts
 ```
 
-Default: `inventory/hosts`
+Default: `inventory.yml` (or `inventory-{env}.yml` for non-production environments).
+Optional — projects that only use run profiles (no deploy target) don't need an inventory.
 
 ### playbook
 
@@ -127,13 +147,18 @@ Used by:
 
 ### runtime
 
-Container runtime: `docker` or `podman`.
+How the app runs on the server: `systemd`, `docker`, or `podman`.
 
 ```yaml
-runtime: podman
+runtime: docker
 ```
 
-Auto-detected from playbook if omitted.
+`docker` and `podman` generate container-based deployments (Dockerfile, compose,
+container-specific Ansible collections). `systemd` generates a native app deployment
+(direct process management, no containers).
+
+Auto-detected from playbook if omitted (container runtimes only — `systemd` must be
+set explicitly).
 
 ### managed_roles
 
@@ -164,6 +189,37 @@ Use with:
 slipp deploy install
 slipp deploy setup
 ```
+
+### runs
+
+Run profiles for local development. Each key is a profile name. See
+[Local Development](/guides/local-development) for concepts and
+[`slipp run`](/reference/cli#run) for CLI usage.
+
+```yaml
+runs:
+  dev:
+    cmd: npm run dev
+    vaults: [myapp]
+    env:
+      - NODE_ENV=development
+    tunnels:
+      out: [5173:app.example.com@myserver]
+      in: [postgres:5432@myserver]
+      auth: "user:<bcrypt-hash>"
+    proxy:
+      - from: app.example.com/api
+        to: localhost:8080/api
+        host: myserver
+  dev-staging:
+    extends: dev
+    env:
+      - VITE_ENV=staging
+```
+
+A profile can inherit from another with `extends` — the child's fields replace
+the parent's (no merging). Personal overrides go in the untracked
+`.slipp/runs.local.yaml` (same name shadows the tracked profile entirely).
 
 ## Inventory Format
 

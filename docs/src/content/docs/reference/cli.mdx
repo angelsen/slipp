@@ -97,12 +97,8 @@ slipp logs synapse -n 100
 Display detailed service status (like `systemctl status`).
 
 ```bash
-slipp status <service> [OPTIONS]
+slipp status <service>
 ```
-
-| Option | Description |
-|--------|-------------|
-| `--all` | Include system services in discovery |
 
 ### exec
 
@@ -326,8 +322,7 @@ Generate specific Ansible project files.
 slipp generate dockerfile [OPTIONS]
 ```
 
-Generate only Dockerfiles for detected services. Use `--runtime docker|podman`
-(default: `docker`) to select the target container runtime.
+Generate only Dockerfiles for detected services.
 
 #### generate scaffold
 
@@ -339,11 +334,7 @@ Generate project scaffolding without Dockerfiles.
 
 #### generate full
 
-```bash
-slipp generate full [OPTIONS]
-```
-
-Generate complete project (Dockerfiles + scaffolding).
+Alias for [`slipp launch`](#launch) — generates the complete project (Dockerfiles + scaffolding).
 
 ---
 
@@ -661,6 +652,29 @@ slipp projects add <name> [OPTIONS]
 ```
 
 Register the current directory as a project.
+
+| Option | Description |
+|--------|-------------|
+| `-i, --inventory` | Inventory file path (auto-detected if not specified) |
+| `--playbook` | Playbook file path (auto-detected if not specified) |
+| `--roles` | Role search directories (auto-detected if not specified) |
+| `--galaxy-path` | Install path for external roles from requirements.yml |
+| `--vault` | Path to vault.yml for secret management |
+
+<Tabs>
+<TabItem label="Examples">
+```bash
+# Auto-detect everything
+slipp projects add myapp
+
+# Explicit inventory
+slipp projects add myapp -i inventory/hosts
+
+# Full setup
+slipp projects add myapp -i inventory/hosts --vault inventory/host_vars/myhost/vault.yml
+```
+</TabItem>
+</Tabs>
 
 #### projects remove
 
