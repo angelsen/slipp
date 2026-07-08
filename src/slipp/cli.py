@@ -66,7 +66,9 @@ def main(
     output.set_output_format(output_format)
 
     if verbose:
-        output.info("Verbose logging enabled")
+        import logging
+
+        logging.basicConfig(level=logging.DEBUG, format="%(name)s: %(message)s")
 
 
 app.add_typer(bootstrap_app, name="bootstrap")
