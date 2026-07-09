@@ -440,6 +440,10 @@ network/routing it's exposed through.
 - [x] Provision: resume-able flow — state saved to `~/.config/slipp/provisions/<name>.yaml`
       after ordering, so `slipp provision <name>` resumes poll→bootstrap→register
       if interrupted. Phases: ordered → provisioned → (deleted on completion).
+- [ ] Bootstrap/provision: log SSH command output to `.slipp/logs/` for post-mortem
+      debugging (same pattern as deploy's ansible-playbook logs)
+- [ ] `slipp server install --continue` — list/pick from in-progress installs across
+      all servers (for multi-project, multi-VPS workflows)
 - [ ] Cloudflare provider (DNS-only, uses official Python SDK)
 
 ---

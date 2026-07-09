@@ -18,8 +18,8 @@ from slipp.utils.errors import ProvisionError
 
 DEPLOY_POLL_INTERVAL = 5
 DEPLOY_TIMEOUT = 3600
-SSH_READY_TIMEOUT = 120
-SSH_READY_INTERVAL = 5
+SSH_READY_TIMEOUT = 600
+SSH_READY_INTERVAL = 1
 STALE_THRESHOLD_HOURS = 24
 
 
@@ -176,6 +176,7 @@ def select_os(client: GigahostClient) -> int:
 def poll_deploy_status(client: GigahostClient, order_ids: list[int]) -> dict[str, Any]:
     """Poll GET /deploy/status until all servers are ready."""
     output.warning("Server installation can take up to 60 minutes")
+    output.hint("Ctrl+C to cancel — re-run the same command to resume")
     elapsed = 0
     with output.spinner("Provisioning server...") as update:
         while elapsed < DEPLOY_TIMEOUT:
@@ -193,11 +194,14 @@ def poll_deploy_status(client: GigahostClient, order_ids: list[int]) -> dict[str
     )
 
 
-def wait_for_ssh(host: str) -> None:
+def wait_for_ssh(host: str, *, started_at: datetime | None = None) -> None:
     """Poll until SSH accepts connections, adding host key to known_hosts."""
-    elapsed = 0
+    output.hint("Ctrl+C to cancel — re-run the same command to resume")
+    t0 = time.monotonic()
+    epoch = started_at or datetime.now()
     with output.spinner("Waiting for SSH...") as update:
-        while elapsed < SSH_READY_TIMEOUT:
+        while time.monotonic() - t0 < SSH_READY_TIMEOUT:
+            elapsed = int((datetime.now() - epoch).total_seconds())
             try:
                 with socket.create_connection((host, 22), timeout=3):
                     pass
@@ -219,7 +223,6 @@ def wait_for_ssh(host: str) -> None:
             except (OSError, subprocess.TimeoutExpired):
                 update(f"waiting ({elapsed}s)")
                 time.sleep(SSH_READY_INTERVAL)
-                elapsed += SSH_READY_INTERVAL
 
     raise ProvisionError(f"SSH not reachable after {SSH_READY_TIMEOUT}s on {host}:22")
 
@@ -273,7 +276,7 @@ def _poll_and_wait(client: GigahostClient, state: ProvisionState) -> tuple[str, 
         )
     )
 
-    wait_for_ssh(ip)
+    wait_for_ssh(ip, started_at=state.created_at)
     return ip, srv_id
 
 
@@ -295,7 +298,7 @@ def _resume_provision(client: GigahostClient, state: ProvisionState) -> tuple[st
                 f"Provision state for '{state.name}' is missing ip or srv_id"
             )
         output.info(f"Server {state.ip} already provisioned, checking SSH...")
-        wait_for_ssh(state.ip)
+        wait_for_ssh(state.ip, started_at=state.created_at)
         return state.ip, state.srv_id
 
     raise ProvisionError(f"Unexpected provision phase: {state.phase}")
@@ -323,9 +326,11 @@ def provision_and_bootstrap(client: GigahostClient, name: str) -> tuple[str, int
     return _bootstrap_and_finish(ip, srv_id, name)
 
 
-def _bootstrap_and_finish(ip: str, srv_id: int, name: str) -> tuple[str, int]:
+def _bootstrap_and_finish(
+    ip: str, srv_id: int, name: str, *, started_at: datetime | None = None
+) -> tuple[str, int]:
     """Wait for SSH, bootstrap slipp user, clean up state file."""
-    wait_for_ssh(ip)
+    wait_for_ssh(ip, started_at=started_at)
     output.success(f"Server ready: {ip}")
     output.info("Bootstrapping SSH user...")
     provision_account(ip, "root", None, 22, "slipp", dry_run=False)
@@ -345,7 +350,9 @@ def install_server(
             f"Resuming install for '{display}' "
             f"(started: {state.created_at:%Y-%m-%d %H:%M})"
         )
-        return _bootstrap_and_finish(ip, srv_id, display)
+        return _bootstrap_and_finish(
+            ip, srv_id, display, started_at=state.created_at
+        )
 
     if not force:
         if not typer.confirm(
@@ -361,10 +368,12 @@ def install_server(
     output.info("Reinstalling server...")
     client.reinstall_server(srv_id, os_id, hostname=display, key_id=key_id)
 
+    now = datetime.now()
     ProvisionStateService.save(
         ProvisionState(
-            name=display, srv_id=srv_id, ip=ip, phase=ProvisionPhase.INSTALLING
+            name=display, srv_id=srv_id, ip=ip, phase=ProvisionPhase.INSTALLING,
+            created_at=now, updated_at=now,
         )
     )
 
-    return _bootstrap_and_finish(ip, srv_id, display)
+    return _bootstrap_and_finish(ip, srv_id, display, started_at=now)
