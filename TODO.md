@@ -448,6 +448,57 @@ network/routing it's exposed through.
 
 ---
 
+## Many-to-many: projects × servers
+
+Today slipp is 1:1 (one `slipp.yaml` → one inventory → one server). Real
+deployments are N:M — multiple services share a server, one project deploys
+to staging + prod, etc.
+
+**Missing piece:** a deployment registry — "server X runs services A, B, C."
+`wg-manage`'s service list already is this for the network layer; slipp needs
+its own equivalent or should read from `wg-manage`.
+
+Open questions:
+- Per-environment inventories (`slipp deploy staging` / `slipp deploy prod`)
+  partially works via `--env` but the UX is rough
+- Shared-server deploys don't know about each other (port conflicts, shared Caddy)
+- No global view of what's deployed where (`slipp servers list` shows servers
+  but not their services)
+
+---
+
+## Port existing projects to slipp (before bulletins-chat)
+
+Test slipp against real workloads to find gaps before the first "real" deployment.
+
+### Candidates
+
+| Project | Stack | Current deploy | Target | Fit |
+|---------|-------|---------------|--------|-----|
+| **lanpad** (`~/Projects/work/MyMechanic/mym-verksted-pluss/lanpad/`) | Python/FastAPI, systemd | git push → post-receive → uv sync → restart | Internal VM | Good — systemd runtime supported |
+| **partbridge** (`~/Projects/work/MyMechanic/mym-verksted-pluss/tools/partbridge/`) | Python/FastMCP, systemd | git push → post-receive → uv sync → health check → auto-rollback | Same VM | Good, but has rollback logic slipp lacks |
+| **scans/portal** (`~/Projects/work/ultraportalen/scans/`) | SvelteKit, systemd | git push → post-receive → npm ci → build → rsync → restart | VPS (Gigahost, wg-manage Caddy) | Best fit — already uses wg-manage |
+| **scans/admin** (`~/Projects/work/ultraportalen/scans/`) | SvelteKit, LaunchAgent | git push → deploy.sh → build → drizzle push → restart | Bente's Mac | No — macOS, not a VPS |
+
+### Gaps these would surface
+
+- **Rollback** — partbridge has health-check + auto-rollback on failed deploy.
+  slipp has no rollback mechanism.
+- **Database migrations** — scans runs `drizzle db:push` during deploy. slipp's
+  playbook template has no migration hook.
+- **Git-push-to-deploy** — all three use `git push deploy main`. Two approaches:
+  1. Replace entirely: run `slipp deploy` from dev machine instead of pushing
+  2. Hybrid: keep push trigger but the post-receive hook runs `slipp deploy`
+     instead of bespoke shell scripts
+  3. `slipp deploy --mode push` generates bare repo + post-receive hook
+- **Shared server** — lanpad and partbridge deploy to the same VM. Need to handle
+  multiple projects targeting one host without conflicts.
+- **Python app role** — `slipp launch`'s systemd template uses Node.js (`npm ci &&
+  npm run build`). Python apps need `uv sync` instead. The scanner detects Flask
+  but the generated role assumes Node.
+
+---
+
 ## Provider Integrations
 
 ### Goal
