@@ -1,12 +1,9 @@
-"""Caddy reverse proxy configuration stages for deployment.
-
-This module provides stages for building and generating Caddy
-configuration files during the launch/deployment process.
-"""
+"""Caddy reverse proxy configuration stages for deployment."""
 
 from pathlib import Path
 
 from slipp import output
+from slipp.utils.network import is_ip_address
 from slipp.generator.caddy_generator import CaddyGenerator
 from slipp.models.deployment import (
     CaddyConfig,
@@ -96,11 +93,13 @@ class CaddyConfigStage:
             output.info("Configuring Caddy reverse proxy...")
 
             app_domain = require(first_host.app_domain, "app_domain")
+            is_ip = is_ip_address(app_domain)
+            caddy_domain = ":80" if is_ip else app_domain
 
-            caddy_sites = build_caddy_sites(context.services, app_domain)
+            caddy_sites = build_caddy_sites(context.services, caddy_domain)
             caddy_config = CaddyConfig(
                 sites=caddy_sites,
-                auto_https=True,
+                auto_https=not is_ip,
                 staging=False,
             )
 

@@ -14,7 +14,7 @@ from slipp.services.providers.gigahost import GigahostClient
 from slipp.utils.errors import ProvisionError
 
 DEPLOY_POLL_INTERVAL = 5
-DEPLOY_TIMEOUT = 600
+DEPLOY_TIMEOUT = 3600
 SSH_READY_TIMEOUT = 120
 SSH_READY_INTERVAL = 5
 
@@ -158,6 +158,7 @@ def select_os(client: GigahostClient) -> int:
 
 def poll_deploy_status(client: GigahostClient, order_ids: list[int]) -> dict[str, Any]:
     """Poll GET /deploy/status until all servers are ready."""
+    output.warning("Server installation can take up to 60 minutes")
     elapsed = 0
     with output.spinner("Provisioning server...") as update:
         while elapsed < DEPLOY_TIMEOUT:

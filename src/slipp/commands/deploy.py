@@ -9,10 +9,12 @@ from slipp import output
 from slipp.commands.common import DryRunOption
 from slipp.constants import DEFAULT_ENV, DEFAULT_GALAXY_PATH
 from slipp.utils.files import get_log_dir
+from slipp.utils.network import is_ip_address
 from slipp.output import format_path
 from slipp.services.config import (
     ConfigResolver,
     LocalConfigService,
+    resolve_app_domain,
     resolve_project_name,
 )
 from slipp.services.deploy import (
@@ -154,6 +156,11 @@ def deploy_command(
 
     if result.exit_code == 0:
         output.success_animation("Deploy completed")
+
+        domain = resolve_app_domain(project_root)
+        if domain:
+            scheme = "http" if is_ip_address(domain) else "https"
+            output.hint(f"  {scheme}://{domain}")
 
         if (
             any([inventory, playbook, roles_list, galaxy_path_flag, vault])

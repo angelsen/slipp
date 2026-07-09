@@ -150,7 +150,7 @@ def up_command(
     step("Deploying...")
     deploy_command(target=environment)
 
-    output.success(f"slipp up complete -- https://{resolved_domain}")
+    output.success("slipp up complete")
 
 
 __all__ = ["up_command"]

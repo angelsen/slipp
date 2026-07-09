@@ -72,6 +72,7 @@ class CaddyGenerator:
                 "caddy_staging": config.staging,
                 "caddy_sites_dir": config.sites_dir,
                 "app_domain": app_domain,
+                "caddy_auto_https": config.auto_https,
             },
             label="Caddyfile.j2",
         )

@@ -108,14 +108,14 @@ def get_inventory_config(
     output.blank()
     output.info("Runtime")
     output.hint("Choose how the app runs on the server:")
-    output.hint("  docker  - Container, recommended, broader compatibility")
     output.hint("  podman  - Container, rootless, no daemon")
+    output.hint("  docker  - Container, broader compatibility")
     output.hint("  systemd - Native process, no container runtime needed")
     output.blank()
 
     valid_runtimes = [r.value for r in Runtime]
     while True:
-        runtime = typer.prompt("Runtime", default=Runtime.DOCKER.value)
+        runtime = typer.prompt("Runtime", default=Runtime.PODMAN.value)
         if runtime in valid_runtimes:
             break
         output.warning(

@@ -9,12 +9,21 @@
 - name: Provision and deploy {{ project_name }}
   hosts: all
   become: true
-{% if runtime != 'systemd' %}
+{% if runtime == 'docker' %}
 
   pre_tasks:
-    - name: Install container runtime
+    - name: Install Docker
       ansible.builtin.package:
-        name: "{{ runtime }}"
+        name:
+          - docker.io
+          - python3-requests
+        state: present
+{% elif runtime == 'podman' %}
+
+  pre_tasks:
+    - name: Install Podman
+      ansible.builtin.package:
+        name: podman
         state: present
 {% endif %}
 

@@ -426,19 +426,17 @@ network/routing it's exposed through.
 
 ### Post-e2e fixes (from live VPS testing 2026-07-08)
 
-- [ ] Bootstrap: install python3 + rsync on fresh Debian (Ansible requires both,
-      Debian 13 minimal includes neither). Add `_install_prerequisites` step to
+- [x] Bootstrap: install python3 + rsync on fresh Debian (Ansible requires both,
+      Debian 13 minimal includes neither). Added `_install_prerequisites` step to
       `services/bootstrap/account.py`.
-- [ ] Playbook template: `{{ runtime }}` used as package name but Debian/Ubuntu
-      package is `docker.io` not `docker`. Map runtime → package name in template
-      (`generator/templates/playbook.yml.j2`). Also add `python3-requests` to
-      pre_tasks (required by Docker Ansible module).
-- [ ] Runtime prompt: show podman above docker (user preference — podman-first).
-      Change order in `utils/prompts.py`.
-- [ ] Deploy: print app URL at the end (`https://{app_domain}` from inventory).
-- [ ] Caddy template: IP-only deploys (no domain) should serve on `:80` instead
-      of attempting HTTPS with Let's Encrypt (which fails for IP addresses).
-- [ ] Provision: show "this can take up to 60 minutes" warning during install polling.
+- [x] Playbook template: `{{ runtime }}` used as package name but Debian/Ubuntu
+      package is `docker.io` not `docker`. Mapped runtime → correct packages in
+      template (`generator/templates/playbook.yml.j2`). Docker gets `docker.io` +
+      `python3-requests`.
+- [x] Runtime prompt: podman above docker, podman as default.
+- [x] Deploy: print app URL at the end (https for domains, http for IPs).
+- [x] Caddy template: IP-only deploys serve on `:80` with `auto_https off`.
+- [x] Provision: show "up to 60 minutes" warning, timeout raised to 3600s.
 - [ ] Provision: resume-able flow — save order state to `.slipp/provisions/<name>.yaml`
       on order, so `slipp provision <name>` resumes poll→bootstrap→register if
       interrupted. State file: `{order_id, srv_id, name, created_at, status}`.

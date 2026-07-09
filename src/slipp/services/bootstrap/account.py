@@ -8,6 +8,21 @@ from slipp.services.ssh import SSHService
 from slipp.utils.errors import BootstrapError, SSHCommandError, SSHConnectionError
 
 
+def _install_prerequisites(ssh: SSHService, dry_run: bool) -> None:
+    """Install packages Ansible requires (python3, rsync) if missing."""
+    output.info("1. Installing prerequisites...")
+
+    if dry_run:
+        output.hint("Would run: apt-get update && apt-get install -y python3 rsync")
+        return
+
+    ssh.execute("apt-get update -qq").check("Failed to update package lists")
+    ssh.execute("apt-get install -y python3 rsync").check(
+        "Failed to install prerequisites"
+    )
+    output.success("Prerequisites installed (python3, rsync)")
+
+
 def _create_user(ssh: SSHService, username: str, dry_run: bool) -> None:
     """Create slipp user account.
 
@@ -16,7 +31,7 @@ def _create_user(ssh: SSHService, username: str, dry_run: bool) -> None:
         username: Username to create.
         dry_run: If True, show what would be done without making changes.
     """
-    output.info("1. Creating user account...")
+    output.info("2. Creating user account...")
 
     if dry_run:
         output.hint(f"Would run: useradd -m -s /bin/bash {username}")
@@ -48,7 +63,7 @@ def _copy_ssh_keys(
     Raises:
         BootstrapError: If root has no SSH keys to copy.
     """
-    output.info("2. Copying SSH keys...")
+    output.info("3. Copying SSH keys...")
 
     if dry_run:
         output.hint(f"Would copy /root/.ssh to /home/{slipp_user}/.ssh")
@@ -88,7 +103,7 @@ def _configure_sudoers(ssh: SSHService, username: str, dry_run: bool) -> None:
     Raises:
         BootstrapError: If the generated sudoers file fails syntax validation.
     """
-    output.info("3. Configuring sudoers...")
+    output.info("4. Configuring sudoers...")
 
     sudoers_content = f"""# slipp service account - full sudo access
 # Authentication: SSH key (passphrase-protected)
@@ -137,7 +152,7 @@ def _verify_setup(host: str, port: int, username: str, ssh_key: Path | None) -> 
     Raises:
         BootstrapError: If connection or command execution fails.
     """
-    output.info("4. Verifying setup...")
+    output.info("5. Verifying setup...")
 
     slipp_config = AnsibleHost(
         inventory_hostname="bootstrap-verify",
@@ -209,6 +224,7 @@ def provision_account(
     )
 
     with SSHService(root_config) as ssh:
+        _install_prerequisites(ssh, dry_run)
         _create_user(ssh, slipp_user, dry_run)
         _copy_ssh_keys(ssh, root_user, slipp_user, dry_run)
         _configure_sudoers(ssh, slipp_user, dry_run)

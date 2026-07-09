@@ -6,10 +6,37 @@ supporting the standard inventory.yml format used by slipp.
 
 from pathlib import Path
 
+import yaml
+
 from slipp.models.deployment import InventoryConfig
 from slipp.models.host import AnsibleHost
 from slipp.services.ansible import run_inventory
 from slipp.utils.errors import HostNotFoundError, InventoryParseError
+
+
+def resolve_app_domain(project_root: Path) -> str | None:
+    """Best-effort extraction of app_domain from the raw inventory YAML.
+
+    Reads the inventory file directly (not via ansible-inventory, which drops
+    app_domain) and returns the first host's app_domain, or None if anything
+    is missing or unparseable.
+    """
+    from slipp.services.config.local import LocalConfigService
+
+    try:
+        local_config = LocalConfigService.load(project_root)
+        if not local_config or not local_config.inventory:
+            return None
+        inventory_path = project_root / local_config.inventory
+        if not inventory_path.exists():
+            return None
+        data = yaml.safe_load(inventory_path.read_text()) or {}
+        inv = InventoryConfig.from_ansible_format(data)
+        if not inv.hosts:
+            return None
+        return inv.first_host.app_domain
+    except Exception:
+        return None
 
 
 def load_project_ansible_hosts(project_path: Path) -> list[AnsibleHost]:
