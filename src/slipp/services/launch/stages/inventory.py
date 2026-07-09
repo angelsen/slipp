@@ -8,6 +8,7 @@ from slipp import output
 from slipp.constants import get_inventory_filename
 from slipp.generator.inventory_generator import generate_inventory
 from slipp.models.deployment import DeploymentHostConfig, InventoryConfig
+from slipp.utils.network import is_ip_address
 from slipp.models.service import Runtime
 from slipp.services.launch.context import FullContext
 from slipp.services.launch.stages.common import FileGenerationStage, require
@@ -96,7 +97,9 @@ class InventoryValidationStage:
                 "For external projects, use 'slipp deploy -i/-p' instead"
             )
 
-        if not first_host.admin_email:
+        if not first_host.admin_email and not is_ip_address(
+            first_host.app_domain
+        ):
             raise LaunchError(
                 "Launch command requires admin_email in inventory\n"
                 "For external projects, use 'slipp deploy -i/-p' instead"
