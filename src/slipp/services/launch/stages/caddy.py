@@ -153,7 +153,9 @@ class CaddyRoleStage(FileGenerationStage[FullContext]):
         first_host = inventory_config.first_host
 
         app_domain = require(first_host.app_domain, "app_domain")
-        admin_email = require(first_host.admin_email, "admin_email")
+        admin_email = first_host.admin_email or ""
+        if provision_config.caddy_config.auto_https:
+            admin_email = require(first_host.admin_email, "admin_email")
 
         caddy_generator = CaddyGenerator()
 

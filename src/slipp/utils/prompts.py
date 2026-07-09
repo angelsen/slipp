@@ -11,6 +11,7 @@ from slipp.models.host import AnsibleHost
 from slipp.models.service import Runtime
 from slipp.services.ssh import SSHService
 from slipp.utils.errors import SSHAuthenticationError, SSHConnectionError
+from slipp.utils.network import is_ip_address
 
 
 def _test_ssh_connectivity(host: str, user: str, port: int) -> bool:
@@ -100,10 +101,13 @@ def get_inventory_config(
     ansible_user = typer.prompt("SSH user", default=DEFAULT_SSH_USER)
     ansible_port = typer.prompt("SSH port", default=DEFAULT_SSH_PORT, type=int)
     app_domain = typer.prompt("App domain")
-    admin_email = typer.prompt(
-        "Admin email (for HTTPS certificates)",
-        default=f"admin@{app_domain}" if "@" not in app_domain else "",
-    )
+    if is_ip_address(app_domain):
+        admin_email = None
+    else:
+        admin_email = typer.prompt(
+            "Admin email (for HTTPS certificates)",
+            default=f"admin@{app_domain}" if "@" not in app_domain else "",
+        )
 
     output.blank()
     output.info("Runtime")
