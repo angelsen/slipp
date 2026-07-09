@@ -23,6 +23,24 @@ SSH_READY_INTERVAL = 5
 STALE_THRESHOLD_HOURS = 24
 
 
+def resolve_server(
+    client: GigahostClient, name_or_ip: str
+) -> tuple[int, str, str]:
+    """Resolve a server by name or primary IP.
+
+    Returns:
+        (srv_id, display_name, ip)
+    """
+    servers: list[dict[str, Any]] = client.list_servers()
+    for s in servers:
+        display = s.get("srv_name") or s.get("srv_hostname") or ""
+        ip = s.get("srv_primary_ip") or ""
+        if display == name_or_ip or ip == name_or_ip:
+            return s["srv_id"], display or name_or_ip, ip
+
+    raise ProvisionError(f"No server found matching '{name_or_ip}'")
+
+
 def _find_key_id(account: dict[str, Any], name: str, pubkey: str) -> int | None:
     """Find an SSH key ID by name or key data in the account's sshkeys list."""
     for key in account.get("sshkeys", []):
@@ -236,6 +254,8 @@ def provision_server(client: GigahostClient, name: str) -> tuple[str, int]:
 
 def _poll_and_wait(client: GigahostClient, state: ProvisionState) -> tuple[str, int]:
     """Poll for server readiness, save provisioned state, wait for SSH."""
+    if not state.order_ids:
+        raise ProvisionError("Cannot poll deploy status without order IDs")
     server = poll_deploy_status(client, state.order_ids)
     ip = server.get("ip")
     srv_id = server.get("srv_id")
@@ -300,10 +320,51 @@ def provision_and_bootstrap(client: GigahostClient, name: str) -> tuple[str, int
     else:
         ip, srv_id = provision_server(client, name)
 
-    output.success(f"Server ready: {ip}")
+    return _bootstrap_and_finish(ip, srv_id, name)
 
+
+def _bootstrap_and_finish(ip: str, srv_id: int, name: str) -> tuple[str, int]:
+    """Wait for SSH, bootstrap slipp user, clean up state file."""
+    wait_for_ssh(ip)
+    output.success(f"Server ready: {ip}")
     output.info("Bootstrapping SSH user...")
     provision_account(ip, "root", None, 22, "slipp", dry_run=False)
-
     ProvisionStateService.delete(name)
     return ip, srv_id
+
+
+def install_server(
+    client: GigahostClient, name_or_ip: str, *, force: bool = False
+) -> tuple[str, int] | None:
+    """Reinstall OS on an existing server and bootstrap the slipp user."""
+    srv_id, display, ip = resolve_server(client, name_or_ip)
+
+    state = ProvisionStateService.load(display)
+    if state and state.phase == ProvisionPhase.INSTALLING:
+        output.info(
+            f"Resuming install for '{display}' "
+            f"(started: {state.created_at:%Y-%m-%d %H:%M})"
+        )
+        return _bootstrap_and_finish(ip, srv_id, display)
+
+    if not force:
+        if not typer.confirm(
+            f"Wipe and reinstall '{display}' ({ip})?", default=False
+        ):
+            output.info("Cancelled")
+            return None
+
+    os_id = select_os(client)
+    pubkey_path = find_ssh_public_key()
+    key_id = ensure_ssh_key(client, f"slipp-{display}", pubkey_path)
+
+    output.info("Reinstalling server...")
+    client.reinstall_server(srv_id, os_id, hostname=display, key_id=key_id)
+
+    ProvisionStateService.save(
+        ProvisionState(
+            name=display, srv_id=srv_id, ip=ip, phase=ProvisionPhase.INSTALLING
+        )
+    )
+
+    return _bootstrap_and_finish(ip, srv_id, display)

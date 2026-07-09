@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 class ProvisionPhase(StrEnum):
     ORDERED = "ordered"
     PROVISIONED = "provisioned"
+    INSTALLING = "installing"
 
 
 class ProvisionState(BaseModel):
@@ -19,7 +20,7 @@ class ProvisionState(BaseModel):
     """
 
     name: str = Field(..., min_length=1)
-    order_ids: list[int] = Field(..., min_length=1)
+    order_ids: list[int] | None = None
     srv_id: int | None = None
     ip: str | None = None
     phase: ProvisionPhase = ProvisionPhase.ORDERED

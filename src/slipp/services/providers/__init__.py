@@ -8,7 +8,12 @@ from slipp.services.providers.config import ProviderConfigService
 from slipp.services.providers.dns import DNSProvider, DNSRecord, DNSZone, sync_dns
 from slipp.services.providers.domains import register_domain_interactive
 from slipp.services.providers.gigahost import GigahostClient
-from slipp.services.providers.provision import provision_and_bootstrap, provision_server
+from slipp.services.providers.provision import (
+    install_server,
+    provision_and_bootstrap,
+    provision_server,
+    resolve_server,
+)
 from slipp.services.providers.state import ProvisionStateService
 from slipp.utils.errors import DNSSyncError, ProviderNotConfiguredError
 
@@ -50,6 +55,8 @@ __all__ = [
     "get_gigahost_client",
     "provision_and_bootstrap",
     "provision_server",
+    "install_server",
+    "resolve_server",
     "ProvisionStateService",
     "register_domain_interactive",
     "resolve_dns_provider",
