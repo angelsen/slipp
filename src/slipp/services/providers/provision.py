@@ -3,20 +3,24 @@
 import socket
 import subprocess
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import typer
 
 from slipp import output
+from slipp.models.provision import ProvisionPhase, ProvisionState
 from slipp.services.bootstrap import provision_account
 from slipp.services.providers.gigahost import GigahostClient
+from slipp.services.providers.state import ProvisionStateService
 from slipp.utils.errors import ProvisionError
 
 DEPLOY_POLL_INTERVAL = 5
 DEPLOY_TIMEOUT = 3600
 SSH_READY_TIMEOUT = 120
 SSH_READY_INTERVAL = 5
+STALE_THRESHOLD_HOURS = 24
 
 
 def _find_key_id(account: dict[str, Any], name: str, pubkey: str) -> int | None:
@@ -47,9 +51,7 @@ def find_ssh_public_key() -> Path:
         return candidates[0]
 
     output.task("Available SSH keys")
-    output.table(
-        [{"#": i, "key": c.name} for i, c in enumerate(candidates, 1)]
-    )
+    output.table([{"#": i, "key": c.name} for i, c in enumerate(candidates, 1)])
     choice = typer.prompt("Pick an SSH key", type=int, default=1)
     return candidates[max(1, min(choice, len(candidates))) - 1]
 
@@ -129,10 +131,7 @@ def select_os(client: GigahostClient) -> int:
 
     output.task("Available distributions")
     output.table(
-        [
-            {"#": i, "name": d.get("dist_name")}
-            for i, d in enumerate(distros, 1)
-        ]
+        [{"#": i, "name": d.get("dist_name")} for i, d in enumerate(distros, 1)]
     )
     choice = typer.prompt("Pick a distribution", type=int, default=debian_idx + 1)
     chosen_distro = distros[max(1, min(choice, len(distros))) - 1]
@@ -191,7 +190,9 @@ def wait_for_ssh(host: str) -> None:
                 )
                 scan = subprocess.run(
                     ["ssh-keyscan", "-H", host],
-                    capture_output=True, text=True, timeout=10,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
                 )
                 if scan.stdout.strip():
                     with open(Path.home() / ".ssh" / "known_hosts", "a") as f:
@@ -202,9 +203,7 @@ def wait_for_ssh(host: str) -> None:
                 time.sleep(SSH_READY_INTERVAL)
                 elapsed += SSH_READY_INTERVAL
 
-    raise ProvisionError(
-        f"SSH not reachable after {SSH_READY_TIMEOUT}s on {host}:22"
-    )
+    raise ProvisionError(f"SSH not reachable after {SSH_READY_TIMEOUT}s on {host}:22")
 
 
 def provision_server(client: GigahostClient, name: str) -> tuple[str, int]:
@@ -229,28 +228,82 @@ def provision_server(client: GigahostClient, name: str) -> tuple[str, int]:
         ssh_keys=[key_id] if key_id else None,
     )
 
-    server = poll_deploy_status(client, order_ids)
+    state = ProvisionState(name=name, order_ids=order_ids)
+    ProvisionStateService.save(state)
+
+    return _poll_and_wait(client, state)
+
+
+def _poll_and_wait(client: GigahostClient, state: ProvisionState) -> tuple[str, int]:
+    """Poll for server readiness, save provisioned state, wait for SSH."""
+    server = poll_deploy_status(client, state.order_ids)
     ip = server.get("ip")
     srv_id = server.get("srv_id")
     if not ip or not srv_id:
         raise ProvisionError("Deploy completed but no IP/server ID was returned")
 
-    wait_for_ssh(ip)
+    ProvisionStateService.save(
+        state.model_copy(
+            update={
+                "ip": ip,
+                "srv_id": srv_id,
+                "phase": ProvisionPhase.PROVISIONED,
+                "updated_at": datetime.now(),
+            }
+        )
+    )
 
+    wait_for_ssh(ip)
     return ip, srv_id
 
 
-def provision_and_bootstrap(
-    client: GigahostClient, name: str
-) -> tuple[str, int]:
+def _resume_provision(client: GigahostClient, state: ProvisionState) -> tuple[str, int]:
+    """Resume a previously started provision from its saved phase."""
+    age = datetime.now() - state.created_at
+    if age.total_seconds() > STALE_THRESHOLD_HOURS * 3600:
+        output.warning(
+            f"This provision was started {age.days}d {age.seconds // 3600}h ago"
+        )
+
+    if state.phase == ProvisionPhase.ORDERED:
+        output.info(f"Polling for server readiness (order {state.order_ids})...")
+        return _poll_and_wait(client, state)
+
+    if state.phase == ProvisionPhase.PROVISIONED:
+        if state.ip is None or state.srv_id is None:
+            raise ProvisionError(
+                f"Provision state for '{state.name}' is missing ip or srv_id"
+            )
+        output.info(f"Server {state.ip} already provisioned, checking SSH...")
+        wait_for_ssh(state.ip)
+        return state.ip, state.srv_id
+
+    raise ProvisionError(f"Unexpected provision phase: {state.phase}")
+
+
+def provision_and_bootstrap(client: GigahostClient, name: str) -> tuple[str, int]:
     """Provision a VPS and bootstrap the SSH user.
+
+    Resumes from saved state if an in-progress provision exists for this name.
 
     Returns:
         (ip_address, srv_id)
     """
-    ip, srv_id = provision_server(client, name)
+    state = ProvisionStateService.load(name)
+
+    if state:
+        output.info(
+            f"Resuming provision for '{name}' "
+            f"(phase: {state.phase}, started: {state.created_at:%Y-%m-%d %H:%M})"
+        )
+        ip, srv_id = _resume_provision(client, state)
+    else:
+        ip, srv_id = provision_server(client, name)
+
     output.success(f"Server ready: {ip}")
 
     output.info("Bootstrapping SSH user...")
     provision_account(ip, "root", None, 22, "slipp", dry_run=False)
+
+    ProvisionStateService.delete(name)
     return ip, srv_id

@@ -437,9 +437,9 @@ network/routing it's exposed through.
 - [x] Deploy: print app URL at the end (https for domains, http for IPs).
 - [x] Caddy template: IP-only deploys serve on `:80` with `auto_https off`.
 - [x] Provision: show "up to 60 minutes" warning, timeout raised to 3600s.
-- [ ] Provision: resume-able flow — save order state to `.slipp/provisions/<name>.yaml`
-      on order, so `slipp provision <name>` resumes poll→bootstrap→register if
-      interrupted. State file: `{order_id, srv_id, name, created_at, status}`.
+- [x] Provision: resume-able flow — state saved to `~/.config/slipp/provisions/<name>.yaml`
+      after ordering, so `slipp provision <name>` resumes poll→bootstrap→register
+      if interrupted. Phases: ordered → provisioned → (deleted on completion).
 - [ ] Cloudflare provider (DNS-only, uses official Python SDK)
 
 ---
