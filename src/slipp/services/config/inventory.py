@@ -8,18 +8,18 @@ from pathlib import Path
 
 import yaml
 
-from slipp.models.deployment import InventoryConfig
+from slipp.models.deployment import DeploymentHostConfig, InventoryConfig
 from slipp.models.host import AnsibleHost
 from slipp.services.ansible import run_inventory
 from slipp.utils.errors import HostNotFoundError, InventoryParseError
 
 
-def resolve_app_domain(project_root: Path) -> str | None:
-    """Best-effort extraction of app_domain from the raw inventory YAML.
+def _load_first_host(project_root: Path) -> DeploymentHostConfig | None:
+    """Best-effort load of the first host from the raw inventory YAML.
 
-    Reads the inventory file directly (not via ansible-inventory, which drops
-    app_domain) and returns the first host's app_domain, or None if anything
-    is missing or unparseable.
+    Reads the inventory file directly (not via ansible-inventory, which
+    drops slipp-specific fields like app_domain/app_port), or None if
+    anything is missing or unparseable.
     """
     from slipp.services.config.local import LocalConfigService
 
@@ -34,9 +34,26 @@ def resolve_app_domain(project_root: Path) -> str | None:
         inv = InventoryConfig.from_ansible_format(data)
         if not inv.hosts:
             return None
-        return inv.first_host.app_domain
+        return inv.first_host
     except Exception:
         return None
+
+
+def resolve_app_domain(project_root: Path) -> str | None:
+    """Best-effort extraction of app_domain from the raw inventory YAML."""
+    host = _load_first_host(project_root)
+    return host.app_domain if host else None
+
+
+def resolve_app_port(project_root: Path) -> int | None:
+    """Best-effort extraction of app_port from the raw inventory YAML.
+
+    Only meaningful for --proxy none deploys (see DeploymentHostConfig.app_port) -
+    a Caddy-fronted deploy's domain already implies the right port (:80/:443),
+    so callers should check for a caddy role before using this.
+    """
+    host = _load_first_host(project_root)
+    return host.app_port if host else None
 
 
 def load_project_ansible_hosts(project_path: Path) -> list[AnsibleHost]:

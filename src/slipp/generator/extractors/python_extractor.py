@@ -71,6 +71,16 @@ class PythonVariableExtractor(VariableExtractor):
         if variables["streamlit"]:
             variables["entrypoint"] = self._find_streamlit_entrypoint(service.path)
 
+        # Systemd ExecStart resolution (native, non-container deploys)
+        variables.update(self._find_exec_entrypoint(service.path))
+
+        # `uv sync --frozen` needs a lockfile in this exact directory - a uv
+        # *workspace* member (e.g. a monorepo package) resolves against the
+        # workspace root's uv.lock instead and has none of its own, so
+        # --frozen would fail every deploy. Systemd-role generation checks
+        # this to decide whether to pass --frozen at all.
+        variables["hasUvLock"] = (service.path / "uv.lock").exists()
+
         return variables
 
     def _detect_python_version(self, service_path: Path) -> str:
@@ -145,3 +155,42 @@ class PythonVariableExtractor(VariableExtractor):
 
         # Default fallback
         return "app.py"
+
+    def _find_exec_entrypoint(self, service_path: Path) -> dict[str, Any]:
+        """Resolve how a systemd ExecStart should invoke this app.
+
+        Prefers a `[project.scripts]` console-script entry (installed into
+        `.venv/bin/` by `uv sync`) over a bare script file - it's the
+        packaging-native way to invoke a Python app, and avoids having to
+        guess which file is the real entrypoint. Falls back to a
+        candidate-file search (same idea as `_find_streamlit_entrypoint`)
+        for projects with no `[project.scripts]` table.
+
+        Args:
+            service_path: Path to service directory
+
+        Returns:
+            {"execBinary": ..., "execScript": ... | None}. execBinary is a
+            `.venv/bin/` executable name; execScript, when set, is a
+            filename passed as its first argument (e.g. `python server.py`).
+        """
+        import tomllib
+
+        pyproject_path = service_path / "pyproject.toml"
+        if pyproject_path.exists():
+            try:
+                data = tomllib.loads(pyproject_path.read_text())
+            except (IOError, tomllib.TOMLDecodeError):
+                data = {}
+            scripts = data.get("project", {}).get("scripts", {})
+            if scripts:
+                name = data.get("project", {}).get("name")
+                script_name = name if name in scripts else next(iter(scripts))
+                return {"execBinary": script_name, "execScript": None}
+
+        candidates = ["server.py", "main.py", "app.py", "run.py"]
+        for candidate in candidates:
+            if (service_path / candidate).exists():
+                return {"execBinary": "python", "execScript": candidate}
+
+        return {"execBinary": "python", "execScript": None}

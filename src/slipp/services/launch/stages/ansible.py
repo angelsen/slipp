@@ -6,9 +6,13 @@ the main playbook, group variables, and app role definitions.
 
 from pathlib import Path
 
+from slipp import output
 from slipp.generator.env import render_template
+from slipp.generator.extractors import extract_template_variables
 from slipp.generator.playbook_generator import generate_playbook
 from slipp.generator.role_generator import RoleGenerator
+from slipp.models.service import Runtime
+from slipp.scanner.models import PYTHON_FRAMEWORKS
 from slipp.services.launch.context import FullContext
 from slipp.services.launch.stages.common import FileGenerationStage, require
 from slipp.utils.errors import LaunchError
@@ -73,6 +77,31 @@ class AppRolesStage(FileGenerationStage[FullContext]):
 
         all_files = {}
         for service in context.services:
+            is_python_systemd = (
+                runtime == Runtime.SYSTEMD and service.framework in PYTHON_FRAMEWORKS
+            )
+            if is_python_systemd and not (service.path / "uv.lock").exists():
+                output.warning(
+                    f"{service.name} has no uv.lock in its own directory - "
+                    "uv sync will run unfrozen (resolves fresh on every "
+                    "deploy). If this is a uv workspace member, its lockfile "
+                    "lives at the workspace root instead; commit a "
+                    "standalone uv.lock here for reproducible, frozen "
+                    "deploys."
+                )
+            if is_python_systemd and not context.exec_args:
+                exec_vars = extract_template_variables(service)
+                if exec_vars.get("execBinary") == "python" and not exec_vars.get(
+                    "execScript"
+                ):
+                    output.warning(
+                        f"{service.name} has no [project.scripts] entry and no "
+                        "recognized entrypoint file (server.py/main.py/app.py/"
+                        "run.py) - ExecStart would be a bare `python` with "
+                        "nothing to run, which will crash-loop. Pass "
+                        "--exec-args with the file/module to run, or add a "
+                        "[project.scripts] entry."
+                    )
             try:
                 role_files = role_generator.generate_app_role(
                     service,
@@ -80,6 +109,8 @@ class AppRolesStage(FileGenerationStage[FullContext]):
                     runtime,
                     all_services=context.services,
                     project_root=context.output_dir,
+                    uv_extra=context.python_extra,
+                    exec_args=context.exec_args,
                 )
             except Exception as e:
                 raise LaunchError(

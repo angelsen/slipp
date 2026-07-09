@@ -9,7 +9,8 @@ Group={{ '{{ ansible_user }}' }}
 WorkingDirectory=/opt/{{ project_name }}-{{ service.name }}
 EnvironmentFile=-/opt/{{ project_name }}-{{ service.name }}/.env.production
 Environment=PORT={{ service.port }}
-ExecStart=/usr/bin/node build
+ExecStart=/opt/{{ project_name }}-{{ service.name }}/.venv/bin/{{ execBinary }}{% if execScript %} {{ execScript }}{% endif %}{% if exec_args %} {{ exec_args }}{% endif %}
+
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=10

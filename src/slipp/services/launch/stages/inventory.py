@@ -97,9 +97,7 @@ class InventoryValidationStage:
                 "For external projects, use 'slipp deploy -i/-p' instead"
             )
 
-        if not first_host.admin_email and not is_ip_address(
-            first_host.app_domain
-        ):
+        if not first_host.admin_email and not is_ip_address(first_host.app_domain):
             raise LaunchError(
                 "Launch command requires admin_email in inventory\n"
                 "For external projects, use 'slipp deploy -i/-p' instead"
@@ -122,6 +120,10 @@ class InventoryFileStage(FileGenerationStage[FullContext]):
             Dictionary mapping file path to inventory YAML content.
         """
         inventory_config = require(context.inventory_config, "inventory config")
+
+        first_host = inventory_config.first_host
+        if first_host.app_port is None and context.services:
+            first_host.app_port = context.services[0].port
 
         inventory_filename = get_inventory_filename(context.environment)
         inventory_content = generate_inventory(inventory_config)

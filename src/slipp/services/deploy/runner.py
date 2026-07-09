@@ -8,6 +8,7 @@ from slipp.constants import DEFAULT_GALAXY_PATH
 from slipp.output import format_path
 from slipp.services.ansible import (
     AnsibleResult,
+    become_password_file,
     ensure_requirements_installed,
     parse_playbook_progress,
     run_playbook,
@@ -137,11 +138,12 @@ def execute_playbook(
     skip_tags: str | None,
     roles_paths: list[str] | None,
     log_dir: Path,
+    ask_become_pass: bool = False,
 ) -> AnsibleResult:
-    """Run ansible-playbook, prompting for the vault password first if needed.
+    """Run ansible-playbook, prompting for the vault/become password first if needed.
 
-    The vault password prompt runs before the spinner starts, so the
-    terminal is clean for interactive input.
+    Both prompts run before the spinner starts, so the terminal is clean
+    for interactive input.
 
     Args:
         playbook_file: Path to playbook.yml.
@@ -153,6 +155,8 @@ def execute_playbook(
         skip_tags: Ansible tags to skip.
         roles_paths: Role search directories.
         log_dir: Directory for playbook run logs.
+        ask_become_pass: Whether to prompt for the sudo/become password
+            (needed when the target host's sudo isn't passwordless).
 
     Returns:
         AnsibleResult with exit_code and log_path.
@@ -162,6 +166,9 @@ def execute_playbook(
             stack.enter_context(get_vault_password_file(confirm=False))
             if needs_vault_password
             else None
+        )
+        become_pw_file = (
+            stack.enter_context(become_password_file()) if ask_become_pass else None
         )
 
         with output.spinner("Running playbook", spinner_type="earth") as update:
@@ -177,6 +184,7 @@ def execute_playbook(
                 check=dry_run,
                 vault_file=vault_file,
                 vault_password_file=vault_pw_file,
+                become_pw_file=become_pw_file,
                 tags=tags,
                 skip_tags=skip_tags,
                 roles_path=roles_paths if roles_paths else None,

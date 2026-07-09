@@ -475,10 +475,75 @@ Test slipp against real workloads to find gaps before the first "real" deploymen
 
 | Project | Stack | Current deploy | Target | Fit |
 |---------|-------|---------------|--------|-----|
-| **lanpad** (`~/Projects/work/MyMechanic/mym-verksted-pluss/lanpad/`) | Python/FastAPI, systemd | git push → post-receive → uv sync → restart | Internal VM | Good — systemd runtime supported |
+| **lanpad** (`~/Projects/work/MyMechanic/mym-verksted-pluss/lanpad/`) | Python/FastAPI, systemd | ~~git push → post-receive → uv sync → restart~~ **ported to `slipp deploy` (2026-07-09)** | Internal VM (`mym-dev`, 192.168.60.21) | Done |
 | **partbridge** (`~/Projects/work/MyMechanic/mym-verksted-pluss/tools/partbridge/`) | Python/FastMCP, systemd | git push → post-receive → uv sync → health check → auto-rollback | Same VM | Good, but has rollback logic slipp lacks |
 | **scans/portal** (`~/Projects/work/ultraportalen/scans/`) | SvelteKit, systemd | git push → post-receive → npm ci → build → rsync → restart | VPS (Gigahost, wg-manage Caddy) | Best fit — already uses wg-manage |
 | **scans/admin** (`~/Projects/work/ultraportalen/scans/`) | SvelteKit, LaunchAgent | git push → deploy.sh → build → drizzle push → restart | Bente's Mac | No — macOS, not a VPS |
+
+### lanpad — ported (2026-07-09)
+
+Deployed via a new Python/uv systemd role (`roles/app-systemd-python/`),
+replacing lanpad's git-push/post-receive-hook workflow entirely (approach 1
+from the git-push-to-deploy options below). Verified live against `mym-dev`:
+service active, serving real traffic, idempotent redeploy, `--packages` data
+survives redeploy. Real gaps this surfaced, all fixed:
+
+- **Python app role** — done. New `roles/app-systemd-python/` template set,
+  `PythonVariableExtractor` gained entrypoint resolution
+  (`[project.scripts]` → binary, or file fallback) and `uv.lock` detection.
+  New `--python-extra`/`--exec-args` flags on `slipp launch`.
+- **uv workspace member with no standalone lockfile** — lanpad lives inside
+  the `mym-verksted-pluss` uv workspace; its own directory has no `uv.lock`
+  (the workspace root does). `uv sync --frozen` fails hard in this case.
+  Fixed: `hasUvLock` detection drops `--frozen` automatically and warns at
+  `slipp launch` time instead of failing at deploy time. Also fixed a
+  parallel silent-failure risk: a Python service with no `[project.scripts]`
+  entry *and* no recognized entrypoint file would generate a bare
+  `ExecStart=.../.venv/bin/python` that crash-loops — now warned at launch
+  time too.
+- **No passwordless sudo on an adopted host** — `mym-dev` was never
+  bootstrapped by slipp, so `fredrik`'s sudo needs a password. Added
+  `--ask-become-pass` to `slipp deploy` (mirrors the existing vault-password
+  prompt pattern — prompts before the spinner, passes the password via a
+  temp extra-vars file, never argv). Real Ansible limitation hit along the
+  way: `ansible.posix.synchronize`'s rsync shells out its own
+  `sudo -u root rsync` over a raw ssh call that never sees
+  `ansible_become_pass` — no amount of become-password plumbing fixes that
+  specific task.
+- **Both systemd templates ran the deployed app as root** — pre-existing in
+  the Node role too, not just the new Python one. No privileged port is
+  ever needed, so root was pure unnecessary blast radius. Redesigned both
+  to run as `ansible_user` (the SSH-connecting user) — `become: true` stays
+  only on the genuinely root-requiring tasks (package/systemd management).
+  This also sidesteps the synchronize/become limitation above for free.
+- **Not leveraging uv's own Python management** — the role used to install
+  Python via the OS package manager. Switched to `uv python install
+  {{ pythonVersion }}` + `uv sync --managed-python`, so the app's venv uses
+  a uv-managed interpreter pinned to `.python-version`, not whatever the
+  target distro happens to have packaged. Also added `--no-dev` to `uv
+  sync` (matches partbridge's own hardened production pattern, wasn't
+  wired in before).
+- **`--proxy none` deploys showed a wrong/incomplete URL** — two separate
+  pre-existing bugs, not new: the launch summary unconditionally listed a
+  Caddy role and hardcoded `https://` with no port; `slipp deploy`'s own
+  post-deploy hint had the same missing-port gap. Fixed both; added
+  `app_port` persistence to `inventory.yml` so the deploy-time hint can
+  know the port without re-scanning.
+
+**New gap found, not fixed (deliberately deferred):** `slipp ps`/`slipp
+logs`/discovery is silently broken on any host without passwordless sudo.
+`DiscoveryService._query_systemctl_batch()` runs `sudo systemctl
+list-units ...` over a plain SSH exec (not Ansible — `--ask-become-pass`
+doesn't reach this path) and deliberately ignores the exit code (legitimate
+reason: some setups exit nonzero with valid stdout). But that means a sudo
+auth failure and a genuinely-empty host both produce empty stdout, and
+discovery reports "No services found" either way — no error surfaced.
+Confirmed live: `lanpad-lanpad.service` was active and serving on
+`mym-dev`, but `slipp ps --refresh`/`slipp logs lanpad` both reported
+nothing found. Fix would mean either detecting the sudo-failure case
+explicitly (cheap, just stops the silent lie) or a full become-password
+prompt for `SSHService` itself (bigger, mirrors `--ask-become-pass` but for
+the ps/logs/exec path instead of deploy).
 
 ### Gaps these would surface
 
@@ -488,14 +553,15 @@ Test slipp against real workloads to find gaps before the first "real" deploymen
   playbook template has no migration hook.
 - **Git-push-to-deploy** — all three use `git push deploy main`. Two approaches:
   1. Replace entirely: run `slipp deploy` from dev machine instead of pushing
+     (lanpad did this, see above)
   2. Hybrid: keep push trigger but the post-receive hook runs `slipp deploy`
      instead of bespoke shell scripts
   3. `slipp deploy --mode push` generates bare repo + post-receive hook
 - **Shared server** — lanpad and partbridge deploy to the same VM. Need to handle
-  multiple projects targeting one host without conflicts.
-- **Python app role** — `slipp launch`'s systemd template uses Node.js (`npm ci &&
-  npm run build`). Python apps need `uv sync` instead. The scanner detects Flask
-  but the generated role assumes Node.
+  multiple projects targeting one host without conflicts. Confirmed this VM is
+  genuinely multi-tenant (also runs a third, unrelated service — `dtc-mcp`,
+  owned by a colleague, manually deployed under its own Unix user) — slipp
+  must stay additive-only there, never enumerate/touch what it doesn't own.
 
 ---
 

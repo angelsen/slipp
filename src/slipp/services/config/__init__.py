@@ -8,6 +8,7 @@ from slipp.services.config.inventory import (
     InventoryService,
     load_project_hosts,
     resolve_app_domain,
+    resolve_app_port,
 )
 from slipp.services.config.local import LocalConfigService, collect_managed_roles
 from slipp.services.config.presets import PresetResolver, parse_preset_args
@@ -25,6 +26,7 @@ __all__ = [
     "InventoryService",
     "load_project_hosts",
     "resolve_app_domain",
+    "resolve_app_port",
     "ConfigResolver",
     "ResolvedConfig",
     "resolve_project_name",

@@ -16,8 +16,12 @@ class FullContext(ScanContext):
             full pipeline's inventory/registry stages read this.
         reconfigure: If True, regenerate existing configuration files.
         provision_config: Optional provisioning configuration.
+        python_extra: uv sync --extra group name (Python systemd deploys).
+        exec_args: Extra ExecStart arguments (Python systemd deploys).
     """
 
     environment: str = DEFAULT_ENV
     reconfigure: bool = False
     provision_config: ProvisionConfig | None = None
+    python_extra: str | None = None
+    exec_args: str | None = None

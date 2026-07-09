@@ -6,6 +6,7 @@ from slipp.models.service import Runtime
 from slipp.services.launch.context import FullContext
 from slipp.services.launch.registration import register_project
 from slipp.services.launch.stages.common import require
+from slipp.utils.network import is_ip_address
 
 
 class RegistrationStage:
@@ -68,9 +69,12 @@ class SummaryStage:
                 "inventory.yml",
                 "playbook.yml",
                 "group_vars/all.yml",
-                "roles/caddy/ (5 files)",
-                f"roles/app-{{service}}/ ({len(context.services)} services, 3 files each)",
             ]
+            if not context.skip_caddy:
+                summary_items.append("roles/caddy/ (5 files)")
+            summary_items.append(
+                f"roles/app-{{service}}/ ({len(context.services)} services, 3 files each)"
+            )
             if not is_systemd:
                 summary_items += [
                     f"Dockerfiles ({len(context.services)} services)",
@@ -86,6 +90,12 @@ class SummaryStage:
             next_steps.append("Deploy to VPS: slipp deploy")
             output.list_items(next_steps, numbered=True)
 
-            output.blank()
-            output.stdout("Your app will be available at:")
-            output.stdout(f"  https://{first_host.app_domain}")
+            if first_host.app_domain:
+                output.blank()
+                output.stdout("Your app will be available at:")
+                scheme = "http" if is_ip_address(first_host.app_domain) else "https"
+                if context.skip_caddy and context.services:
+                    port = context.services[0].port
+                    output.stdout(f"  {scheme}://{first_host.app_domain}:{port}")
+                else:
+                    output.stdout(f"  {scheme}://{first_host.app_domain}")

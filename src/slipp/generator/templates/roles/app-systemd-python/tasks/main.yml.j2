@@ -4,15 +4,26 @@
 # Runs as the SSH-connecting user (ansible_user), not root - the app has no
 # need for a privileged port, so root would only be unnecessary blast
 # radius. become: true stays on the play (playbook.yml) for tasks that
-# genuinely need it (package install, /etc/systemd/system, systemctl);
-# everything else here opts back out with become: false.
+# genuinely need it (/etc/systemd/system, systemctl); everything else here
+# opts back out with become: false. This also sidesteps a real Ansible
+# limitation: ansible.posix.synchronize's rsync shells out its own
+# "sudo -u root rsync" over a raw ssh call that never sees
+# ansible_become_pass, so it can only work at all without become.
+#
+# Python itself is uv-managed (uv python install), not an OS package - a
+# self-contained interpreter uv fetches directly, so it needs no
+# python3-venv package and isn't at the mercy of whatever Python version
+# the target distro happens to have packaged.
 
-- name: Install Node.js
-  ansible.builtin.package:
-    name:
-      - nodejs
-      - npm
-    state: present
+- name: Install uv
+  become: false
+  ansible.builtin.shell: curl -LsSf https://astral.sh/uv/install.sh | sh
+  args:
+    creates: "/home/{{ '{{ ansible_user }}' }}/.local/bin/uv"
+
+- name: Install Python {{ pythonVersion }} (uv-managed)
+  become: false
+  ansible.builtin.command: "/home/{{ '{{ ansible_user }}' }}/.local/bin/uv python install {{ pythonVersion }}"
 
 - name: Create app directory
   ansible.builtin.file:
@@ -29,7 +40,6 @@
     dest: "/opt/{{ project_name }}-{{ service.name }}/"
     delete: true
     rsync_opts:
-      - "--exclude=node_modules"
       - "--exclude=.venv"
       - "--exclude=__pycache__"
       - "--exclude=.git"
@@ -38,16 +48,9 @@
       - "--exclude={{ exclude }}"
 {% endfor %}
 
-- name: Install dependencies
+- name: Sync dependencies (uv)
   become: false
-  ansible.builtin.command: npm ci
-  args:
-    chdir: "/opt/{{ project_name }}-{{ service.name }}"
-  notify: Restart {{ project_name }}-{{ service.name }}
-
-- name: Build application
-  become: false
-  ansible.builtin.command: npm run build
+  ansible.builtin.command: "/home/{{ '{{ ansible_user }}' }}/.local/bin/uv sync --managed-python{% if hasUvLock %} --frozen{% endif %} --no-dev{% if uv_extra %} --extra {{ uv_extra }}{% endif %}"
   args:
     chdir: "/opt/{{ project_name }}-{{ service.name }}"
   notify: Restart {{ project_name }}-{{ service.name }}

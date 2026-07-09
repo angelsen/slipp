@@ -56,6 +56,10 @@ class DeploymentHostConfig(AnsibleHost):
         app_domain: Domain for the application (used by Caddy). Optional for external projects.
         admin_email: Admin email for Let's Encrypt HTTPS certificates. Optional for external projects.
         runtime: How the app runs (systemd, docker, podman; default: docker)
+        app_port: The primary service's own port. Only meaningful (and only
+            needed in a URL) for --proxy none deploys, where nothing fronts
+            the app on :80/:443 - set from the first detected service at
+            launch time.
     """
 
     app_domain: str | None = Field(default=None, description="Domain for app (Caddy)")
@@ -64,6 +68,9 @@ class DeploymentHostConfig(AnsibleHost):
     )
     runtime: Runtime = Field(
         default=Runtime.DOCKER, description="How the app runs (systemd, docker, podman)"
+    )
+    app_port: int | None = Field(
+        default=None, description="Primary service port (--proxy none deploys)"
     )
 
 

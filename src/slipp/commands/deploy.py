@@ -15,6 +15,7 @@ from slipp.services.config import (
     ConfigResolver,
     LocalConfigService,
     resolve_app_domain,
+    resolve_app_port,
     resolve_project_name,
 )
 from slipp.services.deploy import (
@@ -91,6 +92,13 @@ def deploy_command(
         str | None,
         typer.Option("--skip-tags", help="Ansible tags to skip (comma-separated)"),
     ] = None,
+    ask_become_pass: Annotated[
+        bool,
+        typer.Option(
+            "--ask-become-pass",
+            help="Prompt for the sudo/become password (target host has no passwordless sudo)",
+        ),
+    ] = False,
 ) -> None:
     """Execute ansible-playbook to deploy services and manage infrastructure."""
     if name and inventory:
@@ -144,6 +152,7 @@ def deploy_command(
         skip_tags=resolved_skip_tags,
         roles_paths=roles_paths,
         log_dir=log_dir,
+        ask_become_pass=ask_become_pass,
     )
 
     if result.exit_code == 0 and result.no_hosts_matched:
@@ -160,7 +169,12 @@ def deploy_command(
         domain = resolve_app_domain(project_root)
         if domain:
             scheme = "http" if is_ip_address(domain) else "https"
-            output.hint(f"  {scheme}://{domain}")
+            has_caddy = (project_root / "roles" / "caddy").exists()
+            port = None if has_caddy else resolve_app_port(project_root)
+            if port:
+                output.hint(f"  {scheme}://{domain}:{port}")
+            else:
+                output.hint(f"  {scheme}://{domain}")
 
         if (
             any([inventory, playbook, roles_list, galaxy_path_flag, vault])

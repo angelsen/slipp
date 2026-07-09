@@ -4,6 +4,9 @@ import json
 import os
 import re
 import subprocess
+import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -301,12 +304,37 @@ def ensure_requirements_installed(
     raise AnsibleError(message)
 
 
+@contextmanager
+def become_password_file() -> Iterator[Path]:
+    """Context manager that prompts for the become (sudo) password on the
+    deploy target and writes a temp extra-vars file, deleted on exit.
+
+    Ansible has no dedicated --become-password-file flag (unlike
+    --vault-password-file) - ansible_become_pass is a normal extra-var, so
+    it's passed via -e @<file> rather than -e ansible_become_pass=<value>
+    to keep it out of argv/`ps`.
+
+    Yields:
+        Path to a temporary YAML extra-vars file (deleted on exit)
+    """
+    password = output.prompt_password("BECOME (sudo) password")
+
+    fd, path = tempfile.mkstemp(prefix="become_pass_", suffix=".yml", text=True)
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(f"ansible_become_pass: {json.dumps(password)}\n")
+        yield Path(path)
+    finally:
+        Path(path).unlink(missing_ok=True)
+
+
 def run_playbook(
     playbook: str,
     inventory: str,
     check: bool = False,
     vault_file: str | None = None,
     vault_password_file: Path | None = None,
+    become_pw_file: Path | None = None,
     tags: str | None = None,
     skip_tags: str | None = None,
     roles_path: list[str] | None = None,
@@ -322,6 +350,8 @@ def run_playbook(
         check: Run in dry-run mode
         vault_file: Optional path to vault file (adds -e @path)
         vault_password_file: Optional path to vault password file
+        become_pw_file: Optional path to a become-password extra-vars file
+            (see become_password_file() above)
         tags: Optional comma-separated tags to run
         skip_tags: Optional comma-separated tags to skip
         roles_path: Optional list of role directories (--roles-path)
@@ -341,6 +371,8 @@ def run_playbook(
         cmd.extend(["-e", f"@{vault_file}"])
     if vault_password_file:
         cmd.extend(["--vault-password-file", str(vault_password_file)])
+    if become_pw_file:
+        cmd.extend(["-e", f"@{become_pw_file}"])
     if tags:
         cmd.extend(["--tags", tags])
     if skip_tags:

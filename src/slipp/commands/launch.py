@@ -44,6 +44,18 @@ def launch_command(
     proxy: Annotated[
         str, typer.Option("--proxy", help="Reverse proxy: caddy, none")
     ] = "caddy",
+    python_extra: Annotated[
+        str | None,
+        typer.Option(
+            "--python-extra", help="uv sync --extra group (Python systemd deploys)"
+        ),
+    ] = None,
+    exec_args: Annotated[
+        str | None,
+        typer.Option(
+            "--exec-args", help="Extra ExecStart arguments (Python systemd deploys)"
+        ),
+    ] = None,
 ) -> None:
     """Generate complete Ansible project from codebase."""
     dirs, output_dir = resolve_project_dirs(project_dirs)
@@ -56,6 +68,8 @@ def launch_command(
         reconfigure=reconfigure,
         proxy=proxy,
         project_name=name,
+        python_extra=python_extra,
+        exec_args=exec_args,
     )
 
     run_full_pipeline(context)

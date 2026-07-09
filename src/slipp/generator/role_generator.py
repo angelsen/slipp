@@ -3,8 +3,10 @@
 from pathlib import Path
 
 from slipp.generator.env import render_template
+from slipp.generator.extractors import extract_template_variables
 from slipp.models.deployment import DetectedService
 from slipp.models.service import Runtime
+from slipp.scanner.models import PYTHON_FRAMEWORKS
 
 # Top-level paths slipp itself generates into the project root. When a
 # service's own source directory *is* (or contains) the project root -- the
@@ -37,17 +39,21 @@ class RoleGenerator:
         >>> files = generator.generate_app_role(service, "my-app")
     """
 
-    def _template_dir(self, runtime: Runtime) -> str:
-        """Pick the source template set for a runtime.
+    def _template_dir(self, runtime: Runtime, service: DetectedService) -> str:
+        """Pick the source template set for a runtime + language.
 
         The build step and systemd unit are structurally different for a
-        native systemd deploy (npm build, no image) vs docker/podman (image
-        build) -- a separate template set, not conditionals inside one
-        template, keeps each shape readable.
+        native systemd deploy (npm/uv build, no image) vs docker/podman
+        (image build), and for a systemd deploy, again between Node (npm
+        build + node ExecStart) and Python (uv sync + venv-binary
+        ExecStart) -- separate template sets, not conditionals inside one
+        template, keep each shape readable.
         """
-        return (
-            "roles/app-systemd" if runtime == Runtime.SYSTEMD else "roles/app-container"
-        )
+        if runtime != Runtime.SYSTEMD:
+            return "roles/app-container"
+        if service.framework in PYTHON_FRAMEWORKS:
+            return "roles/app-systemd-python"
+        return "roles/app-systemd"
 
     def _compute_sync_excludes(
         self,
@@ -105,6 +111,8 @@ class RoleGenerator:
         runtime: Runtime = Runtime.DOCKER,
         all_services: list[DetectedService] | None = None,
         project_root: Path | None = None,
+        uv_extra: str | None = None,
+        exec_args: str | None = None,
     ) -> dict[Path, str]:
         """Generate role files for a service.
 
@@ -118,6 +126,10 @@ class RoleGenerator:
             project_root: The generated project's root directory (defaults
                 to service.path) -- used to exclude slipp's own generated
                 files when this service's path is/contains the root
+            uv_extra: Optional `uv sync --extra <name>` group (Python
+                systemd deploys only)
+            exec_args: Optional extra arguments appended to ExecStart
+                (Python systemd deploys only)
 
         Returns:
             Dict mapping file paths to content
@@ -143,10 +155,10 @@ class RoleGenerator:
         )
 
         files[Path(f"roles/{role_name}/tasks/main.yml")] = self._render_tasks(
-            service, project_name, runtime, sync_excludes
+            service, project_name, runtime, sync_excludes, uv_extra
         )
         files[Path(f"roles/{role_name}/templates/systemd.service.j2")] = (
-            self._render_systemd(service, project_name, runtime)
+            self._render_systemd(service, project_name, runtime, exec_args)
         )
         files[Path(f"roles/{role_name}/handlers/main.yml")] = self._render_handlers(
             service, project_name
@@ -160,6 +172,7 @@ class RoleGenerator:
         project_name: str,
         runtime: Runtime,
         sync_excludes: list[str],
+        uv_extra: str | None = None,
     ) -> str:
         """Render tasks/main.yml template.
 
@@ -169,23 +182,34 @@ class RoleGenerator:
             runtime: How the app runs (systemd, docker, or podman)
             sync_excludes: Extra rsync --exclude patterns (see
                 _compute_sync_excludes)
+            uv_extra: Optional `uv sync --extra <name>` group (Python
+                systemd deploys only)
 
         Returns:
             Rendered tasks YAML content
         """
+        template_dir = self._template_dir(runtime, service)
+        context = {
+            "service": service.model_dump(),
+            "project_name": project_name,
+            "runtime": runtime.value,
+            "sync_excludes": sync_excludes,
+            "uv_extra": uv_extra,
+        }
+        if template_dir == "roles/app-systemd-python":
+            context.update(extract_template_variables(service))
         return render_template(
-            f"{self._template_dir(runtime)}/tasks/main.yml.j2",
-            {
-                "service": service.model_dump(),
-                "project_name": project_name,
-                "runtime": runtime.value,
-                "sync_excludes": sync_excludes,
-            },
+            f"{template_dir}/tasks/main.yml.j2",
+            context,
             label=f"role for {service.name} (tasks)",
         )
 
     def _render_systemd(
-        self, service: DetectedService, project_name: str, runtime: Runtime
+        self,
+        service: DetectedService,
+        project_name: str,
+        runtime: Runtime,
+        exec_args: str | None = None,
     ) -> str:
         """Render systemd.service.j2 template.
 
@@ -193,17 +217,24 @@ class RoleGenerator:
             service: Service configuration
             project_name: Project name
             runtime: How the app runs (systemd, docker, or podman)
+            exec_args: Optional extra ExecStart arguments (Python systemd
+                deploys only)
 
         Returns:
             Rendered systemd unit content
         """
+        template_dir = self._template_dir(runtime, service)
+        context = {
+            "service": service.model_dump(),
+            "project_name": project_name,
+            "runtime": runtime.value,
+            "exec_args": exec_args,
+        }
+        if template_dir == "roles/app-systemd-python":
+            context.update(extract_template_variables(service))
         return render_template(
-            f"{self._template_dir(runtime)}/templates/systemd.service.j2",
-            {
-                "service": service.model_dump(),
-                "project_name": project_name,
-                "runtime": runtime.value,
-            },
+            f"{template_dir}/templates/systemd.service.j2",
+            context,
             label=f"role for {service.name} (systemd unit)",
         )
 
