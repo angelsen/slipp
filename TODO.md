@@ -448,14 +448,35 @@ network/routing it's exposed through.
 
 ---
 
-## Sudo password support for ps/logs/exec/status — staged, with follow-ups (2026-07-09)
+## Sudo password support for ps/logs/exec/status — done, auto-prompt landed (2026-07-09)
 
-Implementation is **staged (uncommitted)**: `--ask-become-pass` on
-`ps`/`logs`/`exec`/`status`, a `SudoPasswordRequired` error, sudo-failure
-detection (`check_sudo_result`), and `SSHService` rewriting `sudo ...` →
-`sudo -S ...` with the password piped via stdin. This fixes the deferred gap
-from the lanpad port (discovery silently reporting "No services found" on
-hosts without passwordless sudo).
+Committed in `3a50b02`: `--ask-become-pass` on `ps`/`logs`/`exec`/`status`,
+a `SudoPasswordRequired` error, sudo-failure detection, and `SSHService`
+rewriting `sudo ...` → `sudo -S ...` with the password piped via stdin. This
+fixed the deferred gap from the lanpad port (discovery silently reporting
+"No services found" on hosts without passwordless sudo).
+
+**Auto-prompt follow-up — done (2026-07-09).** The flag is gone again:
+`SSHService.ensure_sudo(context)` now does detect → prompt → retry itself.
+Probes `sudo -n true`; on failure prompts "BECOME (sudo) password for
+user@host:port" (main thread + tty only — worker threads in
+`discover_across_hosts` raise instead, surfacing in `slipp ps`'s existing
+"host(s) unreachable" list), verifies the password with `sudo -S true`
+(3 attempts), and caches it in a process-wide dict keyed by
+`connection_string()`. `SSHService.sudo_password` is now a lazy read-only
+property over that cache — critical because exec/ssh construct their
+SSHService *before* discovery prompts. Deleted: `AskBecomePassOption`,
+`resolve_sudo_password`, the `ask_become_pass` params, and the
+`sudo_password` threading through commands → pipeline → discovery →
+constructor. logs/status/exec call `ensure_sudo` themselves (discovery's
+5-min cache means a cache hit opens no SSH and would never prompt; and a
+stream can't prompt mid-stream). `UserResolver.get_service_user` also gained
+an `ensure_sudo` (outside its `except Exception`, so Ctrl-C's `click.Abort`
+isn't swallowed) — fixing `slipp ssh`/user detection on password hosts,
+which were silently broken before. Prompts now go to stderr
+(`typer.prompt(err=True)` in `output.prompt`/`prompt_password`), so a
+mid-command prompt can't corrupt `slipp ps -o json | jq`. Deploy's
+Ansible-native `--ask-become-pass` is untouched.
 
 All inline fixes and the v2 detection improvements have been applied:
 
@@ -493,26 +514,30 @@ All inline fixes and the v2 detection improvements have been applied:
 
 **Remaining follow-ups (not blocking):**
 
-- The endgame is auto-prompting — detect → prompt on demand (injected prompt
-  callback on `SSHService`) → retry, which would make `--ask-become-pass`
-  unnecessary. The probe (`require_sudo`) is the foundation; the auto-prompt
-  is the next step.
-- `require_sudo`'s hint ("Use --ask-become-pass") is misleading when the SSH
-  user isn't in sudoers at all — a password won't help. Edge case on
-  slipp-provisioned hosts (which always create a sudoer), but worth noting for
-  adopted hosts.
+- A non-sudoer still gets **one** doomed password prompt: sudo only reveals
+  authorization failures after authentication succeeds, so it can't be
+  detected from the `sudo -n true` probe. After the first correct password,
+  `ensure_sudo` now recognizes sudo's not-in-sudoers messages (verified in
+  sudo's `logging.c`, pinned to English via `LC_MESSAGES=C`) and raises with
+  sudo's own message instead of burning the remaining prompts. Transient
+  SSH/exec failures during the verify probe still count as "rejected"
+  attempts — rare enough to leave.
+- Sites that run sudo over SSH outside the ps/logs/exec/status/ssh paths
+  (`services/image/transfer.py`, `services/run/caddy.py:is_installed`) still
+  don't call `ensure_sudo` — they now pick up a cached password for free if
+  one was prompted earlier in the process, but on a password host with no
+  prior prompt they fail as before.
 
-**Structural lesson (why this touched 13 files):** ~6 files were the
-per-command flag (inherent to that UX choice — a global Typer option would
-shrink it to one file, since sudo access is a property of the host, not the
-command). The other ~7 were tramp data: intermediate layers
+**Structural lesson (why the flag version touched 13 files, and the
+auto-prompt version deleted most of them):** ~6 files were the per-command
+flag (inherent to that UX choice — sudo access is a property of the host,
+not the command). The other ~7 were tramp data: intermediate layers
 (`find_service_or_exit` → `discover_and_enrich` → `DiscoveryService` →
 `_query_systemctl_batch`) take an `AnsibleHost` and construct `SSHService`
-internally, so anything touching connection/execution semantics must thread
-through every signature. Fix options, in order of preference: (a) the
-prompt-on-demand probe above, which deletes the surface area entirely; (b) pass
-the session/`SSHService` (or a factory for multi-host) down instead of
-`AnsibleHost`, making such options a constructor detail in one layer.
+internally, so anything touching connection/execution semantics had to
+thread through every signature. The prompt-on-demand rewrite (option (a)
+from the original note) collapsed the whole surface back into
+`ssh/client.py`.
 
 ---
 

@@ -10,10 +10,8 @@ import typer
 
 from slipp import output
 from slipp.commands.common import (
-    AskBecomePassOption,
     find_service_or_exit,
     resolve_host_or_exit,
-    resolve_sudo_password,
 )
 from slipp.models.service import Runtime
 from slipp.services.ssh import CommandBuilder, SSHService, UserResolver
@@ -33,11 +31,8 @@ def exec_command(
             "--user", "-u", help="Override user (e.g., root, postgres, www-data)"
         ),
     ] = None,
-    ask_become_pass: AskBecomePassOption = False,
 ) -> None:
     """Execute a command on VPS or in a container."""
-    sudo_password = resolve_sudo_password(ask_become_pass)
-
     if second is None:
         command, service_name = first, None
     else:
@@ -45,14 +40,11 @@ def exec_command(
 
     ssh_config = resolve_host_or_exit(service=service_name, command="exec")
 
-    with SSHService(ssh_config, sudo_password=sudo_password) as ssh:
+    with SSHService(ssh_config) as ssh:
         service = None
         if service_name:
             service = find_service_or_exit(
-                ssh_config,
-                service_name,
-                include_system=False,
-                sudo_password=sudo_password,
+                ssh_config, service_name, include_system=False
             )
 
         user_resolver = UserResolver(ssh)
@@ -78,6 +70,11 @@ def exec_command(
         )
         output.info(f"Command: {command}")
         output.blank()
+
+        # Prompt before running rather than after failing (only leading
+        # sudo is rewritten for password piping; embedded sudo is a non-goal)
+        if exec_cmd.startswith("sudo "):
+            ssh.ensure_sudo("Executing command")
 
         try:
             result = ssh.execute(exec_cmd)

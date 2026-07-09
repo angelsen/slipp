@@ -67,7 +67,6 @@ def discover_and_enrich(
     include_system: bool = False,
     force: bool = False,
     host_to_projects: dict[str, list[str]] | None = None,
-    sudo_password: str | None = None,
 ) -> list[Service]:
     """Standard discovery pipeline: discover → enrich with project names.
 
@@ -77,7 +76,6 @@ def discover_and_enrich(
         force: Skip cache, force re-discovery
         host_to_projects: Pre-built ansible_host → [project_names] map, see
             enrich_with_projects(). Built from the full registry when omitted.
-        sudo_password: Sudo password for hosts without passwordless sudo
 
     Returns:
         List of discovered services enriched with project names
@@ -93,7 +91,6 @@ def discover_and_enrich(
         ssh_config,
         include_system=include_system,
         force=force,
-        sudo_password=sudo_password,
     )
     services = enrich_with_projects(services, host_to_projects)
     return services
@@ -105,7 +102,6 @@ def _discover_on_host(
     include_system: bool,
     force: bool,
     host_to_projects: dict[str, list[str]],
-    sudo_password: str | None = None,
 ) -> tuple[str, list[Service], str | None]:
     """Discover services on a single host.
 
@@ -115,7 +111,6 @@ def _discover_on_host(
         include_system: Include system services
         force: Force re-discovery
         host_to_projects: Pre-built ansible_host → [project_names] map
-        sudo_password: Sudo password for hosts without passwordless sudo
 
     Returns:
         Tuple of (project_name, services, error_message)
@@ -126,7 +121,6 @@ def _discover_on_host(
             include_system=include_system,
             force=force,
             host_to_projects=host_to_projects,
-            sudo_password=sudo_password,
         )
         return (project, services, None)
     except Exception as e:
@@ -140,7 +134,6 @@ def discover_across_hosts(
     include_system: bool = False,
     force: bool = False,
     max_workers: int = 5,
-    sudo_password: str | None = None,
 ) -> tuple[list[Service], list[str]]:
     """Discover services across multiple hosts in parallel.
 
@@ -149,7 +142,6 @@ def discover_across_hosts(
         include_system: Include system services
         force: Force re-discovery
         max_workers: Maximum parallel connections
-        sudo_password: Sudo password for hosts without passwordless sudo
 
     Returns:
         Tuple of (all_services, error_messages)
@@ -172,7 +164,6 @@ def discover_across_hosts(
                 include_system,
                 force,
                 host_to_projects,
-                sudo_password,
             ): (
                 project,
                 host,

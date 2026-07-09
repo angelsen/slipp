@@ -1,10 +1,13 @@
 """SSH service with Paramiko wrapper and best practices."""
 
+import sys
+import threading
 from collections.abc import Generator
 from dataclasses import dataclass
 
 import paramiko
 
+from slipp import output
 from slipp.models.host import AnsibleHost
 from slipp.utils.errors import (
     SSHAuthenticationError,
@@ -12,6 +15,18 @@ from slipp.utils.errors import (
     SSHConnectionError,
     SudoPasswordRequired,
 )
+
+# Verified sudo passwords per connection, so every SSHService in one CLI
+# invocation (discovery, then logs/status/exec's second connection) reuses
+# a password prompted once. Keyed by AnsibleHost.connection_string().
+_sudo_passwords: dict[str, str] = {}
+# Connections verified to have working passwordless sudo (skip re-probing).
+_sudo_passwordless: set[str] = set()
+
+
+def _can_prompt() -> bool:
+    """Only prompt from the main thread of an interactive session."""
+    return sys.stdin.isatty() and threading.current_thread() is threading.main_thread()
 
 
 @dataclass(frozen=True)
@@ -65,18 +80,25 @@ class SSHService:
         ...     print(result.stdout)
     """
 
-    def __init__(self, host_config: AnsibleHost, sudo_password: str | None = None):
+    def __init__(self, host_config: AnsibleHost):
         """Initialize SSH service with host configuration.
 
         Args:
             host_config: Host configuration with SSH details
-            sudo_password: If set, commands starting with ``sudo`` are
-                rewritten to ``sudo -S`` and the password is piped via stdin.
         """
         self.config = host_config
-        self.sudo_password = sudo_password
         self.client: paramiko.SSHClient | None = None
         self.last_stream_result: SSHResult | None = None
+
+    @property
+    def sudo_password(self) -> str | None:
+        """Verified sudo password for this connection, if one was prompted.
+
+        Read lazily from the process-wide cache so an SSHService constructed
+        before the prompt happened (e.g. exec's connection, opened before
+        discovery) still picks the password up.
+        """
+        return _sudo_passwords.get(self.config.connection_string())
 
     def __enter__(self):
         """Context manager entry - establish connection.
@@ -142,23 +164,56 @@ class SSHService:
                 f"Failed to connect to {self.config.connection_string()}: {e}"
             ) from e
 
-    def require_sudo(self, context: str) -> None:
-        """Probe whether passwordless sudo works; raise early if not.
+    def ensure_sudo(self, context: str) -> None:
+        """Make sure sudo will work: passwordless, cached password, or prompt.
 
-        Runs ``sudo -n true`` (non-interactive, no-op command). If it fails
-        and no sudo_password was provided, raises SudoPasswordRequired
-        immediately — before the caller runs anything that needs sudo.
-        No-op when a password was provided (check_sudo catches a rejected
-        one on the first real command).
+        Probes ``sudo -n true``; on failure prompts for the password (main
+        thread + tty only), verifies it, and caches it for every later
+        SSHService to the same connection. Raises SudoPasswordRequired when
+        prompting is impossible or the password is rejected 3 times.
         """
-        if self.sudo_password:
+        key = self.config.connection_string()
+        if self.sudo_password is not None or key in _sudo_passwordless:
             return
-        probe = self.execute("sudo -n true")
-        if not probe.ok:
+        if self.execute("sudo -n true").ok:
+            _sudo_passwordless.add(key)
+            return
+        if not _can_prompt():
             raise SudoPasswordRequired(
-                f"{context}: sudo requires a password on this host. "
-                "Use --ask-become-pass to provide it."
+                f"{context}: sudo requires a password on {key} and no "
+                "terminal is available to prompt. Run a single-host command "
+                "from a terminal (e.g. 'slipp ps -p <project>') to enter it."
             )
+        for _ in range(3):
+            candidate = output.prompt_password(f"BECOME (sudo) password for {key}")
+            # Doesn't start with "sudo " so _prepare_sudo_command leaves it
+            # alone; the candidate is piped manually.
+            probe = self.execute(
+                "LC_MESSAGES=C sudo -S -p '' true", stdin_data=candidate + "\n"
+            )
+            if probe.ok:
+                _sudo_passwords[key] = candidate
+                return
+            # A correct password can still fail authorization (user not in
+            # sudoers) — re-prompting won't help, so surface sudo's own
+            # message instead. Strings from sudo's logging.c, pinned to
+            # English by LC_MESSAGES=C above.
+            fatal = next(
+                (
+                    line.strip()
+                    for line in probe.stderr.splitlines()
+                    if "is not in the sudoers file" in line
+                    or "is not allowed to run sudo" in line
+                    or "may not run sudo" in line
+                ),
+                None,
+            )
+            if fatal:
+                raise SudoPasswordRequired(f"{context}: {fatal}")
+            output.warning("Sudo password rejected, try again.")
+        raise SudoPasswordRequired(
+            f"{context}: sudo password rejected after 3 attempts."
+        )
 
     def _prepare_sudo_command(self, command: str) -> tuple[str, str | None]:
         """Rewrite a sudo command to read the password from stdin.
@@ -191,9 +246,10 @@ class SSHService:
             )
         ):
             hint = (
-                "The provided sudo password was rejected."
+                "The sudo password was rejected."
                 if self.sudo_password
-                else "Use --ask-become-pass to provide it."
+                else "Commands with embedded sudo can't be prompted for a "
+                "password; use a leading sudo (e.g. 'slipp exec -u root ...')."
             )
             raise SudoPasswordRequired(
                 f"{context}: sudo requires a password on this host. {hint}"

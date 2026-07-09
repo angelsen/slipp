@@ -6,10 +6,8 @@ import typer
 
 from slipp import output
 from slipp.commands.common import (
-    AskBecomePassOption,
     find_service_or_exit,
     resolve_host_or_exit,
-    resolve_sudo_password,
 )
 from slipp.models.service import Runtime
 from slipp.services.ssh import SSHService
@@ -28,15 +26,12 @@ def logs_command(
     all_services: Annotated[
         bool, typer.Option("--all", help="Include system services in discovery")
     ] = False,
-    ask_become_pass: AskBecomePassOption = False,
 ) -> None:
     """View service logs (journalctl or podman/docker logs)."""
-    sudo_password = resolve_sudo_password(ask_become_pass)
-
     ssh_config = resolve_host_or_exit(service=service, command="logs")
 
     target_service = find_service_or_exit(
-        ssh_config, service, include_system=all_services, sudo_password=sudo_password
+        ssh_config, service, include_system=all_services
     )
 
     if Runtime(target_service.runtime).is_container() and not target_service.unit_name:
@@ -52,7 +47,10 @@ def logs_command(
     output.task(f"Logs for {target_service.name}@{target_service.host}")
     output.info(f"({target_service.runtime}, {target_service.state})")
 
-    with SSHService(ssh_config, sudo_password=sudo_password) as ssh:
+    with SSHService(ssh_config) as ssh:
+        # Discovery may have been a cache hit (no SSH, no prompt), and a
+        # stream can't prompt once it has started — so ensure sudo up front.
+        ssh.ensure_sudo("Fetching logs")
         try:
             if follow:
                 for line in ssh.execute_stream(cmd):

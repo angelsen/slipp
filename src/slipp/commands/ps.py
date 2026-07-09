@@ -7,10 +7,8 @@ import typer
 
 from slipp import output
 from slipp.commands.common import (
-    AskBecomePassOption,
     display_services_table,
     resolve_host_or_exit,
-    resolve_sudo_password,
 )
 from slipp.constants import OutputFormat
 from slipp.services.config import HostResolver, collect_managed_roles
@@ -28,11 +26,8 @@ def ps_command(
     all_services: Annotated[
         bool, typer.Option("--all", help="Include system services in discovery")
     ] = False,
-    ask_become_pass: AskBecomePassOption = False,
 ) -> None:
     """List running services (like docker ps)."""
-    sudo_password = resolve_sudo_password(ask_become_pass)
-
     resolver = HostResolver()
 
     if project:
@@ -46,7 +41,6 @@ def ps_command(
             ssh_config,
             include_system=all_services,
             force=refresh,
-            sudo_password=sudo_password,
         )
 
         services = filter_services(
@@ -76,7 +70,6 @@ def ps_command(
             hosts,
             include_system=all_services,
             force=refresh,
-            sudo_password=sudo_password,
         )
 
         services = filter_services(

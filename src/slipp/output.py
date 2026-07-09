@@ -220,25 +220,27 @@ def format_path(path: Path | str, project_root: Path | None = None) -> str:
 
 
 def prompt(question: str, default: str | None = None) -> str:
-    """Text input prompt via typer."""
+    """Text input prompt via typer (prompt text on stderr, stdout stays data)."""
     import typer
 
-    return typer.prompt(question, default=default)
+    return typer.prompt(question, default=default, err=True)
 
 
 def prompt_password(question: str = "Password", confirm: bool = False) -> str:
     """Password input with optional confirmation.
 
-    Raises PasswordMismatchError if confirm=True and passwords don't match.
+    Prompt text goes to stderr so a prompt mid-command never corrupts
+    piped stdout. Raises PasswordMismatchError if confirm=True and
+    passwords don't match.
     """
     import typer
 
     from slipp.utils.errors import PasswordMismatchError
 
-    password = typer.prompt(question, hide_input=True)
+    password = typer.prompt(question, hide_input=True, err=True)
 
     if confirm:
-        password2 = typer.prompt("Confirm password", hide_input=True)
+        password2 = typer.prompt("Confirm password", hide_input=True, err=True)
         if password != password2:
             raise PasswordMismatchError("Passwords do not match")
 

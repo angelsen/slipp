@@ -10,10 +10,8 @@ import typer
 
 from slipp import output
 from slipp.commands.common import (
-    AskBecomePassOption,
     find_service_or_exit,
     resolve_host_or_exit,
-    resolve_sudo_password,
 )
 from slipp.services.ssh import SSHService
 from slipp.services.status import extract_status_log_lines, parse_systemctl_status
@@ -21,20 +19,18 @@ from slipp.services.status import extract_status_log_lines, parse_systemctl_stat
 
 def status_command(
     service: Annotated[str, typer.Argument(help="Service name to show status for")],
-    ask_become_pass: AskBecomePassOption = False,
 ) -> None:
     """Display detailed service status (like systemctl status)."""
-    sudo_password = resolve_sudo_password(ask_become_pass)
-
     ssh_config = resolve_host_or_exit(service=service, command="status")
 
-    target_service = find_service_or_exit(
-        ssh_config, service, include_system=True, sudo_password=sudo_password
-    )
+    target_service = find_service_or_exit(ssh_config, service, include_system=True)
 
     output.task(f"Status for {target_service.name}@{target_service.host}")
 
-    with SSHService(ssh_config, sudo_password=sudo_password) as ssh:
+    with SSHService(ssh_config) as ssh:
+        # Discovery may have been a cache hit (no SSH, no prompt) - ensure
+        # sudo works before running the status command.
+        ssh.ensure_sudo("Fetching service status")
         # systemctl status legitimately exits non-zero for inactive/failed
         # units with usable stdout - only sudo failures are worth raising on
         result = ssh.execute(f"sudo systemctl status {target_service.unit_name}")

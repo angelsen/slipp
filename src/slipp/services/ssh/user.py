@@ -8,6 +8,7 @@ from dataclasses import dataclass
 
 from slipp.models.service import Runtime, Service
 from slipp.services.ssh.client import SSHService
+from slipp.utils.errors import SudoPasswordRequired
 
 
 @dataclass
@@ -48,6 +49,16 @@ class UserResolver:
         Returns:
             Username (e.g., 'www-data', 'postgres') or None if not determinable
         """
+        # Detection stays best-effort: if sudo needs a password we can't get
+        # (non-interactive, or rejected), fall back to the caller's default
+        # user — the final command may not need sudo at all. Kept outside the
+        # broad except below so a Ctrl-C at the prompt (click.Abort, a
+        # RuntimeError) still propagates.
+        try:
+            self.ssh.ensure_sudo("Detecting service user")
+        except SudoPasswordRequired:
+            return None
+
         # Exit codes intentionally unchecked: detection is best-effort here;
         # any command failure or empty output falls through to None, and the
         # caller (resolve()) warns and falls back to default_user.
