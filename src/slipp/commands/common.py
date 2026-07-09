@@ -23,6 +23,16 @@ DryRunOption = Annotated[
     typer.Option("--dry-run", help="Show what would be done without making changes"),
 ]
 
+AskBecomePassOption = Annotated[
+    bool,
+    typer.Option("--ask-become-pass", help="Prompt for sudo password on target host"),
+]
+
+
+def resolve_sudo_password(ask: bool) -> str | None:
+    """Prompt for the sudo password if requested."""
+    return output.prompt_password("BECOME (sudo) password") if ask else None
+
 
 def resolve_project_dirs(
     project_dirs: list[Path] | None,
@@ -87,7 +97,11 @@ def resolve_host_or_exit(
 
 
 def find_service_or_exit(
-    ssh_config: AnsibleHost, identifier: str, *, include_system: bool = False
+    ssh_config: AnsibleHost,
+    identifier: str,
+    *,
+    include_system: bool = False,
+    sudo_password: str | None = None,
 ) -> Service:
     """Find a service on a host, showing available services and exiting if not found.
 
@@ -95,6 +109,7 @@ def find_service_or_exit(
         ssh_config: Host to discover services on
         identifier: Service identifier to look up
         include_system: Include system services (systemd-*, getty@, etc.)
+        sudo_password: Sudo password for hosts without passwordless sudo
 
     Returns:
         Matched Service
@@ -102,7 +117,10 @@ def find_service_or_exit(
     Raises:
         typer.Exit: If the service is not found
     """
-    services = discover_and_enrich(ssh_config, include_system=include_system)
+    services = discover_and_enrich(
+        ssh_config, include_system=include_system, sudo_password=sudo_password
+    )
+
     filtered = filter_services(services, show_all=include_system)
 
     service = find_service(filtered, identifier)

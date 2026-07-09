@@ -7,7 +7,10 @@ import typer
 
 from slipp import output
 from slipp.commands.deploy import deploy_command
-from slipp.services.providers import provision_and_bootstrap, register_domain_interactive
+from slipp.services.providers import (
+    provision_and_bootstrap,
+    register_domain_interactive,
+)
 from slipp.constants import DEFAULT_ENV
 from slipp.models.deployment import DeploymentHostConfig, InventoryConfig
 from slipp.models.service import Runtime

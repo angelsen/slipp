@@ -29,6 +29,12 @@ class SSHCommandError(SlippError):
     pass
 
 
+class SudoPasswordRequired(SSHCommandError):
+    """A remote sudo command failed because a password is required."""
+
+    pass
+
+
 class TunnelError(SlippError):
     """SSH tunnel operation failed."""
 

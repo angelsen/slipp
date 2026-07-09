@@ -23,9 +23,7 @@ SSH_READY_INTERVAL = 1
 STALE_THRESHOLD_HOURS = 24
 
 
-def resolve_server(
-    client: GigahostClient, name_or_ip: str
-) -> tuple[int, str, str]:
+def resolve_server(client: GigahostClient, name_or_ip: str) -> tuple[int, str, str]:
     """Resolve a server by name or primary IP.
 
     Returns:
@@ -350,14 +348,10 @@ def install_server(
             f"Resuming install for '{display}' "
             f"(started: {state.created_at:%Y-%m-%d %H:%M})"
         )
-        return _bootstrap_and_finish(
-            ip, srv_id, display, started_at=state.created_at
-        )
+        return _bootstrap_and_finish(ip, srv_id, display, started_at=state.created_at)
 
     if not force:
-        if not typer.confirm(
-            f"Wipe and reinstall '{display}' ({ip})?", default=False
-        ):
+        if not typer.confirm(f"Wipe and reinstall '{display}' ({ip})?", default=False):
             output.info("Cancelled")
             return None
 
@@ -371,8 +365,12 @@ def install_server(
     now = datetime.now()
     ProvisionStateService.save(
         ProvisionState(
-            name=display, srv_id=srv_id, ip=ip, phase=ProvisionPhase.INSTALLING,
-            created_at=now, updated_at=now,
+            name=display,
+            srv_id=srv_id,
+            ip=ip,
+            phase=ProvisionPhase.INSTALLING,
+            created_at=now,
+            updated_at=now,
         )
     )
 

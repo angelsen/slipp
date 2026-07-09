@@ -448,6 +448,74 @@ network/routing it's exposed through.
 
 ---
 
+## Sudo password support for ps/logs/exec/status — staged, with follow-ups (2026-07-09)
+
+Implementation is **staged (uncommitted)**: `--ask-become-pass` on
+`ps`/`logs`/`exec`/`status`, a `SudoPasswordRequired` error, sudo-failure
+detection (`check_sudo_result`), and `SSHService` rewriting `sudo ...` →
+`sudo -S ...` with the password piped via stdin. This fixes the deferred gap
+from the lanpad port (discovery silently reporting "No services found" on
+hosts without passwordless sudo).
+
+All inline fixes and the v2 detection improvements have been applied:
+
+- [x] Redundant `try/except SudoPasswordRequired` blocks deleted from
+  `common.py` and `ps.py` — global `SlippError` handler covers it.
+- [x] Why-comments restored in `pipeline.py`.
+- [x] `check_sudo_result` folded into `SSHService.check_sudo()` method —
+  no more `password_was_provided` boilerplate or separate export.
+- [x] `AskBecomePassOption` + `resolve_sudo_password()` factored into
+  `commands/common.py` — all four commands use the shared definitions.
+- [x] `check_sudo` wired into `status.py` and `logs.py` command-level SSH
+  calls (not just discovery).
+- [x] **`sudo -n true` probe** — `SSHService.require_sudo()` runs once in
+  discovery before any `sudo systemctl` commands. Detects the need for a
+  password before running, not after.
+- [x] **Exact error-string matching** — `check_sudo` matches specific sudo
+  messages (`a password is required`, `a terminal is required`,
+  `incorrect password attempt`) instead of generic `"sudo:"` substring.
+  Custom prompt sentinel was added then removed (false-positive: sudo writes
+  the sentinel to stderr on every successful `-S` invocation too).
+- [x] **`LC_MESSAGES=C` on all sudo commands** — sudo's error messages are
+  gettext-translated (confirmed in source: `_()` / `ngettext()` / `U_()`
+  macros, 30+ `.po` translations in the repo). On a `LANG=de_DE` host,
+  `"a password is required"` becomes `"Ein Passwort ist notwendig"` and
+  `check_sudo` would never match. Prepending `LC_MESSAGES=C` to all sudo
+  commands forces English error output without affecting the child command's
+  locale. Same gap exists in Ansible's become plugin (they use `dgettext()`
+  on the controller side, which only works if controller and remote locales
+  match).
+- [x] **`execute_stream` captures stderr + exit status** after the stdout loop
+  ends — stored as `ssh.last_stream_result`. `logs -f` checks it via
+  `ssh.check_sudo()`, replacing the `line_count` heuristic.
+- [x] `execute_stream` docstring documents that stdin is closed after the
+  optional sudo password.
+
+**Remaining follow-ups (not blocking):**
+
+- The endgame is auto-prompting — detect → prompt on demand (injected prompt
+  callback on `SSHService`) → retry, which would make `--ask-become-pass`
+  unnecessary. The probe (`require_sudo`) is the foundation; the auto-prompt
+  is the next step.
+- `require_sudo`'s hint ("Use --ask-become-pass") is misleading when the SSH
+  user isn't in sudoers at all — a password won't help. Edge case on
+  slipp-provisioned hosts (which always create a sudoer), but worth noting for
+  adopted hosts.
+
+**Structural lesson (why this touched 13 files):** ~6 files were the
+per-command flag (inherent to that UX choice — a global Typer option would
+shrink it to one file, since sudo access is a property of the host, not the
+command). The other ~7 were tramp data: intermediate layers
+(`find_service_or_exit` → `discover_and_enrich` → `DiscoveryService` →
+`_query_systemctl_batch`) take an `AnsibleHost` and construct `SSHService`
+internally, so anything touching connection/execution semantics must thread
+through every signature. Fix options, in order of preference: (a) the
+prompt-on-demand probe above, which deletes the surface area entirely; (b) pass
+the session/`SSHService` (or a factory for multi-host) down instead of
+`AnsibleHost`, making such options a constructor detail in one layer.
+
+---
+
 ## Many-to-many: projects × servers
 
 Today slipp is 1:1 (one `slipp.yaml` → one inventory → one server). Real
@@ -543,7 +611,9 @@ Confirmed live: `lanpad-lanpad.service` was active and serving on
 nothing found. Fix would mean either detecting the sudo-failure case
 explicitly (cheap, just stops the silent lie) or a full become-password
 prompt for `SSHService` itself (bigger, mirrors `--ask-become-pass` but for
-the ps/logs/exec path instead of deploy).
+the ps/logs/exec path instead of deploy). **Update 2026-07-09: implemented
+(staged) — see "Sudo password support for ps/logs/exec/status" section
+below.**
 
 ### Gaps these would surface
 

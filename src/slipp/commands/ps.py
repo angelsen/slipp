@@ -6,7 +6,12 @@ from typing import Annotated
 import typer
 
 from slipp import output
-from slipp.commands.common import display_services_table, resolve_host_or_exit
+from slipp.commands.common import (
+    AskBecomePassOption,
+    display_services_table,
+    resolve_host_or_exit,
+    resolve_sudo_password,
+)
 from slipp.constants import OutputFormat
 from slipp.services.config import HostResolver, collect_managed_roles
 from slipp.services.discovery import filter_services
@@ -23,8 +28,11 @@ def ps_command(
     all_services: Annotated[
         bool, typer.Option("--all", help="Include system services in discovery")
     ] = False,
+    ask_become_pass: AskBecomePassOption = False,
 ) -> None:
     """List running services (like docker ps)."""
+    sudo_password = resolve_sudo_password(ask_become_pass)
+
     resolver = HostResolver()
 
     if project:
@@ -35,7 +43,10 @@ def ps_command(
             output.info(f"Re-discovering services on {ssh_config.ansible_host}...")
 
         services = discover_and_enrich(
-            ssh_config, include_system=all_services, force=refresh
+            ssh_config,
+            include_system=all_services,
+            force=refresh,
+            sudo_password=sudo_password,
         )
 
         services = filter_services(
@@ -62,7 +73,10 @@ def ps_command(
             output.info(f"Re-discovering services across {len(hosts)} host(s)...")
 
         services, errors = discover_across_hosts(
-            hosts, include_system=all_services, force=refresh
+            hosts,
+            include_system=all_services,
+            force=refresh,
+            sudo_password=sudo_password,
         )
 
         services = filter_services(

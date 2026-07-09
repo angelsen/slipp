@@ -33,9 +33,7 @@ def provision_command(
         raise typer.Exit(1)
     except (SSHConnectionError, BootstrapError) as e:
         output.error(f"Bootstrap failed: {e}")
-        output.hint(
-            "Server is provisioned -- retry with: slipp bootstrap account <ip>"
-        )
+        output.hint("Server is provisioned -- retry with: slipp bootstrap account <ip>")
         raise typer.Exit(1)
 
     inventory_filename = get_inventory_filename(environment)

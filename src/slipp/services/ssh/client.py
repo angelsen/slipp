@@ -10,6 +10,7 @@ from slipp.utils.errors import (
     SSHAuthenticationError,
     SSHCommandError,
     SSHConnectionError,
+    SudoPasswordRequired,
 )
 
 
@@ -64,14 +65,18 @@ class SSHService:
         ...     print(result.stdout)
     """
 
-    def __init__(self, host_config: AnsibleHost):
+    def __init__(self, host_config: AnsibleHost, sudo_password: str | None = None):
         """Initialize SSH service with host configuration.
 
         Args:
             host_config: Host configuration with SSH details
+            sudo_password: If set, commands starting with ``sudo`` are
+                rewritten to ``sudo -S`` and the password is piped via stdin.
         """
         self.config = host_config
+        self.sudo_password = sudo_password
         self.client: paramiko.SSHClient | None = None
+        self.last_stream_result: SSHResult | None = None
 
     def __enter__(self):
         """Context manager entry - establish connection.
@@ -137,6 +142,63 @@ class SSHService:
                 f"Failed to connect to {self.config.connection_string()}: {e}"
             ) from e
 
+    def require_sudo(self, context: str) -> None:
+        """Probe whether passwordless sudo works; raise early if not.
+
+        Runs ``sudo -n true`` (non-interactive, no-op command). If it fails
+        and no sudo_password was provided, raises SudoPasswordRequired
+        immediately — before the caller runs anything that needs sudo.
+        No-op when a password was provided (check_sudo catches a rejected
+        one on the first real command).
+        """
+        if self.sudo_password:
+            return
+        probe = self.execute("sudo -n true")
+        if not probe.ok:
+            raise SudoPasswordRequired(
+                f"{context}: sudo requires a password on this host. "
+                "Use --ask-become-pass to provide it."
+            )
+
+    def _prepare_sudo_command(self, command: str) -> tuple[str, str | None]:
+        """Rewrite a sudo command to read the password from stdin.
+
+        All sudo commands get ``LC_MESSAGES=C`` so error messages are
+        always English regardless of the remote host's locale — sudo's
+        messages are gettext-translated and check_sudo matches English.
+
+        Returns:
+            Tuple of (possibly-rewritten command, stdin payload or None)
+        """
+        if not command.startswith("sudo "):
+            return command, None
+        rest = command[5:]
+        if self.sudo_password:
+            # -p '' suppresses the "[sudo] password for user:" prompt that
+            # would otherwise leak into stderr (and displayed output)
+            return f"LC_MESSAGES=C sudo -S -p '' {rest}", self.sudo_password + "\n"
+        return f"LC_MESSAGES=C sudo {rest}", None
+
+    def check_sudo(self, result: SSHResult, context: str) -> None:
+        """Raise SudoPasswordRequired if a result looks like a sudo auth failure."""
+        if (
+            not result.ok
+            and not result.stdout.strip()
+            and (
+                "a password is required" in result.stderr
+                or "a terminal is required" in result.stderr
+                or "incorrect password attempt" in result.stderr
+            )
+        ):
+            hint = (
+                "The provided sudo password was rejected."
+                if self.sudo_password
+                else "Use --ask-become-pass to provide it."
+            )
+            raise SudoPasswordRequired(
+                f"{context}: sudo requires a password on this host. {hint}"
+            )
+
     def execute(self, command: str, stdin_data: str | None = None) -> SSHResult:
         """Execute command and return its exit code, stdout, and stderr.
 
@@ -160,6 +222,10 @@ class SSHService:
         if not self.client:
             raise SSHConnectionError("Not connected - call connect() first")
 
+        command, sudo_stdin = self._prepare_sudo_command(command)
+        if sudo_stdin:
+            stdin_data = sudo_stdin + (stdin_data or "")
+
         stdin, stdout, stderr = self.client.exec_command(command)
 
         try:
@@ -181,7 +247,12 @@ class SSHService:
             stderr.close()
 
     def execute_stream(self, command: str) -> Generator[str, None, None]:
-        """Execute command and stream output line by line.
+        """Execute command and stream stdout line by line.
+
+        After the stream ends naturally (not via KeyboardInterrupt),
+        ``self.last_stream_result`` holds the exit code and stderr so
+        the caller can inspect them.  Stdin is closed after the optional
+        sudo password, so streamed commands cannot read interactive input.
 
         Args:
             command: Shell command to execute (typically with -f flag for following)
@@ -195,19 +266,32 @@ class SSHService:
         Example:
             >>> for line in ssh.execute_stream('tail -f /var/log/app.log'):
             ...     print(line)
+            >>> if ssh.last_stream_result:
+            ...     ssh.check_sudo(ssh.last_stream_result, "streaming")
         """
         if not self.client:
             raise SSHConnectionError("Not connected - call connect() first")
 
-        stdin, stdout, stderr = self.client.exec_command(command)
+        self.last_stream_result = None
+        command, sudo_stdin = self._prepare_sudo_command(command)
+        chan_stdin, chan_stdout, chan_stderr = self.client.exec_command(command)
 
         try:
-            for line in stdout:
+            if sudo_stdin:
+                chan_stdin.write(sudo_stdin)
+                chan_stdin.flush()
+            chan_stdin.channel.shutdown_write()
+            for line in chan_stdout:
                 yield line.rstrip()
+            err = chan_stderr.read().decode("utf-8", errors="ignore")
+            exit_code = chan_stdout.channel.recv_exit_status()
+            self.last_stream_result = SSHResult(
+                exit_code=exit_code, stdout="", stderr=err
+            )
         finally:
-            stdin.close()
-            stdout.close()
-            stderr.close()
+            chan_stdin.close()
+            chan_stdout.close()
+            chan_stderr.close()
 
     def close(self) -> None:
         """Close SSH connection.

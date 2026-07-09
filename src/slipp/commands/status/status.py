@@ -9,27 +9,37 @@ from typing import Annotated
 import typer
 
 from slipp import output
-from slipp.commands.common import find_service_or_exit, resolve_host_or_exit
+from slipp.commands.common import (
+    AskBecomePassOption,
+    find_service_or_exit,
+    resolve_host_or_exit,
+    resolve_sudo_password,
+)
 from slipp.services.ssh import SSHService
 from slipp.services.status import extract_status_log_lines, parse_systemctl_status
 
 
 def status_command(
     service: Annotated[str, typer.Argument(help="Service name to show status for")],
+    ask_become_pass: AskBecomePassOption = False,
 ) -> None:
     """Display detailed service status (like systemctl status)."""
+    sudo_password = resolve_sudo_password(ask_become_pass)
+
     ssh_config = resolve_host_or_exit(service=service, command="status")
 
-    target_service = find_service_or_exit(ssh_config, service, include_system=True)
+    target_service = find_service_or_exit(
+        ssh_config, service, include_system=True, sudo_password=sudo_password
+    )
 
     output.task(f"Status for {target_service.name}@{target_service.host}")
 
-    with SSHService(ssh_config) as ssh:
-        # systemctl status legitimately exits non-zero for inactive/failed units
-        # with usable stdout - don't check the exit code, just use it
-        cmd_output = ssh.execute(
-            f"sudo systemctl status {target_service.unit_name}"
-        ).stdout
+    with SSHService(ssh_config, sudo_password=sudo_password) as ssh:
+        # systemctl status legitimately exits non-zero for inactive/failed
+        # units with usable stdout - only sudo failures are worth raising on
+        result = ssh.execute(f"sudo systemctl status {target_service.unit_name}")
+        ssh.check_sudo(result, "Fetching service status")
+        cmd_output = result.stdout
         details = parse_systemctl_status(cmd_output)
 
         output.stdout(f"Service: {target_service.name}")

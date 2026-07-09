@@ -39,6 +39,7 @@ class DiscoveryService:
         host_config: AnsibleHost,
         force: bool = False,
         include_system: bool = False,
+        sudo_password: str | None = None,
     ) -> list[Service]:
         """Discover services on host.
 
@@ -46,6 +47,7 @@ class DiscoveryService:
             host_config: Host to query
             force: Skip cache, force re-discovery
             include_system: Include system services (systemd-*, getty@, etc.)
+            sudo_password: Sudo password for hosts without passwordless sudo
 
         Returns:
             List of discovered services
@@ -63,7 +65,9 @@ class DiscoveryService:
                 services = [Service.model_validate(svc) for svc in cached]
 
         if services is None:
-            services = self._query_systemctl_batch(host_config)
+            services = self._query_systemctl_batch(
+                host_config, sudo_password=sudo_password
+            )
             self.cache.set(
                 cache_key,
                 [svc.model_dump() for svc in services],
@@ -75,7 +79,11 @@ class DiscoveryService:
 
         return services
 
-    def _query_systemctl_batch(self, host_config: AnsibleHost) -> list[Service]:
+    def _query_systemctl_batch(
+        self,
+        host_config: AnsibleHost,
+        sudo_password: str | None = None,
+    ) -> list[Service]:
         """Query all service data in TWO passes (aligned).
 
         Pass 1: Get filtered service list + states
@@ -85,17 +93,22 @@ class DiscoveryService:
 
         Args:
             host_config: Host to query
+            sudo_password: Sudo password for hosts without passwordless sudo
 
         Returns:
             List of discovered services
         """
-        with SSHService(host_config) as ssh:
+        with SSHService(host_config, sudo_password=sudo_password) as ssh:
+            ssh.require_sudo("Service discovery")
+
             cmd_list = (
                 "sudo systemctl list-units --type=service --all --no-pager --plain"
             )
             # systemctl list-units legitimately exits non-zero in some setups
-            # while still returning usable stdout - don't check the exit code
-            output_list = ssh.execute(cmd_list).stdout
+            # while still returning usable stdout - only raise on sudo failures
+            result_list = ssh.execute(cmd_list)
+            ssh.check_sudo(result_list, "Service discovery")
+            output_list = result_list.stdout
             unit_names, states = self._parse_list_units(output_list)
 
             if not unit_names:
