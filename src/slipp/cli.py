@@ -27,6 +27,7 @@ from slipp.commands.projects import projects_app
 from slipp.commands.provision import provision_command
 from slipp.commands.providers import providers_app
 from slipp.commands.ps import ps_command
+from slipp.commands.resources import resources_app
 from slipp.commands.run import RUN_CONTEXT_SETTINGS, run_command
 from slipp.commands.runs import runs_app
 from slipp.commands.secret import secret_command
@@ -86,6 +87,7 @@ app.add_typer(image_app, name="image")
 app.add_typer(images_app, name="images")
 app.add_typer(projects_app, name="projects")
 app.add_typer(providers_app, name="providers")
+app.add_typer(resources_app, name="resources")
 app.add_typer(runs_app, name="runs")
 app.add_typer(secrets_app, name="secrets")
 app.add_typer(servers_app, name="servers")

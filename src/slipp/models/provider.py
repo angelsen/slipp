@@ -23,11 +23,29 @@ class GigahostConfig(BaseModel):
     account_id: int | None = None
 
 
+class PangolinConfig(BaseModel):
+    """Pangolin provider configuration.
+
+    Attributes:
+        session_cookie: Value of the p_session_token dashboard session
+            cookie. Stopgap until Pangolin's Integration API (Bearer-token
+            auth) is reachable -- see services/providers/pangolin.py.
+        org: Pangolin org slug.
+        base_url: Pangolin REST API base URL.
+    """
+
+    session_cookie: str = Field(..., min_length=1, description="p_session_token value")
+    org: str = "mym"
+    base_url: str = "https://pangolin.mymechanic.no/api/v1"
+
+
 class ProvidersConfig(BaseModel):
     """Root config for ~/.config/slipp/providers.yaml.
 
     Attributes:
         gigahost: Gigahost provider config, if configured
+        pangolin: Pangolin provider config, if configured
     """
 
     gigahost: GigahostConfig | None = None
+    pangolin: PangolinConfig | None = None

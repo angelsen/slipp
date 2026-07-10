@@ -18,12 +18,13 @@ import json
 import logging
 import re
 import shlex
+from contextlib import ExitStack
 from importlib.resources import files
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 from slipp.models.host import AnsibleHost
-from slipp.services.ansible import run_playbook
+from slipp.services.ansible import become_password_file, run_playbook
 from slipp.services.ssh import SSHService
 from slipp.utils.errors import CaddyProxyError
 
@@ -44,18 +45,27 @@ def _domain_to_route_id(domain: str) -> str:
 
 
 def _push_route(host: AnsibleHost, route_config: dict, error_prefix: str) -> None:
-    """Prepend a route to Caddy's config via the admin API.
+    """Prepend a route to Caddy's config via the admin API, idempotently.
+
+    Caddy rejects a config containing two routes with the same "@id", so
+    re-pushing a route (e.g. re-running `run --tunnel-out` for a domain
+    that's already routed) must replace the existing entry rather than
+    duplicate it: any existing route sharing this route's "@id" is
+    filtered out of the current list before the new one is prepended.
 
     Args:
         host: Remote host running Caddy
-        route_config: Caddy route object to prepend
+        route_config: Caddy route object to prepend. Must include "@id".
         error_prefix: Message prefix used if the push fails
 
     Raises:
         CaddyProxyError: If the route push fails
     """
     route_json = json.dumps(route_config)
-    jq_filter = shlex.quote(f"[{route_json}] + .")
+    route_id_json = json.dumps(route_config["@id"])
+    jq_filter = shlex.quote(
+        f'[{route_json}] + (map(select(.["@id"] != {route_id_json})))'
+    )
 
     add_cmd = (
         f"curl -sf http://localhost:2019/config/apps/http/servers/srv1/routes | "
@@ -122,6 +132,7 @@ class CaddyProxy:
         host: AnsibleHost,
         acme_email: str | None = None,
         fallback_port: int = 9443,
+        ask_become_pass: bool = False,
     ):
         """Initialize Caddy proxy for a host.
 
@@ -129,10 +140,13 @@ class CaddyProxy:
             host: Target host for Caddy installation and routes
             acme_email: Email for Let's Encrypt certificate registration
             fallback_port: Port where existing service listens for HTTPS traffic
+            ask_become_pass: Prompt for the sudo/become password before
+                installing (target host has no passwordless sudo).
         """
         self.host = host
         self.acme_email = acme_email
         self.fallback_port = fallback_port
+        self.ask_become_pass = ask_become_pass
         self.route_ids: list[str] = []
 
     def __enter__(self) -> "CaddyProxy":
@@ -223,16 +237,28 @@ class CaddyProxy:
             if self.acme_email:
                 extra_vars["acme_email"] = self.acme_email
 
-            result = run_playbook(
-                str(playbook_path),
-                str(inventory_path),
-                extra_vars=extra_vars,
-            )
+            with ExitStack() as stack:
+                become_pw_file = (
+                    stack.enter_context(become_password_file())
+                    if self.ask_become_pass
+                    else None
+                )
+                result = run_playbook(
+                    str(playbook_path),
+                    str(inventory_path),
+                    extra_vars=extra_vars,
+                    become_pw_file=become_pw_file,
+                )
 
             if result.exit_code != 0:
+                hint = (
+                    ""
+                    if self.ask_become_pass
+                    else "\nHint: retry with --ask-become-pass if the target host has no passwordless sudo"
+                )
                 raise CaddyProxyError(
                     f"Caddy installation failed (exit code {result.exit_code})\n"
-                    "Check the ansible output above for details"
+                    "Check the ansible output above for details" + hint
                 )
 
             return False

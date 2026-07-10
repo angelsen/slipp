@@ -12,7 +12,7 @@ from pathlib import Path
 
 import yaml
 
-from slipp.models.provider import GigahostConfig, ProvidersConfig
+from slipp.models.provider import GigahostConfig, PangolinConfig, ProvidersConfig
 from slipp.utils.files import atomic_write_text
 
 logger = logging.getLogger(__name__)
@@ -106,4 +106,34 @@ class ProviderConfigService:
         """Remove the Gigahost config, if any."""
         config = ProviderConfigService.load()
         config.gigahost = None
+        ProviderConfigService.save(config)
+
+    @staticmethod
+    def get_pangolin() -> PangolinConfig | None:
+        """Get Pangolin config, with PANGOLIN_SESSION_COOKIE env var taking precedence.
+
+        The env var override lets CI/automation supply a cookie without ever
+        writing providers.yaml.
+        """
+        env_cookie = os.getenv("PANGOLIN_SESSION_COOKIE")
+        if env_cookie:
+            cached = ProviderConfigService.load().pangolin
+            if cached:
+                return cached.model_copy(update={"session_cookie": env_cookie})
+            return PangolinConfig(session_cookie=env_cookie)
+
+        return ProviderConfigService.load().pangolin
+
+    @staticmethod
+    def set_pangolin(pangolin: PangolinConfig) -> None:
+        """Save (or replace) the Pangolin config."""
+        config = ProviderConfigService.load()
+        config.pangolin = pangolin
+        ProviderConfigService.save(config)
+
+    @staticmethod
+    def remove_pangolin() -> None:
+        """Remove the Pangolin config, if any."""
+        config = ProviderConfigService.load()
+        config.pangolin = None
         ProviderConfigService.save(config)

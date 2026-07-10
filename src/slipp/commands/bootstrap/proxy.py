@@ -34,6 +34,13 @@ def proxy_command(
             help="Port where existing service listens for HTTPS",
         ),
     ] = 9443,
+    ask_become_pass: Annotated[
+        bool,
+        typer.Option(
+            "--ask-become-pass",
+            help="Prompt for the sudo/become password (target host has no passwordless sudo)",
+        ),
+    ] = False,
 ) -> None:
     """Setup dev proxy infrastructure for slipp run --tunnel-out."""
     try:
@@ -51,7 +58,10 @@ def proxy_command(
     output.blank()
 
     with CaddyProxy(
-        ansible_host, acme_email=email, fallback_port=fallback_port
+        ansible_host,
+        acme_email=email,
+        fallback_port=fallback_port,
+        ask_become_pass=ask_become_pass,
     ) as proxy:
         output.info("1. Checking port 443...")
         try:
