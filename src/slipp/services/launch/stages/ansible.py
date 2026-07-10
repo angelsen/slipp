@@ -83,7 +83,7 @@ class AppRolesStage(FileGenerationStage[FullContext]):
             )
 
         all_files = {}
-        for service in context.services:
+        for index, service in enumerate(context.services):
             is_python_systemd = (
                 runtime == Runtime.SYSTEMD and service.framework in PYTHON_FRAMEWORKS
             )
@@ -111,12 +111,16 @@ class AppRolesStage(FileGenerationStage[FullContext]):
                     )
             # service.port is the scanner's initial guess; first_host.app_port
             # is the user-confirmed deploy port and may have been changed
-            # since (e.g. a hand-edited/pre-existing inventory.yml). For
-            # systemd, app_port is what the unit file actually binds to, so
-            # role generation must use it, not the stale scanner guess.
+            # since (e.g. a hand-edited/pre-existing inventory.yml). The
+            # generated unit/container templates bind to app_port, so role
+            # generation must use it, not the stale scanner guess. Only the
+            # primary service (index 0, the one app_port was seeded from -
+            # see InventoryFileStage) is eligible: applying it to every
+            # service would clobber a secondary service's own distinct port,
+            # producing two units that both bind app_port.
             role_service = service
             if (
-                runtime == Runtime.SYSTEMD
+                index == 0
                 and first_host.app_port
                 and first_host.app_port != service.port
             ):
