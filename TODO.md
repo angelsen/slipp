@@ -697,8 +697,28 @@ below.**
 
 ### Gaps these would surface
 
-- **Rollback** — partbridge has health-check + auto-rollback on failed deploy.
-  slipp has no rollback mechanism.
+- **Rollback** — done (2026-07-10). `slipp launch --health-check /path` wraps
+  systemd deploys in a block/rescue: restart, verify `systemctl is-active`,
+  poll the health endpoint, and on failure restore a pre-deploy snapshot
+  (app dir + systemd unit) and fail loudly — re-verifying the rolled-back
+  version's own health before reporting success vs. "rollback also failed."
+  Crash-loop detection (no rollback) is on by default even without the flag.
+  Ported `klara` (partbridge) to `slipp deploy` using it, live-verified
+  against `mym-dev`.
+
+  **Known limitation, not yet addressed:** the restart (success or rollback)
+  is in-place — a few seconds of real downtime around each restart, since
+  there's no second port/unit to health-check *before* cutting over. True
+  zero-downtime would need a blue-green swap: deploy to a spare port/unit,
+  health-check it while the old one still serves traffic, then repoint
+  whatever's in front. For a slipp-managed Caddy role that's a cheap
+  admin-API port rewrite; for an externally-proxied domain (klara's actual
+  setup, via Pangolin) it means calling out to that proxy's own API
+  (`resources sync`-style) to swap the Target's port, with its own latency
+  and failure modes — plus apps with local on-disk state (e.g. partbridge's
+  SQLite files) would briefly have two live processes touching the same
+  files. Meaningfully bigger scope than the current fix; not pursuing it
+  until the few-second in-place restart window actually causes a problem.
 - **Database migrations** — scans runs `drizzle db:push` during deploy. slipp's
   playbook template has no migration hook.
 - **Git-push-to-deploy** — all three use `git push deploy main`. Two approaches:
