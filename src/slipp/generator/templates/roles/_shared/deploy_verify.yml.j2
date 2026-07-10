@@ -1,0 +1,122 @@
+- name: Deploy systemd service
+  ansible.builtin.template:
+    src: systemd.service.j2
+    dest: "/etc/systemd/system/{{ project_name }}-{{ service.name }}.service"
+    mode: '0644'
+
+- name: Deploy and verify {{ project_name }}-{{ service.name }}
+  block:
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Enable and restart service
+      ansible.builtin.systemd:
+        name: "{{ project_name }}-{{ service.name }}.service"
+        enabled: true
+        state: restarted
+
+    - name: Wait for service to stabilize
+      ansible.builtin.pause:
+        seconds: 3
+
+    - name: Verify service is active
+      become: false
+      ansible.builtin.command: "systemctl is-active {{ project_name }}-{{ service.name }}.service"
+      changed_when: false
+{% if health_check %}
+
+    - name: Check health endpoint
+      become: false
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ service.port }}{{ health_check }}"
+        status_code: 200
+      register: _health
+      until: _health.status | default(0) == 200
+      retries: 20
+      delay: 2
+{% endif %}
+
+  rescue:
+    - name: Get recent service logs
+      ansible.builtin.command: "journalctl -u {{ project_name }}-{{ service.name }}.service --no-pager -n 30"
+      register: _journal
+      changed_when: false
+      failed_when: false
+
+    - name: Show recent service logs
+      ansible.builtin.debug:
+        var: _journal.stdout_lines
+{% if health_check %}
+
+    - name: Restore previous systemd unit
+      ansible.builtin.copy:
+        remote_src: true
+        src: "/etc/systemd/system/{{ project_name }}-{{ service.name }}.service.rollback"
+        dest: "/etc/systemd/system/{{ project_name }}-{{ service.name }}.service"
+        mode: '0644'
+      when: _prev_unit.stat.exists
+
+    - name: Roll back to previous deployment
+      become: false
+      ansible.builtin.command: "rsync -a --delete /opt/{{ project_name }}-{{ service.name }}.rollback/ /opt/{{ project_name }}-{{ service.name }}/"
+      when: _prev_deploy.stat.exists
+
+    - name: Reload systemd after rollback
+      ansible.builtin.systemd:
+        daemon_reload: true
+      when: _prev_deploy.stat.exists or _prev_unit.stat.exists
+
+    - name: Restart service after rollback
+      ansible.builtin.systemd:
+        name: "{{ project_name }}-{{ service.name }}.service"
+        state: restarted
+      when: _prev_deploy.stat.exists or _prev_unit.stat.exists
+
+    - name: Verify rollback service is active
+      become: false
+      ansible.builtin.command: "systemctl is-active {{ project_name }}-{{ service.name }}.service"
+      register: _rollback_active
+      changed_when: false
+      failed_when: false
+      when: _prev_deploy.stat.exists or _prev_unit.stat.exists
+
+    - name: Check rollback health endpoint
+      become: false
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ service.port }}{{ health_check }}"
+        status_code: 200
+      register: _rollback_health
+      until: _rollback_health.status | default(0) == 200
+      retries: 10
+      delay: 2
+      failed_when: false
+      when: >-
+        (_prev_deploy.stat.exists or _prev_unit.stat.exists)
+        and (_rollback_active.rc | default(1)) == 0
+
+    - name: Fail - rolled back to previous version
+      ansible.builtin.fail:
+        msg: "{{ project_name }}-{{ service.name }} failed its health check ({{ health_check }}) and was rolled back to the previous version. See logs above."
+      when: >-
+        (_prev_deploy.stat.exists or _prev_unit.stat.exists)
+        and (_rollback_active.rc | default(1)) == 0
+        and (_rollback_health.status | default(0)) == 200
+
+    - name: Fail - rollback also failed
+      ansible.builtin.fail:
+        msg: "{{ project_name }}-{{ service.name }} failed its health check ({{ health_check }}); rollback to the previous version ALSO failed to become healthy - manual intervention needed. See logs above."
+      when: >-
+        (_prev_deploy.stat.exists or _prev_unit.stat.exists)
+        and not ((_rollback_active.rc | default(1)) == 0 and (_rollback_health.status | default(0)) == 200)
+
+    - name: Fail - no previous version to roll back to
+      ansible.builtin.fail:
+        msg: "{{ project_name }}-{{ service.name }} failed its health check ({{ health_check }}) on first deploy - nothing to roll back to. See logs above."
+      when: not _prev_deploy.stat.exists and not _prev_unit.stat.exists
+{% else %}
+
+    - name: Fail - service did not start
+      ansible.builtin.fail:
+        msg: "{{ project_name }}-{{ service.name }} did not start successfully. See logs above."
+{% endif %}

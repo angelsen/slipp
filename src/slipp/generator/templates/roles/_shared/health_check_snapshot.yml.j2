@@ -1,0 +1,36 @@
+{% if health_check %}
+- name: Check for existing deployment
+  become: false
+  ansible.builtin.stat:
+    path: "/opt/{{ project_name }}-{{ service.name }}"
+  register: _prev_deploy
+
+- name: Create rollback snapshot directory
+  ansible.builtin.file:
+    path: "/opt/{{ project_name }}-{{ service.name }}.rollback"
+    state: directory
+    mode: '0755'
+    owner: "{{ '{{ ansible_user }}' }}"
+    group: "{{ '{{ ansible_user }}' }}"
+  when: _prev_deploy.stat.exists
+
+- name: Snapshot current deployment for rollback
+  become: false
+  ansible.builtin.command: "rsync -a --delete /opt/{{ project_name }}-{{ service.name }}/ /opt/{{ project_name }}-{{ service.name }}.rollback/"
+  when: _prev_deploy.stat.exists
+  changed_when: false
+
+- name: Check for existing systemd unit
+  ansible.builtin.stat:
+    path: "/etc/systemd/system/{{ project_name }}-{{ service.name }}.service"
+  register: _prev_unit
+
+- name: Backup current systemd unit for rollback
+  ansible.builtin.copy:
+    remote_src: true
+    src: "/etc/systemd/system/{{ project_name }}-{{ service.name }}.service"
+    dest: "/etc/systemd/system/{{ project_name }}-{{ service.name }}.service.rollback"
+    mode: '0644'
+  when: _prev_unit.stat.exists
+
+{% endif %}

@@ -31,7 +31,8 @@ class RoleGenerator:
     Creates role directory structure:
     - roles/{service-name}/tasks/main.yml
     - roles/{service-name}/templates/systemd.service.j2
-    - roles/{service-name}/handlers/main.yml
+    - roles/{service-name}/handlers/main.yml (container runtimes only --
+      systemd deploys restart/verify inline via block/rescue)
 
     Example:
         >>> service = DetectedService(name="backend", ...)
@@ -84,7 +85,10 @@ class RoleGenerator:
         excludes: list[str] = []
 
         for other in all_services:
-            if other is service:
+            # Path equality, not object identity: a caller may pass a
+            # model_copy() of `service` (e.g. with an overridden port) that
+            # is a distinct object but still the same service on disk.
+            if other.path == service.path:
                 continue
             try:
                 rel = other.path.relative_to(service.path)
@@ -113,6 +117,7 @@ class RoleGenerator:
         project_root: Path | None = None,
         uv_extra: str | None = None,
         exec_args: str | None = None,
+        health_check: str | None = None,
     ) -> dict[Path, str]:
         """Generate role files for a service.
 
@@ -130,6 +135,10 @@ class RoleGenerator:
                 systemd deploys only)
             exec_args: Optional extra arguments appended to ExecStart
                 (Python systemd deploys only)
+            health_check: Optional HTTP path (e.g. "/health") polled after
+                restart; on failure the previous deployment is restored
+                (systemd deploys only). Also enables crash-loop detection
+                (no rollback) when unset.
 
         Returns:
             Dict mapping file paths to content
@@ -155,14 +164,18 @@ class RoleGenerator:
         )
 
         files[Path(f"roles/{role_name}/tasks/main.yml")] = self._render_tasks(
-            service, project_name, runtime, sync_excludes, uv_extra
+            service, project_name, runtime, sync_excludes, uv_extra, health_check
         )
         files[Path(f"roles/{role_name}/templates/systemd.service.j2")] = (
             self._render_systemd(service, project_name, runtime, exec_args)
         )
-        files[Path(f"roles/{role_name}/handlers/main.yml")] = self._render_handlers(
-            service, project_name
-        )
+        # Systemd deploys handle restart/verification inline (see tasks/main.yml.j2's
+        # block/rescue) rather than via notify, so only the container role -- whose
+        # community.docker/podman tasks still notify a recreate handler -- needs one.
+        if runtime != Runtime.SYSTEMD:
+            files[Path(f"roles/{role_name}/handlers/main.yml")] = (
+                self._render_handlers(service, project_name)
+            )
 
         return files
 
@@ -173,6 +186,7 @@ class RoleGenerator:
         runtime: Runtime,
         sync_excludes: list[str],
         uv_extra: str | None = None,
+        health_check: str | None = None,
     ) -> str:
         """Render tasks/main.yml template.
 
@@ -184,6 +198,8 @@ class RoleGenerator:
                 _compute_sync_excludes)
             uv_extra: Optional `uv sync --extra <name>` group (Python
                 systemd deploys only)
+            health_check: Optional HTTP path polled after restart, with
+                rollback on failure (systemd deploys only)
 
         Returns:
             Rendered tasks YAML content
@@ -192,6 +208,7 @@ class RoleGenerator:
         context = {
             "service": service.model_dump(),
             "project_name": project_name,
+            "health_check": health_check,
             "runtime": runtime.value,
             "sync_excludes": sync_excludes,
             "uv_extra": uv_extra,

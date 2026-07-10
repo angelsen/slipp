@@ -9,7 +9,7 @@ from slipp import output
 from slipp.commands.common import DryRunOption
 from slipp.constants import DEFAULT_ENV, DEFAULT_GALAXY_PATH
 from slipp.utils.files import get_log_dir
-from slipp.utils.network import is_ip_address
+from slipp.utils.network import format_app_url
 from slipp.output import format_path
 from slipp.services.config import (
     ConfigResolver,
@@ -168,13 +168,9 @@ def deploy_command(
 
         domain = resolve_app_domain(project_root)
         if domain:
-            scheme = "http" if is_ip_address(domain) else "https"
             has_caddy = (project_root / "roles" / "caddy").exists()
-            port = None if has_caddy else resolve_app_port(project_root)
-            if port:
-                output.hint(f"  {scheme}://{domain}:{port}")
-            else:
-                output.hint(f"  {scheme}://{domain}")
+            port = resolve_app_port(project_root)
+            output.hint(f"  {format_app_url(domain, has_caddy=has_caddy, port=port)}")
 
         if (
             any([inventory, playbook, roles_list, galaxy_path_flag, vault])

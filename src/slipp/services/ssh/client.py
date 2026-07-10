@@ -332,6 +332,19 @@ class SSHService:
     def _prepare_sudo_command(self, command: str) -> tuple[str, str | None]:
         """Rewrite a sudo command to read the password from stdin.
 
+        Only a single leading "sudo " is rewritten — deliberately not
+        smarter than that. An earlier version split on " && " to also
+        rewrite later sudo invocations in a compound command, but that
+        purely textual split doesn't understand quoting: it mis-rewrote
+        `bash -c '... && sudo iptables ... && ...'`-style commands (see
+        services/run/caddy.py's check_cmd) by treating a sudo invocation
+        *inside* the quoted string as a top-level segment, corrupting the
+        quoting when the segments were rejoined. Nothing in this codebase
+        actually needs multi-sudo rewriting; a caller that does can wrap
+        the whole chain in one `sudo sh -c '...'` instead, which this
+        already handles correctly (the single leading sudo is rewritten,
+        everything after is passed through opaque and unmodified).
+
         All sudo commands get ``LC_MESSAGES=C`` so error messages are
         always English regardless of the remote host's locale — sudo's
         messages are gettext-translated and check_sudo matches English.

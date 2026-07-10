@@ -18,6 +18,8 @@ class FullContext(ScanContext):
         provision_config: Optional provisioning configuration.
         python_extra: uv sync --extra group name (Python systemd deploys).
         exec_args: Extra ExecStart arguments (Python systemd deploys).
+        health_check: HTTP path polled after restart; rolls back to the
+            previous deployment on failure (systemd deploys only).
     """
 
     environment: str = DEFAULT_ENV
@@ -25,3 +27,4 @@ class FullContext(ScanContext):
     provision_config: ProvisionConfig | None = None
     python_extra: str | None = None
     exec_args: str | None = None
+    health_check: str | None = None

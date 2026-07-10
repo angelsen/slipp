@@ -75,6 +75,13 @@ class AppRolesStage(FileGenerationStage[FullContext]):
         runtime = first_host.runtime
         role_generator = RoleGenerator()
 
+        if context.health_check and runtime != Runtime.SYSTEMD:
+            output.warning(
+                f"--health-check {context.health_check} has no effect on "
+                f"{runtime.value} deploys - health-check + rollback is only "
+                "implemented for systemd."
+            )
+
         all_files = {}
         for service in context.services:
             is_python_systemd = (
@@ -102,15 +109,29 @@ class AppRolesStage(FileGenerationStage[FullContext]):
                         "--exec-args with the file/module to run, or add a "
                         "[project.scripts] entry."
                     )
+            # service.port is the scanner's initial guess; first_host.app_port
+            # is the user-confirmed deploy port and may have been changed
+            # since (e.g. a hand-edited/pre-existing inventory.yml). For
+            # systemd, app_port is what the unit file actually binds to, so
+            # role generation must use it, not the stale scanner guess.
+            role_service = service
+            if (
+                runtime == Runtime.SYSTEMD
+                and first_host.app_port
+                and first_host.app_port != service.port
+            ):
+                role_service = service.model_copy(update={"port": first_host.app_port})
+
             try:
                 role_files = role_generator.generate_app_role(
-                    service,
+                    role_service,
                     context.project_name,
                     runtime,
                     all_services=context.services,
                     project_root=context.output_dir,
                     uv_extra=context.python_extra,
                     exec_args=context.exec_args,
+                    health_check=context.health_check,
                 )
             except Exception as e:
                 raise LaunchError(

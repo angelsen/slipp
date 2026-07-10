@@ -56,9 +56,19 @@ def launch_command(
             "--exec-args", help="Extra ExecStart arguments (Python systemd deploys)"
         ),
     ] = None,
+    health_check: Annotated[
+        str | None,
+        typer.Option(
+            "--health-check",
+            help="HTTP path polled after restart; rolls back on failure (systemd deploys)",
+        ),
+    ] = None,
 ) -> None:
     """Generate complete Ansible project from codebase."""
     dirs, output_dir = resolve_project_dirs(project_dirs)
+
+    if health_check and not health_check.startswith("/"):
+        health_check = f"/{health_check}"
 
     context = FullContext(
         output_dir=output_dir,
@@ -70,6 +80,7 @@ def launch_command(
         project_name=name,
         python_extra=python_extra,
         exec_args=exec_args,
+        health_check=health_check,
     )
 
     run_full_pipeline(context)

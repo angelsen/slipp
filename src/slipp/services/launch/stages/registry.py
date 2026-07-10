@@ -6,7 +6,7 @@ from slipp.models.service import Runtime
 from slipp.services.launch.context import FullContext
 from slipp.services.launch.registration import register_project
 from slipp.services.launch.stages.common import require
-from slipp.utils.network import is_ip_address
+from slipp.utils.network import format_app_url
 
 
 class RegistrationStage:
@@ -93,9 +93,9 @@ class SummaryStage:
             if first_host.app_domain:
                 output.blank()
                 output.stdout("Your app will be available at:")
-                scheme = "http" if is_ip_address(first_host.app_domain) else "https"
-                if context.skip_caddy and context.services:
-                    port = context.services[0].port
-                    output.stdout(f"  {scheme}://{first_host.app_domain}:{port}")
-                else:
-                    output.stdout(f"  {scheme}://{first_host.app_domain}")
+                url = format_app_url(
+                    first_host.app_domain,
+                    has_caddy=not context.skip_caddy,
+                    port=first_host.app_port,
+                )
+                output.stdout(f"  {url}")

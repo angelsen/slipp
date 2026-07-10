@@ -14,6 +14,17 @@
 # self-contained interpreter uv fetches directly, so it needs no
 # python3-venv package and isn't at the mercy of whatever Python version
 # the target distro happens to have packaged.
+{% if health_check %}
+#
+# Restart is wrapped in a block/rescue: the service must report active and
+# its health endpoint must return 200, or the previous deployment (code +
+# systemd unit, snapshot below includes .venv so rollback needs no
+# dependency reinstall) is restored and the play fails.
+{% else %}
+#
+# Restart is wrapped in a block/rescue: if the service doesn't report
+# active afterward, recent logs are surfaced and the play fails.
+{% endif %}
 
 - name: Install uv
   become: false
@@ -25,6 +36,7 @@
   become: false
   ansible.builtin.command: "/home/{{ '{{ ansible_user }}' }}/.local/bin/uv python install {{ pythonVersion }}"
 
+{% include "roles/_shared/health_check_snapshot.yml.j2" %}
 - name: Create app directory
   ansible.builtin.file:
     path: "/opt/{{ project_name }}-{{ service.name }}"
@@ -53,7 +65,6 @@
   ansible.builtin.command: "/home/{{ '{{ ansible_user }}' }}/.local/bin/uv sync --managed-python{% if hasUvLock %} --frozen{% endif %} --no-dev{% if uv_extra %} --extra {{ uv_extra }}{% endif %}"
   args:
     chdir: "/opt/{{ project_name }}-{{ service.name }}"
-  notify: Restart {{ project_name }}-{{ service.name }}
 
 - name: Ensure environment file exists
   become: false
@@ -63,18 +74,4 @@
     mode: '0600'
     force: false
 
-- name: Deploy systemd service
-  ansible.builtin.template:
-    src: systemd.service.j2
-    dest: "/etc/systemd/system/{{ project_name }}-{{ service.name }}.service"
-    mode: '0644'
-  notify:
-    - Reload systemd
-    - Restart {{ project_name }}-{{ service.name }}
-
-- name: Enable and start service
-  ansible.builtin.systemd:
-    name: "{{ project_name }}-{{ service.name }}.service"
-    enabled: true
-    state: started
-    daemon_reload: true
+{% include "roles/_shared/deploy_verify.yml.j2" %}
