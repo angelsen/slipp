@@ -20,6 +20,8 @@ class FullContext(ScanContext):
         exec_args: Extra ExecStart arguments (Python systemd deploys).
         health_check: HTTP path polled after restart; rolls back to the
             previous deployment on failure (systemd deploys only).
+        public: Expose via Let's Encrypt instead of internal CA
+            (--proxy wg-manage only).
     """
 
     environment: str = DEFAULT_ENV
@@ -28,3 +30,4 @@ class FullContext(ScanContext):
     python_extra: str | None = None
     exec_args: str | None = None
     health_check: str | None = None
+    public: bool = False

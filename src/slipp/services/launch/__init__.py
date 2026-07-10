@@ -35,6 +35,7 @@ from slipp.services.launch.stages import (
     ScaffoldValidationStage,
     SummaryStage,
     ValidationStage,
+    WgManageRoleStage,
 )
 
 C_contra = TypeVar("C_contra", contravariant=True)
@@ -61,6 +62,7 @@ def run_full_pipeline(context: FullContext) -> None:
         PlaybookGenerationStage(),
         GroupVarsStage(),
         CaddyRoleStage(),
+        WgManageRoleStage(),
         AppRolesStage(),
         RequirementsFileStage(),
         ComposeGenerationStage(),

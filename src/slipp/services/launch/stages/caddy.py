@@ -121,6 +121,7 @@ class CaddyConfigStage:
             project_root=context.output_dir,
             caddy_config=caddy_config,
             skip_caddy=context.skip_caddy,
+            proxy=context.proxy,
         )
 
 

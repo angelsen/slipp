@@ -32,6 +32,9 @@
 {% if not skip_caddy %}
     - role: caddy
       tags: [provision, caddy]
+{% elif proxy == 'wg-manage' %}
+    - role: wg-manage-exposure
+      tags: [provision, wg-manage]
 {% endif %}
 
     # Application services

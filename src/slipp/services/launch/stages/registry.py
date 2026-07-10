@@ -72,6 +72,8 @@ class SummaryStage:
             ]
             if not context.skip_caddy:
                 summary_items.append("roles/caddy/ (5 files)")
+            elif context.proxy == "wg-manage":
+                summary_items.append("roles/wg-manage-exposure/ (1 file)")
             summary_items.append(
                 f"roles/app-{{service}}/ ({len(context.services)} services, 3 files each)"
             )

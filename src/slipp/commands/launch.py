@@ -42,8 +42,15 @@ def launch_command(
         ),
     ] = False,
     proxy: Annotated[
-        str, typer.Option("--proxy", help="Reverse proxy: caddy, none")
+        str, typer.Option("--proxy", help="Reverse proxy: caddy, none, wg-manage")
     ] = "caddy",
+    public: Annotated[
+        bool,
+        typer.Option(
+            "--public",
+            help="Expose via Let's Encrypt instead of internal CA (--proxy wg-manage only)",
+        ),
+    ] = False,
     python_extra: Annotated[
         str | None,
         typer.Option(
@@ -77,6 +84,7 @@ def launch_command(
         project_dirs=dirs,
         reconfigure=reconfigure,
         proxy=proxy,
+        public=public,
         project_name=name,
         python_extra=python_extra,
         exec_args=exec_args,

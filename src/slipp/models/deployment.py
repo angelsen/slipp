@@ -251,7 +251,8 @@ class ProvisionConfig(BaseModel):
         project_name: Project name
         project_root: Absolute path to project
         caddy_config: Caddy configuration
-        skip_caddy: Skip Caddy role generation (for --proxy none)
+        skip_caddy: Skip Caddy role generation (for --proxy none/wg-manage)
+        proxy: Reverse proxy mode (caddy, none, wg-manage)
     """
 
     services: list[DetectedService] = Field(description="Detected services")
@@ -260,6 +261,7 @@ class ProvisionConfig(BaseModel):
     project_root: Path = Field(description="Absolute path to project")
     caddy_config: CaddyConfig = Field(description="Caddy configuration")
     skip_caddy: bool = Field(default=False, description="Skip Caddy role generation")
+    proxy: str = Field(default="caddy", description="Reverse proxy mode")
 
     @field_serializer("project_root")
     def serialize_path(self, path: Path) -> str:
@@ -284,6 +286,7 @@ class ProvisionConfig(BaseModel):
             "caddy_sites_dir": self.caddy_config.sites_dir,
             "caddy_staging": self.caddy_config.staging,
             "skip_caddy": self.skip_caddy,
+            "proxy": self.proxy,
             "target_host": first_host.ansible_host,
             "ssh_user": first_host.ansible_user,
             "ssh_port": first_host.ansible_port,

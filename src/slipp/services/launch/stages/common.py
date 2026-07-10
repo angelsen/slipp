@@ -10,7 +10,12 @@ from typing import Generic, TypeVar
 from slipp import output
 from slipp.constants import VALID_PROXIES
 from slipp.models.service import Runtime
-from slipp.services.launch.context import BaseContext, DockerfileContext, ScanContext
+from slipp.services.launch.context import (
+    BaseContext,
+    DockerfileContext,
+    FullContext,
+    ScanContext,
+)
 from slipp.utils.errors import LaunchError
 
 CtxT = TypeVar("CtxT", bound=BaseContext)
@@ -165,7 +170,8 @@ class ValidationStage:
         """Validate proxy and runtime configuration.
 
         Checks that proxy choice is in VALID_PROXIES list and sets
-        skip_caddy flag to True when proxy is "none". Also validates
+        skip_caddy flag to True unless proxy is "caddy" (i.e. also for
+        "wg-manage", which uses its own exposure role instead). Also validates
         container_runtime when the context is a DockerfileContext
         (contexts with a loaded inventory get their runtime from there
         instead).
@@ -182,7 +188,16 @@ class ValidationStage:
                 f"Valid options: {', '.join(VALID_PROXIES)}"
             )
 
-        context.skip_caddy = context.proxy == "none"
+        context.skip_caddy = context.proxy != "caddy"
+
+        # Only FullContext carries this field (Dockerfile-only generation
+        # has no proxy concerns at all).
+        if (
+            isinstance(context, FullContext)
+            and context.public
+            and context.proxy != "wg-manage"
+        ):
+            raise LaunchError("--public only applies to --proxy wg-manage")
 
         # Only DockerfileContext carries this field, and it's inherently
         # container-only (no Dockerfile to generate for a systemd deploy) --

@@ -24,6 +24,7 @@ from slipp.services.launch.stages.scaffold import (
     ScaffoldValidationStage,
 )
 from slipp.services.launch.stages.scan import ProjectScanStage
+from slipp.services.launch.stages.wg_manage import WgManageRoleStage
 
 __all__ = [
     "FileGenerationStage",
@@ -35,6 +36,7 @@ __all__ = [
     "DockerfileGenerationStage",
     "CaddyConfigStage",
     "CaddyRoleStage",
+    "WgManageRoleStage",
     "PlaybookGenerationStage",
     "GroupVarsStage",
     "AppRolesStage",
