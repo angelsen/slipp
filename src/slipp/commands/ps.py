@@ -14,6 +14,7 @@ from slipp.constants import OutputFormat
 from slipp.services.config import HostResolver, collect_managed_roles
 from slipp.services.discovery import filter_services
 from slipp.services.discovery.pipeline import discover_across_hosts, discover_and_enrich
+from slipp.services.ssh import hint_ssh_log
 
 
 def ps_command(
@@ -118,6 +119,7 @@ def ps_command(
         output.blank()
         output.warning(f"{len(errors)} host(s) unreachable:")
         output.list_items(errors, indent=1)
+        hint_ssh_log()
 
     if not all_services and not project:
         output.hint("Tip: Use --all for system services, -p <project> to filter")

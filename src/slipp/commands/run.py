@@ -17,6 +17,7 @@ from slipp.services.run import (
     build_profile,
     merge_runtime_options,
 )
+from slipp.services.ssh import hint_ssh_log
 
 
 RUN_CONTEXT_SETTINGS = {"allow_extra_args": True, "ignore_unknown_options": True}
@@ -95,6 +96,7 @@ def _execute_profile(executor: RunProfileExecutor, profile: RunProfile) -> None:
     """Execute profile and propagate the command's exit code."""
     result = executor.execute(profile)
     if result.exit_code != 0:
+        hint_ssh_log()
         raise typer.Exit(result.exit_code)
 
 

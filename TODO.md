@@ -440,8 +440,63 @@ network/routing it's exposed through.
 - [x] Provision: resume-able flow — state saved to `~/.config/slipp/provisions/<name>.yaml`
       after ordering, so `slipp provision <name>` resumes poll→bootstrap→register
       if interrupted. Phases: ordered → provisioned → (deleted on completion).
-- [ ] Bootstrap/provision: log SSH command output to `.slipp/logs/` for post-mortem
-      debugging (same pattern as deploy's ansible-playbook logs)
+- [x] SSH command logging to `.slipp/logs/` — done (2026-07-10). Scope grew from
+      "bootstrap/provision only" to **every SSH interaction across the CLI**
+      (exec, logs, ps/status discovery, ssh, bootstrap, provision, image
+      transfer, caddy proxy, run's tunnel setup) at the user's request.
+      Centralized in `services/ssh/client.py` as module-level state (mirrors
+      the sudo-password-cache pattern): every `SSHService.execute()`/
+      `execute_stream()` call auto-logs, so none of the 15
+      `SSHService(...)` construction sites needed changes. Streaming
+      (`logs -f`) writes incrementally line-by-line rather than buffering, so
+      a long-running follow doesn't grow memory unbounded.
+
+      **Revised after review feedback** (first pass had each of the 13
+      command entry points open an explicit `ssh_log_session()` — the
+      review correctly called this out as re-threading a cross-cutting
+      concern the module-global design was supposed to eliminate). Now the
+      log opens **lazily on the first SSH command of the process** — no
+      session/depth-counter machinery, no per-command wrapper, and a
+      cache-hit `slipp ps` that never touches SSH creates zero log files
+      (verified live). Failure hints collapsed into one `hint_ssh_log()`
+      helper (`services/ssh/client.py`, exported from the package) — a
+      single line at each command's existing failure branch, plus a
+      safety-net call in the top-level `SlippError` handler
+      (`slipp/__init__.py`) for commands that let an exception propagate
+      uncaught rather than checking the result inline. Net diff after the
+      revision: 104 insertions / 182 deletions across 16 files (down from
+      the first pass's ~250-line footprint).
+
+      `_open_log` extracted from `services/ansible/ansible.py` to
+      `utils/files.py` as `open_log()`, shared by both Ansible and SSH
+      logging. Verified live against `mym-dev`: `slipp exec` success/failure
+      paths, `slipp ps --refresh` (single- and multi-host, fresh + cache-hit),
+      confirmed the sudo password never appears in the log (only the
+      `sudo -S -p ''`-rewritten command, piped via stdin), and confirmed
+      deploy's own Ansible logging is unaffected by the `open_log` extraction.
+
+      **Second review pass found two more real issues, both fixed:**
+      (1) `open_log()`'s `mkdir`/`open("w")` had no error handling — a
+      read-only cwd, full disk, or `.slipp` existing as a plain file would
+      raise an uncaught `OSError` out of `execute()`, killing an SSH command
+      that had otherwise succeeded, just to log it. Wrapped in
+      `try/except OSError` in `_ensure_ssh_log_open()`; logging is
+      best-effort, never load-bearing for the command it's logging.
+      Confirmed fixed by hand: touched a plain file at `.slipp` (shadowing
+      the directory) and ran a command — no exception, log silently skipped.
+      (2) The log was anchored to bare cwd while deploy anchors to
+      `project_root` — running `slipp exec` from a project subdirectory (or
+      `slipp bootstrap account` from `$HOME`) would litter a second
+      `.slipp/logs/` tree in the wrong place. Fixed by resolving
+      `LocalConfigService.resolve_root()` (the same subdirectory-discovery
+      helper documented above) before computing `get_log_dir()`, matching
+      deploy's placement and falling back to cwd for project-less commands.
+      Needed a lazy (function-local) import of `services.config` inside
+      `_ensure_ssh_log_open()` — a module-level import would circularly
+      import back through `services.config.hosts` →
+      `services.discovery.discovery` → `services.ssh` — confirmed the
+      import resolves cleanly at runtime and that a subdirectory `slipp
+      exec` now lands its log in the project root, not the subdirectory.
 - [ ] `slipp server install --continue` — list/pick from in-progress installs across
       all servers (for multi-project, multi-VPS workflows)
 - [ ] Cloudflare provider (DNS-only, uses official Python SDK)

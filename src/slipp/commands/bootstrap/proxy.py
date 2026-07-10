@@ -12,6 +12,7 @@ from slipp import output
 from slipp.models.host import AnsibleHost
 from slipp.services.config import HostResolver
 from slipp.services.run import CaddyProxy
+from slipp.services.ssh import hint_ssh_log
 from slipp.utils.errors import (
     CaddyProxyError,
     HostNotFoundError,
@@ -70,6 +71,7 @@ def proxy_command(
             proxy.ensure_installed()
         except (CaddyProxyError, SSHConnectionError, SSHAuthenticationError) as e:
             output.error(f"Installation failed: {e}")
+            hint_ssh_log()
             raise typer.Exit(1)
 
     output.blank()

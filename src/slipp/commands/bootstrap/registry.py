@@ -8,7 +8,7 @@ import typer
 
 from slipp import output
 from slipp.commands.common import resolve_host_or_exit
-from slipp.services.ssh import SSHService
+from slipp.services.ssh import SSHService, hint_ssh_log
 
 registry_app = typer.Typer(name="registry", help="Setup container registry auth on VPS")
 
@@ -53,6 +53,7 @@ def _bootstrap_registry(
         else:
             output.error("Authentication failed")
             output.hint(result.text.strip())
+            hint_ssh_log()
             raise typer.Exit(1)
 
 

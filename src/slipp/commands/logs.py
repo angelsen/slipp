@@ -10,7 +10,7 @@ from slipp.commands.common import (
     resolve_host_or_exit,
 )
 from slipp.models.service import Runtime
-from slipp.services.ssh import SSHService
+from slipp.services.ssh import SSHService, hint_ssh_log
 
 
 def logs_command(
@@ -62,6 +62,7 @@ def logs_command(
                 ssh.check_sudo(log_output, "Fetching logs")
                 if not log_output.ok:
                     output.warning(f"Command exited with code {log_output.exit_code}")
+                    hint_ssh_log()
                 output.stdout(log_output.text)
         except KeyboardInterrupt:
             output.success("Stopped following logs")

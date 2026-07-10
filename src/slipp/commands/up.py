@@ -16,6 +16,7 @@ from slipp.models.deployment import DeploymentHostConfig, InventoryConfig
 from slipp.models.service import Runtime
 from slipp.services.launch import FullContext, run_full_pipeline
 from slipp.services.providers import get_gigahost_client, sync_dns
+from slipp.services.ssh import hint_ssh_log
 from slipp.utils.errors import (
     BootstrapError,
     LaunchError,
@@ -81,6 +82,7 @@ def up_command(
             output.hint(
                 "Server is provisioned -- retry with: slipp bootstrap account <ip>"
             )
+            hint_ssh_log()
             raise typer.Exit(1)
         ssh_user = "slipp"
 

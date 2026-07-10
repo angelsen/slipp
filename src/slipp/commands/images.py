@@ -7,6 +7,7 @@ import typer
 from slipp import output
 from slipp.commands.common import require_container_runtime, resolve_host_or_exit
 from slipp.services.image import list_images
+from slipp.services.ssh import hint_ssh_log
 from slipp.utils.errors import ImageTransferError
 
 images_app = typer.Typer(name="images", help="Manage container images on VPS")
@@ -29,6 +30,7 @@ def list_command(
         rows = list_images(ssh_config, runtime.value, filter_pattern)
     except ImageTransferError as e:
         output.error(str(e))
+        hint_ssh_log()
         raise typer.Exit(1)
 
     if not rows:

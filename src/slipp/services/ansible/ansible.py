@@ -8,13 +8,13 @@ import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 from typing import IO, Any, Callable
 
 from slipp import output
 from slipp.utils.cli_tools import check_tool_installed, run_checked
 from slipp.utils.errors import AnsibleError, AnsibleNotFoundError
+from slipp.utils.files import open_log
 
 ProgressCallback = Callable[[str], None]
 
@@ -59,16 +59,6 @@ def _subprocess_env(
     if unbuffered:
         env["PYTHONUNBUFFERED"] = "1"
     return env
-
-
-def _open_log(log_dir: Path | None, prefix: str) -> tuple[Path | None, IO[str] | None]:
-    """Open a timestamped log file under log_dir, if log_dir is given."""
-    if not log_dir:
-        return None, None
-    log_dir.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-    log_path = log_dir / f"{prefix}-{timestamp}.log"
-    return log_path, log_path.open("w")
 
 
 _NO_HOSTS_SKIP_RE = re.compile(r"skipping: no hosts matched")
@@ -221,7 +211,7 @@ def install_requirements(
     """
     check_tool_installed("ansible-galaxy", AnsibleNotFoundError)
 
-    log_path, log_handle = _open_log(log_dir, "ansible-galaxy")
+    log_path, log_handle = open_log(log_dir, "ansible-galaxy")
     env = _subprocess_env(unbuffered=True)
 
     try:
@@ -381,7 +371,7 @@ def run_playbook(
         for key, value in extra_vars.items():
             cmd.extend(["-e", f"{key}={json.dumps(value)}"])
 
-    log_path, log_handle = _open_log(log_dir, "ansible-playbook")
+    log_path, log_handle = open_log(log_dir, "ansible-playbook")
     env = _subprocess_env(roles_path, unbuffered=True)
 
     proc = subprocess.Popen(

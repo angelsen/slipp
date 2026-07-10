@@ -14,7 +14,7 @@ from slipp.commands.common import (
     resolve_host_or_exit,
 )
 from slipp.models.service import Runtime
-from slipp.services.ssh import CommandBuilder, SSHService, UserResolver
+from slipp.services.ssh import CommandBuilder, SSHService, UserResolver, hint_ssh_log
 from slipp.utils.errors import SlippError
 
 
@@ -95,6 +95,8 @@ def exec_command(
                     output.blank()
                     output.hint("Hint: Try running as root: slipp exec -u root ...")
 
+                hint_ssh_log()
+
                 raise typer.Exit(result.exit_code)
 
             output.blank()
@@ -103,4 +105,5 @@ def exec_command(
         except SlippError as e:
             output.blank()
             output.error(f"Command failed: {e}")
+            hint_ssh_log()
             raise typer.Exit(1)

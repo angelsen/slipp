@@ -7,6 +7,7 @@ import typer
 from slipp import output
 from slipp.commands.common import require_container_runtime, resolve_host_or_exit
 from slipp.services.image import detect_local_runtime, push_image
+from slipp.services.ssh import hint_ssh_log
 from slipp.utils.errors import ImageTransferError
 
 image_app = typer.Typer(name="image", help="Container image operations")
@@ -46,6 +47,7 @@ def push_command(
             push_image(ssh_config, image, local_runtime, remote_runtime, rename=name)
     except ImageTransferError as e:
         output.error(str(e))
+        hint_ssh_log()
         raise typer.Exit(1)
 
     output.success(f"Image pushed: {target_name}")

@@ -11,6 +11,7 @@ from slipp.constants import DEFAULT_ENV, get_inventory_filename
 from slipp.models.deployment import DeploymentHostConfig, InventoryConfig
 from slipp.services.launch.registration import register_project
 from slipp.services.providers import get_gigahost_client, provision_and_bootstrap
+from slipp.services.ssh import hint_ssh_log
 from slipp.utils.errors import (
     BootstrapError,
     ProviderError,
@@ -34,6 +35,7 @@ def provision_command(
     except (SSHConnectionError, BootstrapError) as e:
         output.error(f"Bootstrap failed: {e}")
         output.hint("Server is provisioned -- retry with: slipp bootstrap account <ip>")
+        hint_ssh_log()
         raise typer.Exit(1)
 
     inventory_filename = get_inventory_filename(environment)

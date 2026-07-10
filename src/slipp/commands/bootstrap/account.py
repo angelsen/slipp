@@ -8,6 +8,7 @@ import typer
 from slipp import output
 from slipp.commands.common import DryRunOption
 from slipp.services.bootstrap import provision_account
+from slipp.services.ssh import hint_ssh_log
 from slipp.utils.errors import BootstrapError, SSHConnectionError
 
 
@@ -91,6 +92,7 @@ def account_command(
     except BootstrapError as e:
         output.blank()
         output.error(f"Bootstrap failed: {e}")
+        hint_ssh_log()
         raise typer.Exit(1)
 
     _display_completion(host, ssh_port, slipp_user)

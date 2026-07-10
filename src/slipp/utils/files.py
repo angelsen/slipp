@@ -1,12 +1,24 @@
 """File utilities shared across services."""
 
+from datetime import datetime
 from pathlib import Path
+from typing import IO
 
 
 def get_log_dir(base: Path | None = None) -> Path:
     """Return .slipp/logs/ path (does not create the directory)."""
     base = base or Path.cwd()
     return base / ".slipp" / "logs"
+
+
+def open_log(log_dir: Path | None, prefix: str) -> tuple[Path | None, IO[str] | None]:
+    """Open a timestamped log file under log_dir, if log_dir is given."""
+    if not log_dir:
+        return None, None
+    log_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+    log_path = log_dir / f"{prefix}-{timestamp}.log"
+    return log_path, log_path.open("w")
 
 
 def atomic_write_text(path: Path, content: str, *, mode: int | None = None) -> None:
