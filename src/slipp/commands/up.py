@@ -1,5 +1,6 @@
-"""Orchestrated deploy - slipp up composes provision -> domain -> launch -> dns -> deploy."""
+"""Orchestrated deploy - slipp up composes provision -> hub -> domain -> launch -> dns -> deploy."""
 
+import subprocess
 from pathlib import Path
 from typing import Annotated
 
@@ -8,6 +9,7 @@ import typer
 from slipp import output
 from slipp.commands.deploy import deploy_command
 from slipp.services.providers import (
+    ProviderConfigService,
     provision_and_bootstrap,
     register_domain_interactive,
 )
@@ -38,6 +40,44 @@ class _StepCounter:
         self._n += 1
 
 
+def _make_hub(step: _StepCounter, name: str, ip: str) -> None:
+    """Shell out to wg-deploy's scripts/new-host.sh to hub-ify the host.
+
+    Interactive: ansible-vault may prompt for the vault password (no
+    stdout/stderr capture, so the prompt reaches the terminal). A non-zero
+    exit -- or a "no" at the confirm -- aborts `up` before launch, since
+    launch's `--proxy auto` probe depends on the host actually being a hub.
+
+    Raises:
+        typer.Exit: If wg-deploy isn't configured, the user declines, or
+            new-host.sh exits non-zero.
+    """
+    wg_deploy = ProviderConfigService.get_wg_deploy()
+    if not wg_deploy:
+        output.error("wg-deploy is not configured")
+        output.hint("Run: slipp providers add wg-deploy")
+        raise typer.Exit(1)
+
+    step(f"Making {ip} a wg-manage hub via {wg_deploy.repo_path}...")
+
+    if not typer.confirm(
+        f"Run scripts/new-host.sh {name} {ip} in {wg_deploy.repo_path}?",
+        default=False,
+    ):
+        output.error("Hub-ification declined -- aborting (launch needs a hub)")
+        raise typer.Exit(1)
+
+    result = subprocess.run(
+        ["bash", "scripts/new-host.sh", name, ip],
+        cwd=wg_deploy.repo_path,
+    )
+    if result.returncode != 0:
+        output.error(f"new-host.sh failed (exit {result.returncode})")
+        raise typer.Exit(1)
+
+    output.success(f"{ip} is now a wg-manage hub")
+
+
 def up_command(
     name: Annotated[str, typer.Argument(help="Project name")],
     host: Annotated[
@@ -56,6 +96,14 @@ def up_command(
     environment: Annotated[
         str, typer.Option("--env", "-e", help="Environment name")
     ] = DEFAULT_ENV,
+    hub: Annotated[
+        bool,
+        typer.Option(
+            "--hub",
+            help="Make the host a wg-manage hub (via a configured wg-deploy "
+            "checkout) before launch, so --proxy auto finds it",
+        ),
+    ] = False,
 ) -> None:
     """Provision, register domain, launch, sync DNS, and deploy -- in one command."""
     if dns not in VALID_DNS_MODES:
@@ -85,6 +133,9 @@ def up_command(
             hint_ssh_log()
             raise typer.Exit(1)
         ssh_user = "slipp"
+
+    if hub:
+        _make_hub(step, name, ip)
 
     resolved_domain = domain
     if resolved_domain:

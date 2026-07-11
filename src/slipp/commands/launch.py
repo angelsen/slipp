@@ -42,8 +42,12 @@ def launch_command(
         ),
     ] = False,
     proxy: Annotated[
-        str, typer.Option("--proxy", help="Reverse proxy: caddy, none, wg-manage")
-    ] = "caddy",
+        str,
+        typer.Option(
+            "--proxy",
+            help="Reverse proxy: auto (probe host), caddy, none, wg-manage",
+        ),
+    ] = "auto",
     public: Annotated[
         bool,
         typer.Option(

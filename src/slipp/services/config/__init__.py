@@ -6,6 +6,7 @@ This package provides services for managing configuration, inventory, and host r
 from slipp.services.config.hosts import HostResolver
 from slipp.services.config.inventory import (
     InventoryService,
+    load_first_host,
     load_project_hosts,
     resolve_app_domain,
     resolve_app_port,
@@ -24,6 +25,7 @@ __all__ = [
     "LocalConfigService",
     "collect_managed_roles",
     "InventoryService",
+    "load_first_host",
     "load_project_hosts",
     "resolve_app_domain",
     "resolve_app_port",

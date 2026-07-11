@@ -1,5 +1,7 @@
 """Registration and summary stages."""
 
+from pathlib import Path
+
 from slipp import output
 from slipp.constants import get_inventory_filename
 from slipp.models.service import Runtime
@@ -36,7 +38,25 @@ class RegistrationStage:
             inventory_path=inventory_filename,
             playbook_path="playbook.yml",
             runtime=first_host.runtime.value,
+            project_dirs=[
+                self._relative_or_absolute(d, context.output_dir)
+                for d in context.project_dirs
+            ],
         )
+
+    @staticmethod
+    def _relative_or_absolute(path: Path, root: Path) -> str:
+        """Path relative to root when nested inside it, else absolute.
+
+        --dir can point anywhere on disk, not just inside the project
+        root -- relative_to() raises for a sibling/unrelated directory, so
+        this falls back to storing the absolute path rather than failing
+        registration over a cosmetic preference.
+        """
+        try:
+            return str(path.relative_to(root))
+        except ValueError:
+            return str(path)
 
 
 class SummaryStage:

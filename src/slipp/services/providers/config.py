@@ -12,7 +12,12 @@ from pathlib import Path
 
 import yaml
 
-from slipp.models.provider import GigahostConfig, PangolinConfig, ProvidersConfig
+from slipp.models.provider import (
+    GigahostConfig,
+    PangolinConfig,
+    ProvidersConfig,
+    WgDeployConfig,
+)
 from slipp.utils.files import atomic_write_text
 
 logger = logging.getLogger(__name__)
@@ -136,4 +141,23 @@ class ProviderConfigService:
         """Remove the Pangolin config, if any."""
         config = ProviderConfigService.load()
         config.pangolin = None
+        ProviderConfigService.save(config)
+
+    @staticmethod
+    def get_wg_deploy() -> WgDeployConfig | None:
+        """Get wg-deploy config."""
+        return ProviderConfigService.load().wg_deploy
+
+    @staticmethod
+    def set_wg_deploy(wg_deploy: WgDeployConfig) -> None:
+        """Save (or replace) the wg-deploy config."""
+        config = ProviderConfigService.load()
+        config.wg_deploy = wg_deploy
+        ProviderConfigService.save(config)
+
+    @staticmethod
+    def remove_wg_deploy() -> None:
+        """Remove the wg-deploy config, if any."""
+        config = ProviderConfigService.load()
+        config.wg_deploy = None
         ProviderConfigService.save(config)

@@ -26,15 +26,26 @@ DryRunOption = Annotated[
 
 def resolve_project_dirs(
     project_dirs: list[Path] | None,
+    root: Path | None = None,
+    *,
+    quiet: bool = False,
 ) -> tuple[list[Path], Path]:
     """Resolve scan directories and the output directory.
 
-    If no directories were given, scans cwd and auto-detects npm/yarn
-    workspace members. The output directory is cwd when scanning multiple
-    directories, or the single directory otherwise.
+    If no directories were given, scans `root` and auto-detects npm/yarn
+    workspace members. The output directory is `root` when scanning
+    multiple directories, or the single directory otherwise.
 
     Args:
-        project_dirs: Explicit --dir values, or None to auto-detect from cwd
+        project_dirs: Explicit --dir values, or None to auto-detect from root
+        root: Directory to auto-detect from when project_dirs is None
+            (defaults to cwd) -- callers that already resolved a project
+            root (e.g. resources.py's sync, which may run from a
+            subdirectory) pass it explicitly instead of relying on cwd.
+        quiet: Skip the "Detected workspace" info line -- for callers
+            running as a background step of something else (e.g. deploy's
+            post-deploy wg-manage sync hook) where a normal quiet run
+            shouldn't print unrelated scan chatter.
 
     Returns:
         Tuple of (directories to scan, output directory)
@@ -42,16 +53,43 @@ def resolve_project_dirs(
     if project_dirs:
         dirs = project_dirs
     else:
-        cwd = Path.cwd()
+        cwd = root or Path.cwd()
         members = detect_workspace_members(cwd)
         if members:
-            output.info(f"Detected workspace: {len(members)} member(s)")
+            if not quiet:
+                output.info(f"Detected workspace: {len(members)} member(s)")
             dirs = [cwd, *members]
         else:
             dirs = [cwd]
 
     output_dir = Path.cwd() if len(dirs) > 1 else dirs[0]
     return dirs, output_dir
+
+
+def resolve_declared_dirs(project_root: Path) -> list[Path] | None:
+    """The --dir values `slipp launch` actually scanned for this project, if recorded.
+
+    slipp.yaml persists launch-time --dir values (LocalConfig.project_dirs)
+    precisely so a later re-scan (e.g. wg-manage exposure sync, run at
+    every deploy) can reproduce the exact same declared-service set
+    instead of re-running auto-detection -- which, for a project launched
+    with explicit --dir values, can detect a different set of services
+    than what was actually exposed, silently pruning a live, still-wanted
+    exposure. Pass the result straight through as resolve_project_dirs()'s
+    project_dirs argument.
+
+    Returns:
+        Absolute directory paths, or None if slipp.yaml has no recorded
+        dirs (project launched before this was tracked) -- callers should
+        pass this straight to resolve_project_dirs(), which falls back to
+        auto-detection for None exactly as before.
+    """
+    from slipp.services.config import LocalConfigService
+
+    local_config = LocalConfigService.load(project_root)
+    if not local_config or not local_config.project_dirs:
+        return None
+    return [project_root / d for d in local_config.project_dirs]
 
 
 def resolve_host_or_exit(

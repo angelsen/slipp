@@ -14,6 +14,7 @@ from slipp.services.launch.stages.inventory import (
     InventoryLoadStage,
     InventoryValidationStage,
 )
+from slipp.services.launch.stages.proxy import ProxyResolutionStage
 from slipp.services.launch.stages.registry import RegistrationStage, SummaryStage
 from slipp.services.launch.stages.requirements import RequirementsFileStage
 from slipp.services.launch.stages.scaffold import (
@@ -33,6 +34,7 @@ __all__ = [
     "InventoryLoadStage",
     "InventoryValidationStage",
     "InventoryFileStage",
+    "ProxyResolutionStage",
     "DockerfileGenerationStage",
     "CaddyConfigStage",
     "CaddyRoleStage",

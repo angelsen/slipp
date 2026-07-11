@@ -18,7 +18,8 @@ class ScanContext(BaseContext):
 
     Attributes:
         project_dirs: Directories containing project sources to scan.
-        proxy: HTTP reverse proxy type (default: caddy).
+        proxy: HTTP reverse proxy type (default: auto -- probed at launch
+            time by ProxyResolutionStage; see also DeploymentHostConfig.proxy_owner).
         services: Detected container services from project analysis.
         inventory_config: Optional Ansible inventory configuration. When set,
             its first host's runtime takes precedence over a subclass's own
@@ -27,7 +28,7 @@ class ScanContext(BaseContext):
     """
 
     project_dirs: list[Path] = field(default_factory=list)
-    proxy: str = "caddy"
+    proxy: str = "auto"
     services: list[DetectedService] = field(default_factory=list)
     inventory_config: InventoryConfig | None = None
     skip_caddy: bool = False

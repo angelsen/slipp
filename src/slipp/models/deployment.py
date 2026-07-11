@@ -60,6 +60,10 @@ class DeploymentHostConfig(AnsibleHost):
             needed in a URL) for --proxy none deploys, where nothing fronts
             the app on :80/:443 - set from the first detected service at
             launch time.
+        proxy_owner: Cached result of ProxyResolutionStage's `--proxy auto`
+            probe ("caddy" or "wg-manage"; None if never resolved or
+            proxy was set explicitly). Persisted so re-launches/deploys
+            against the same host skip the SSH probe.
     """
 
     app_domain: str | None = Field(default=None, description="Domain for app (Caddy)")
@@ -71,6 +75,9 @@ class DeploymentHostConfig(AnsibleHost):
     )
     app_port: int | None = Field(
         default=None, description="Primary service port (--proxy none deploys)"
+    )
+    proxy_owner: str | None = Field(
+        default=None, description="Resolved --proxy auto owner: caddy or wg-manage"
     )
 
 

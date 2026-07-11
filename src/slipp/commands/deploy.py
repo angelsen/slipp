@@ -6,14 +6,18 @@ from typing import Annotated
 import typer
 
 from slipp import output
-from slipp.commands.common import DryRunOption
+from slipp.commands.common import (
+    DryRunOption,
+    resolve_declared_dirs,
+    resolve_project_dirs,
+)
 from slipp.constants import DEFAULT_ENV, DEFAULT_GALAXY_PATH
-from slipp.utils.files import get_log_dir
-from slipp.utils.network import format_app_url
 from slipp.output import format_path
+from slipp.services import wg_manage
 from slipp.services.config import (
     ConfigResolver,
     LocalConfigService,
+    load_first_host,
     resolve_app_domain,
     resolve_app_port,
     resolve_project_name,
@@ -27,6 +31,38 @@ from slipp.services.deploy import (
     resolve_environment_and_tags,
     validate_deploy_files,
 )
+from slipp.utils.errors import WgManageError
+from slipp.utils.files import get_log_dir
+from slipp.utils.network import format_app_url
+
+
+def _sync_wg_manage_after_deploy(project_root: Path, project_name: str) -> None:
+    """Best-effort post-deploy wg-manage exposure converge.
+
+    Removes stray wg-manage services this project labeled but no longer
+    declares (renamed/removed services since the last deploy), so a live
+    exposure never silently outlives the service it pointed at. No-op for
+    non-wg-manage projects.
+
+    Never raises: a sync hiccup here shouldn't retroactively turn an
+    already-successful deploy into a failed one, it just means one fewer
+    thing got tidied up this run -- `slipp resources sync` remains
+    available to run by hand. wg_manage.sync() converts every internal
+    failure mode (SSH, scanning, missing config) to WgManageError, so
+    catching that one type here is actually exhaustive, unlike catching
+    typer.Exit (a CLI-layer concept the service doesn't raise at all).
+    """
+    host = load_first_host(project_root)
+    if not host or host.proxy_owner != "wg-manage":
+        return
+
+    dirs, _ = resolve_project_dirs(
+        resolve_declared_dirs(project_root), root=project_root, quiet=True
+    )
+    try:
+        wg_manage.sync(dirs, project_name, host, quiet=True)
+    except WgManageError as e:
+        output.warning(f"wg-manage exposure sync failed after deploy: {e}")
 
 
 def deploy_command(
@@ -165,6 +201,13 @@ def deploy_command(
 
     if result.exit_code == 0:
         output.success_animation("Deploy completed")
+
+        # dry_run means the playbook ran in ansible --check mode -- nothing
+        # on the host actually changed, so a real SSH `service rm` here
+        # would apply destructive changes the user explicitly asked to
+        # preview rather than perform.
+        if not dry_run:
+            _sync_wg_manage_after_deploy(project_root, project_name)
 
         domain = resolve_app_domain(project_root)
         if domain:

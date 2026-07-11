@@ -66,4 +66,4 @@ PLAYBOOK_FILENAME = "playbook.yml"
 DEFAULT_SSH_PORT = 22
 DEFAULT_SSH_USER = "root"
 
-VALID_PROXIES = ["caddy", "none", "wg-manage"]
+VALID_PROXIES = ["auto", "caddy", "none", "wg-manage"]

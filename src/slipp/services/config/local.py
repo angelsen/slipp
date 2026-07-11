@@ -135,6 +135,7 @@ class LocalConfigService:
         vault_path: str | None = None,
         runtime: str | None = None,
         project_root: Path | None = None,
+        project_dirs: list[str] | None = None,
     ) -> LocalConfig:
         """Create a new local config.
 
@@ -151,6 +152,8 @@ class LocalConfigService:
             vault_path: Optional vault file path
             runtime: How the app runs (systemd/docker/podman), if known
             project_root: Project root (defaults to cwd)
+            project_dirs: --dir values slipp launch scanned, see
+                LocalConfig.project_dirs
 
         Returns:
             Created LocalConfig
@@ -173,6 +176,7 @@ class LocalConfigService:
             vault=vault_path,
             runtime=Runtime(runtime.lower()) if runtime else None,
             managed_roles=managed_roles,
+            project_dirs=project_dirs,
         )
 
         LocalConfigService.save(config, root)
@@ -244,6 +248,7 @@ class LocalConfigService:
             "name",
             "inventory",
             "playbook",
+            "project_dirs",
             "roles_path",
             "galaxy_path",
             "vault",

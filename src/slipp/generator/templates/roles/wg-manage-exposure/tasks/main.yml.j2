@@ -5,12 +5,32 @@
 # wg-manage handles its own Caddy regen/reload internally -- no
 # handlers/templates needed here, unlike the caddy role.
 
+- name: Verify host is a wg-manage hub
+  ansible.builtin.command:
+    cmd: wg-manage --version
+  register: wg_manage_version_result
+  changed_when: false
+  failed_when: false
+  # ProxyResolutionStage's probe already confirmed this at launch time, but
+  # a host can stop being a hub between launch and deploy (rebuilt, wrong
+  # --limit, stale cached proxy_owner) -- fail here with a clear fix instead
+  # of a mid-playbook command-not-found deeper in this role.
+
+- name: Fail with a clear message if wg-manage is missing
+  ansible.builtin.fail:
+    msg: >-
+      This host is not a wg-manage hub (wg-manage --version failed).
+      Run scripts/new-host.sh from a wg-deploy checkout, or `slipp up
+      --hub`, to make it one before deploying.
+  when: wg_manage_version_result.rc != 0
+
 {% for svc in wg_services %}
 - name: Expose {{ svc.name }} via wg-manage
   ansible.builtin.command:
     cmd: >-
       wg-manage service add {{ svc.fqdn }} localhost:{{ svc.port }}
       {{ '--public' if public else '--https' }}
+      --label {{ label }}{{ ' ' + svc.route_flags if svc.route_flags else '' }}
   register: wg_manage_{{ loop.index }}_result
   changed_when: "'unchanged' not in wg_manage_{{ loop.index }}_result.stdout"
 

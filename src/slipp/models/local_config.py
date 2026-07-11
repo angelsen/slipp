@@ -28,6 +28,13 @@ class LocalConfig(BaseModel):
         managed_roles: Role names for service filtering (auto-populated from roles dirs)
         tag_presets: Named tag presets (name -> ansible args like "--tags setup-all")
         runs: Run profiles (name -> profile dict), see models.run.RunProfile
+        project_dirs: The --dir values `slipp launch` scanned to produce
+            this project (relative to project root when nested inside it,
+            absolute otherwise), recorded so a later re-scan (e.g.
+            wg-manage exposure sync) can reproduce the exact same declared
+            set instead of falling back to auto-detection, which can
+            diverge from an explicit multi-service --dir launch. None for
+            projects launched before this was tracked.
     """
 
     name: str = Field(..., min_length=1, description="Project identifier")
@@ -46,6 +53,9 @@ class LocalConfig(BaseModel):
     )
     managed_roles: list[str] = Field(
         default_factory=list, description="Role names for service filtering"
+    )
+    project_dirs: list[str] | None = Field(
+        default=None, description="--dir values slipp launch scanned"
     )
     tag_presets: dict[str, str] = Field(
         default_factory=dict, description="Named tag presets (name -> ansible args)"

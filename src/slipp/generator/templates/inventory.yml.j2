@@ -11,4 +11,5 @@ all:
       admin_email: {{ host.admin_email | tojson }}
       runtime: {{ host.runtime | tojson }}
       app_port: {{ host.app_port | tojson }}
+      proxy_owner: {{ host.proxy_owner | tojson }}
 {% endfor %}

@@ -17,6 +17,7 @@ def register_project(
     runtime: str | None = None,
     galaxy_path: str | None = None,
     vault_path: str | None = None,
+    project_dirs: list[str] | None = None,
 ) -> None:
     """Create slipp.yaml and register the project in the global registry.
 
@@ -32,6 +33,8 @@ def register_project(
         runtime: How the app runs (systemd/docker/podman), if known
         galaxy_path: Install path for ansible-galaxy, if any
         vault_path: Relative path to vault file, if any
+        project_dirs: --dir values slipp launch scanned, see
+            LocalConfig.project_dirs
 
     Raises:
         LaunchError: If config creation or registration fails
@@ -45,6 +48,7 @@ def register_project(
             galaxy_path=galaxy_path,
             vault_path=vault_path,
             project_root=project_root,
+            project_dirs=project_dirs,
         )
         output.success(f"Created slipp.yaml with name '{name}'")
     except Exception as e:

@@ -9,42 +9,9 @@ Caddyfile directly.
 from pathlib import Path
 
 from slipp.generator.env import render_template
-from slipp.models.deployment import DetectedService
+from slipp.services import wg_manage
 from slipp.services.launch.context import FullContext
 from slipp.services.launch.stages.common import FileGenerationStage, require
-
-
-def build_wg_services(services: list[DetectedService], domain: str) -> list[dict]:
-    """Build wg-manage service exposure entries, one per detected service.
-
-    Mirrors build_caddy_sites()'s single-service case (caddy.py): bare
-    domain when there's exactly one service. FQDNs only match Caddy's
-    convention in that case, though -- for multi-service, every service
-    here gets its own `service.name.domain` subdomain, including the one
-    Caddy would put on the bare domain (frontend, or the sole service if
-    no frontend/backend split is detected). wg-manage is one-FQDN-to-one-
-    target (no path-prefix multiplexing), so Caddy's domain/api vs domain/
-    split doesn't carry over -- there's no bare-domain slot to reuse for a
-    multi-service project.
-
-    Args:
-        services: Detected services to expose.
-        domain: Application domain.
-
-    Returns:
-        List of {name, fqdn, port} dicts for template rendering.
-    """
-    if len(services) == 1:
-        return [{"name": services[0].name, "fqdn": domain, "port": services[0].port}]
-
-    return [
-        {
-            "name": service.name,
-            "fqdn": f"{service.name}.{domain}",
-            "port": service.port,
-        }
-        for service in services
-    ]
 
 
 class WgManageRoleStage(FileGenerationStage[FullContext]):
@@ -69,7 +36,7 @@ class WgManageRoleStage(FileGenerationStage[FullContext]):
         inventory_config = require(context.inventory_config, "inventory config")
         app_domain = require(inventory_config.first_host.app_domain, "app_domain")
 
-        wg_services = build_wg_services(context.services, app_domain)
+        wg_services = wg_manage.build_wg_services(context.services, app_domain)
 
         content = render_template(
             "roles/wg-manage-exposure/tasks/main.yml.j2",
@@ -77,6 +44,7 @@ class WgManageRoleStage(FileGenerationStage[FullContext]):
                 "project_name": context.project_name,
                 "wg_services": wg_services,
                 "public": context.public,
+                "label": wg_manage.service_label(context.project_name),
             },
             label="wg-manage-exposure role",
         )

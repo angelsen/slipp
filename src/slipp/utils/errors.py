@@ -281,3 +281,9 @@ class DomainRegistrationError(ProviderError):
     """Domain registration failed."""
 
     pass
+
+
+class WgManageError(SlippError):
+    """A wg-manage SSH operation or exposure sync failed."""
+
+    pass

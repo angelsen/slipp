@@ -13,7 +13,6 @@ from slipp.models.service import Runtime
 from slipp.services.launch.context import (
     BaseContext,
     DockerfileContext,
-    FullContext,
     ScanContext,
 )
 from slipp.utils.errors import LaunchError
@@ -164,17 +163,17 @@ class FileGenerationStage(Generic[CtxT]):
 
 
 class ValidationStage:
-    """Validate proxy choice, runtime, and set skip_caddy flag."""
+    """Validate proxy choice and runtime."""
 
     def execute(self, context: ScanContext) -> None:
         """Validate proxy and runtime configuration.
 
-        Checks that proxy choice is in VALID_PROXIES list and sets
-        skip_caddy flag to True unless proxy is "caddy" (i.e. also for
-        "wg-manage", which uses its own exposure role instead). Also validates
-        container_runtime when the context is a DockerfileContext
-        (contexts with a loaded inventory get their runtime from there
-        instead).
+        Checks that proxy choice is in VALID_PROXIES list. Does *not*
+        resolve "auto" or set skip_caddy -- that's ProxyResolutionStage's
+        job, and it needs inventory (SSH details) that doesn't exist yet
+        when this stage runs. Also validates container_runtime when the
+        context is a DockerfileContext (contexts with a loaded inventory
+        get their runtime from there instead).
 
         Args:
             context: Stage execution context with proxy setting.
@@ -187,17 +186,6 @@ class ValidationStage:
                 f"Invalid proxy: {context.proxy}\n"
                 f"Valid options: {', '.join(VALID_PROXIES)}"
             )
-
-        context.skip_caddy = context.proxy != "caddy"
-
-        # Only FullContext carries this field (Dockerfile-only generation
-        # has no proxy concerns at all).
-        if (
-            isinstance(context, FullContext)
-            and context.public
-            and context.proxy != "wg-manage"
-        ):
-            raise LaunchError("--public only applies to --proxy wg-manage")
 
         # Only DockerfileContext carries this field, and it's inherently
         # container-only (no Dockerfile to generate for a systemd deploy) --

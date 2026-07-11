@@ -6,6 +6,8 @@ services/providers/dns.py, which holds the DNS-specific Protocol and
 wire models shared across provider implementations.
 """
 
+from pathlib import Path
+
 from pydantic import BaseModel, Field
 
 
@@ -39,13 +41,26 @@ class PangolinConfig(BaseModel):
     base_url: str = "https://pangolin.mymechanic.no/api/v1"
 
 
+class WgDeployConfig(BaseModel):
+    """wg-deploy provider configuration.
+
+    Attributes:
+        repo_path: Path to a wg-deploy checkout, used to shell out to
+            scripts/new-host.sh for hub-ification (`slipp up --hub`).
+    """
+
+    repo_path: Path
+
+
 class ProvidersConfig(BaseModel):
     """Root config for ~/.config/slipp/providers.yaml.
 
     Attributes:
         gigahost: Gigahost provider config, if configured
         pangolin: Pangolin provider config, if configured
+        wg_deploy: wg-deploy provider config, if configured
     """
 
     gigahost: GigahostConfig | None = None
     pangolin: PangolinConfig | None = None
+    wg_deploy: WgDeployConfig | None = None
