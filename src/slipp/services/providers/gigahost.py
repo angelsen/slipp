@@ -10,7 +10,7 @@ from typing import Any
 import httpx
 
 from slipp.services.providers.dns import DNSRecord, DNSZone
-from slipp.utils.errors import ProviderError
+from slipp.services.providers.http import api_request
 
 
 class GigahostClient:
@@ -44,40 +44,9 @@ class GigahostClient:
         Raises:
             ProviderError: On any HTTP error status or network failure.
         """
-        try:
-            response = self._client.request(method, path, params=params, json=json)
-            response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            detail = self._extract_error_message(e.response)
-            raise ProviderError(
-                f"Gigahost API error ({e.response.status_code}) on {method} {path}: {detail}"
-            ) from e
-        except httpx.RequestError as e:
-            raise ProviderError(
-                f"Network error calling Gigahost API ({method} {path}): {e}"
-            ) from e
-
-        if not response.content:
-            return {}
-        try:
-            return response.json()
-        except ValueError:
-            return {}
-
-    @staticmethod
-    def _extract_error_message(response: httpx.Response) -> str:
-        """Pull a human-readable message out of an error response body."""
-        try:
-            body = response.json()
-        except ValueError:
-            return response.text[:200] or response.reason_phrase
-
-        if isinstance(body, dict):
-            for key in ("message", "error"):
-                value = body.get(key)
-                if value:
-                    return str(value)
-        return response.text[:200] or response.reason_phrase
+        return api_request(
+            self._client, "Gigahost", method, path, params=params, json=json
+        )
 
     # --- Account ---
 

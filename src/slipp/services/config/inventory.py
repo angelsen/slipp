@@ -11,7 +11,7 @@ import yaml
 from slipp.models.deployment import DeploymentHostConfig, InventoryConfig
 from slipp.models.host import AnsibleHost
 from slipp.services.ansible import run_inventory
-from slipp.utils.errors import HostNotFoundError, InventoryParseError
+from slipp.utils.errors import ConfigError, HostNotFoundError, InventoryParseError
 
 
 def load_first_host(project_root: Path) -> DeploymentHostConfig | None:
@@ -41,6 +41,44 @@ def load_first_host(project_root: Path) -> DeploymentHostConfig | None:
         return inv.first_host
     except Exception:
         return None
+
+
+def load_first_host_strict(project_root: Path) -> tuple[str, DeploymentHostConfig]:
+    """Load the first host from the raw inventory YAML, requiring app_domain.
+
+    The strict counterpart to load_first_host() for commands that converge
+    external routing (dns sync, resources sync) and need a definite
+    domain + address rather than a best-effort peek. Returns the validated
+    app_domain separately (as str, not str | None) alongside the host.
+
+    Raises:
+        ConfigError: If no inventory/host/app_domain is configured.
+    """
+    # Must stay lazy: local.py top-imports this module (see
+    # load_project_ansible_hosts).
+    from slipp.services.config.local import LocalConfigService
+
+    local_config = LocalConfigService.load(project_root)
+    if not local_config or not local_config.inventory:
+        raise ConfigError(f"No inventory configured in {project_root}")
+
+    inventory_path = project_root / local_config.inventory
+    if not inventory_path.exists():
+        raise ConfigError(f"Inventory not found: {inventory_path}")
+
+    data = yaml.safe_load(inventory_path.read_text()) or {}
+    inventory = InventoryConfig.from_ansible_format(data)
+
+    if not inventory.hosts:
+        raise ConfigError(f"No hosts found in inventory: {inventory_path}")
+
+    host = inventory.first_host
+    if not host.app_domain:
+        raise ConfigError(
+            f"No app_domain configured on inventory host '{host.inventory_hostname}'"
+        )
+
+    return host.app_domain, host
 
 
 def resolve_app_domain(project_root: Path) -> str | None:

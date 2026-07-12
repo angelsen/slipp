@@ -7,6 +7,7 @@ from slipp.services.config.hosts import HostResolver
 from slipp.services.config.inventory import (
     InventoryService,
     load_first_host,
+    load_first_host_strict,
     load_project_hosts,
     resolve_app_domain,
     resolve_app_port,
@@ -26,6 +27,7 @@ __all__ = [
     "collect_managed_roles",
     "InventoryService",
     "load_first_host",
+    "load_first_host_strict",
     "load_project_hosts",
     "resolve_app_domain",
     "resolve_app_port",

@@ -5,7 +5,7 @@ This package provides services for SSH connections, tunnels, and remote executio
 
 from slipp.services.ssh.client import SSHResult, SSHService, hint_ssh_log
 from slipp.services.ssh.command import CommandBuilder, build_ssh_command
-from slipp.services.ssh.session import InteractiveSessionManager
+from slipp.services.ssh.session import container_shell, ssh_as_user, ssh_session
 from slipp.services.ssh.tunnel import (
     TunnelManager,
     parse_container_tunnel_in,
@@ -21,7 +21,9 @@ __all__ = [
     "parse_container_tunnel_in",
     "parse_tunnel_in",
     "parse_tunnel_out",
-    "InteractiveSessionManager",
+    "container_shell",
+    "ssh_as_user",
+    "ssh_session",
     "CommandBuilder",
     "build_ssh_command",
     "UserResolver",

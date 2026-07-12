@@ -1,18 +1,13 @@
 """Ansible vault subprocess wrapper.
 
-Provides functions for:
-- Secret generation (cryptographically secure)
-- Encrypting values for inline vault format
-- Listing keys from vault files
-- Extracting vault references from YAML
+Encrypt/decrypt operations, vault file IO, and vault-format introspection
+(listing keys, scanning for encrypted content and vault_* references).
 """
 
-import base64
 import os
 import re
 import tempfile
 from contextlib import contextmanager
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator
 
@@ -21,7 +16,6 @@ import yaml
 from slipp.utils.cli_tools import check_tool_installed, run_checked
 from slipp.utils.errors import (
     AnsibleVaultNotInstalledError,
-    DuplicateEnvVarError,
     VaultDecryptError,
     VaultError,
     VaultFileNotFoundError,
@@ -71,60 +65,6 @@ def vault_password_file(confirm: bool = True) -> Iterator[Path]:
         yield Path(path)
     finally:
         Path(path).unlink(missing_ok=True)
-
-
-def generate_secret(num_bytes: int = 32, encoding: str = "hex") -> str:
-    """Generate cryptographically secure secret.
-
-    Args:
-        num_bytes: Number of bytes of entropy (default: 32 = 256-bit)
-        encoding: Output encoding - "hex", "base64", or "ulid"
-
-    Returns:
-        Secret string in specified encoding
-
-    Examples:
-        >>> generate_secret()  # 64 hex chars (256-bit)
-        >>> generate_secret(16)  # 32 hex chars (128-bit)
-        >>> generate_secret(32, "base64")  # 43 base64 chars (256-bit)
-        >>> generate_secret(encoding="ulid")  # 26 char ULID
-    """
-    if encoding == "ulid":
-        from ulid import ULID
-
-        return str(ULID())
-
-    raw_bytes = os.urandom(num_bytes)
-
-    if encoding == "base64":
-        return base64.b64encode(raw_bytes).decode("ascii")
-    else:
-        return raw_bytes.hex()
-
-
-def generate_jwk(bits: int = 2048) -> str:
-    """Generate RSA keypair as JWK JSON.
-
-    Args:
-        bits: RSA key size (default: 2048)
-
-    Returns:
-        JSON string containing private JWK (includes public components)
-
-    Examples:
-        >>> generate_jwk()  # 2048-bit RSA
-        >>> generate_jwk(4096)  # 4096-bit RSA
-    """
-    from jwcrypto import jwk
-
-    key = jwk.JWK.generate(
-        kty="RSA",
-        size=bits,
-        alg="RS256",
-        use="sig",
-        kid=f"key-{generate_secret(4, 'hex')}",
-    )
-    return key.export_private()
 
 
 def encrypt_string(
@@ -191,58 +131,6 @@ def list_keys(vault_path: Path) -> list[str]:
         return []
 
     return list(data.keys())
-
-
-@dataclass(frozen=True)
-class VaultInfo:
-    """A registered project's configured vault, for discovery listings."""
-
-    project: str
-    vault: str  # relative path from slipp.yaml
-    secret_count: int | None  # None = unreadable/malformed
-
-
-def list_project_vaults() -> list[VaultInfo]:
-    """List every registered project with an existing, configured vault file.
-
-    Args:
-        (none)
-
-    Returns:
-        VaultInfo for each registered project whose slipp.yaml configures a
-        vault path that exists on disk. secret_count is None if the vault
-        file couldn't be parsed (malformed) rather than aborting the listing.
-    """
-    from slipp.services.config import LocalConfigService
-    from slipp.services.registry import ProjectRegistry
-
-    vaults: list[VaultInfo] = []
-    for project in ProjectRegistry().list_all():
-        local_config = LocalConfigService.load(project.project_path)
-        if not (local_config and local_config.vault):
-            continue
-
-        vault_path = project.project_path / local_config.vault
-        if not vault_path.exists():
-            continue
-
-        try:
-            secret_count = len(list_keys(vault_path))
-        except Exception:
-            # list_keys can raise VaultFileNotFoundError/YAMLError/AttributeError
-            # for a malformed vault - degrade to unknown rather than aborting
-            # the whole listing over one bad vault file.
-            secret_count = None
-
-        vaults.append(
-            VaultInfo(
-                project=project.name,
-                vault=local_config.vault,
-                secret_count=secret_count,
-            )
-        )
-
-    return vaults
 
 
 def append_to_vault(vault_path: Path, encrypted_yaml: str) -> None:
@@ -418,87 +306,3 @@ def decrypt_vault(vault_path: Path, password_file: Path) -> dict[str, str]:
             return secrets
         except yaml.YAMLError as e:
             raise VaultDecryptError(f"Invalid YAML in vault: {e}")
-
-
-def decrypt_vault_to_env(
-    project_name: str,
-    password_file: Path,
-) -> dict[str, str]:
-    """Decrypt a project's vault and return as environment variables.
-
-    Converts vault_* keys to uppercase env vars (strips vault_ prefix).
-    E.g., vault_db_password -> DB_PASSWORD
-
-    Args:
-        project_name: Name of registered project
-        password_file: Path to vault password file
-
-    Returns:
-        Dict of {ENV_VAR: value} pairs
-
-    Raises:
-        VaultDecryptError: If project not found or decryption fails
-    """
-    from slipp.services.config import LocalConfigService
-    from slipp.services.registry import ProjectRegistry
-
-    registry = ProjectRegistry()
-    project = registry.get(project_name)
-
-    if not project:
-        raise VaultDecryptError(f"Project '{project_name}' not found in registry")
-
-    local_config = LocalConfigService.load(project.project_path)
-    if not local_config or not local_config.vault:
-        raise VaultDecryptError(f"Project '{project_name}' has no vault configured")
-
-    vault_path = project.project_path / local_config.vault
-
-    secrets = decrypt_vault(vault_path, password_file)
-
-    env: dict[str, str] = {}
-    for key, value in secrets.items():
-        if key.startswith("vault_"):
-            env_key = key[6:].upper()
-        else:
-            env_key = key.upper()
-        env[env_key] = value
-
-    return env
-
-
-def merge_vault_envs(
-    vault_names: list[str],
-    password_file: Path,
-) -> dict[str, str]:
-    """Merge environment variables from multiple vaults.
-
-    Fails fast on duplicate keys across vaults.
-
-    Args:
-        vault_names: List of project names with vaults
-        password_file: Path to vault password file
-
-    Returns:
-        Merged dict of {ENV_VAR: value} pairs
-
-    Raises:
-        DuplicateEnvVarError: If same key found in multiple vaults
-        VaultDecryptError: If decryption fails
-    """
-    merged: dict[str, str] = {}
-    sources: dict[str, str] = {}  # Track which vault each key came from
-
-    for vault_name in vault_names:
-        env = decrypt_vault_to_env(vault_name, password_file)
-
-        for key, value in env.items():
-            if key in merged:
-                raise DuplicateEnvVarError(
-                    f"Duplicate env var '{key}' found in vaults: {sources[key]}, {vault_name}\n"
-                    f"Hint: Remove one vault or rename the secret"
-                )
-            merged[key] = value
-            sources[key] = vault_name
-
-    return merged

@@ -3,23 +3,24 @@
 This package provides services for Ansible vault encryption, decryption, and secret management.
 """
 
-from slipp.services.vault.sync import SecretSynchronizer
-from slipp.services.vault.vault import (
-    VaultInfo,
+from slipp.services.vault.crypto import (
     append_to_vault,
     decrypt_vault,
-    decrypt_vault_to_env,
     encrypt_string,
     extract_vault_refs,
-    generate_jwk,
-    generate_secret,
     has_vault_content,
     list_keys,
-    list_project_vaults,
-    merge_vault_envs,
     vault_password_file,
     write_vault,
 )
+from slipp.services.vault.generate import generate_jwk, generate_secret
+from slipp.services.vault.projects import (
+    VaultInfo,
+    decrypt_vault_to_env,
+    list_project_vaults,
+    merge_vault_envs,
+)
+from slipp.services.vault.sync import SecretSynchronizer
 
 __all__ = [
     "VaultInfo",

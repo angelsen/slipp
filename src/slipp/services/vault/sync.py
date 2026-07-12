@@ -6,13 +6,13 @@ Handles scanning YAML files for vault references and generating secrets.
 
 from pathlib import Path
 
-from slipp.services.vault.vault import (
+from slipp.services.vault.crypto import (
     encrypt_string,
     extract_vault_refs,
-    generate_secret,
     vault_password_file,
     write_vault,
 )
+from slipp.services.vault.generate import generate_secret
 from slipp.utils.errors import (
     AnsibleVaultNotInstalledError,
     PasswordMismatchError,

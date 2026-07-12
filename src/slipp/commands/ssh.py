@@ -4,7 +4,6 @@ This module provides the SSH CLI command that opens an interactive shell
 on either the VPS directly or inside a running service container.
 """
 
-import sys
 from typing import Annotated
 
 import typer
@@ -12,7 +11,7 @@ import typer
 from slipp import output
 from slipp.commands.common import find_service_or_exit, resolve_host_or_exit
 from slipp.models.service import Runtime
-from slipp.services.ssh import InteractiveSessionManager, SSHService, UserResolver
+from slipp.services.ssh import SSHService, UserResolver, container_shell, ssh_as_user
 
 
 def ssh_command(
@@ -26,13 +25,12 @@ def ssh_command(
     ] = None,
 ) -> None:
     """Open interactive shell on VPS or container service."""
-    session_manager = InteractiveSessionManager()
     ssh_config = resolve_host_or_exit(service=service, command="ssh")
 
     if not service:
         target_user = user or ssh_config.ansible_user
-        exit_code = session_manager.ssh_as_user(ssh_config, target_user)
-        sys.exit(exit_code)
+        exit_code = ssh_as_user(ssh_config, target_user)
+        raise typer.Exit(exit_code)
 
     with SSHService(ssh_config) as ssh:
         svc = find_service_or_exit(ssh_config, service, include_system=False)
@@ -48,7 +46,7 @@ def ssh_command(
                 f"Shelling into container {svc.name} on {ssh_config.ansible_host}..."
             )
             output.blank()
-            exit_code = session_manager.container_shell(
+            exit_code = container_shell(
                 ssh_config,
                 svc.name,
                 resolution.user,
@@ -59,6 +57,6 @@ def ssh_command(
                 f"Connecting to {ssh_config.ansible_host} as {resolution.user}..."
             )
             output.blank()
-            exit_code = session_manager.ssh_as_user(ssh_config, resolution.user)
+            exit_code = ssh_as_user(ssh_config, resolution.user)
 
-        sys.exit(exit_code)
+        raise typer.Exit(exit_code)
