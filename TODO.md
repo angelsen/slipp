@@ -1,13 +1,24 @@
 # slipp TODO
 
-## Next: live-verify `--proxy wg-manage` against Bulletins
+## Next: live-verify `--proxy auto` / wg-manage composition against Bulletins
 
-`--proxy wg-manage` is implemented (see Shipped) but never called a real
-`wg-manage` binary — only unit-tested via direct template rendering +
-`ansible-playbook --syntax-check`. Deploy bulletins-admin with `--proxy
-none` first (already possible today), then bulletins-chat with `--proxy
-wg-manage --public` against the real VPS, per the design in
-[`wg-deploy`](~/Projects/private/wg-deploy)'s own TODO.
+The full wg-manage/slipp composition is implemented on both sides (see
+Shipped) but never run against a real host — only unit-tested via direct
+rendering, `ansible-playbook --syntax-check`, and mocked-SSH
+reproductions. The primary acceptance flow per
+[`wg-deploy`](~/Projects/private/wg-deploy)'s `slipp-composition` spec is
+one command end-to-end:
+
+```
+slipp up <name> --hub --domain <domain>
+```
+
+— provisions a fresh VPS, hub-ifies it via `scripts/new-host.sh`
+(`slipp providers add wg-deploy` first), then `--proxy auto` probes and
+finds the hub, deploys through wg-manage-owned Caddy. For Bulletins
+specifically: deploy bulletins-admin with `--proxy none` first (already
+possible today), then bulletins-chat with `--proxy auto --public` (or
+explicit `--proxy wg-manage --public`) against the real VPS.
 
 ---
 
@@ -47,13 +58,6 @@ wg-manage --public` against the real VPS, per the design in
       the host's public IP before `wg-manage service add --public` runs.
       Neither slipp nor wg-manage manages DNS records today — has to be
       created by hand until the Cloudflare provider (above) lands.
-- [ ] `--proxy wg-manage` only ever calls `wg-manage service add`, never
-      `service rm` — a renamed/removed service leaves a stale wg-manage
-      entry (and its Caddy route/cert) forever. `service rm` already
-      exists on the wg-manage side; slipp just doesn't call it. Matches
-      slipp's existing non-cleanup-on-rename behavior elsewhere, but a
-      stale *exposure* entry has more real consequence than a stale local
-      file.
 
 ---
 
@@ -149,5 +153,32 @@ Open questions:
   (`wg-manage service add` per exposed service, idempotent) instead of a
   Caddyfile, for hosts where wg-manage already owns Caddy. Defaults to
   `--https` (internal CA); `--public` (Let's Encrypt) is an explicit
-  opt-in, validated against proxy choice. Not yet live-verified (see
-  Next).
+  opt-in, validated against proxy choice.
+- **2026-07-11** — Full `slipp-composition` spec landed (spans this repo
+  and `wg-deploy`): `--proxy` now defaults to `auto` and resolves via a
+  new `ProxyResolutionStage` that SSH-probes `wg-manage --version`,
+  caching a genuinely-connected result as `proxy_owner` in
+  `inventory.yml` (explicit overrides and failed probes never poison the
+  cache; an inconclusive probe fails the launch rather than guessing).
+  `wg-manage-exposure` role gains `--route` path multiplexing (a detected
+  backend folds into the frontend's bare-domain entry as `/api/*` instead
+  of its own subdomain) and a `--label slipp:<project>` tag on every
+  exposed service, plus a deploy-time hub version-guard task. New
+  `services/wg_manage/` module holds the SSH orchestration/converge logic
+  shared by `commands/resources.py` and `commands/deploy.py`'s
+  post-deploy hook. `slipp resources sync/list/remove` grows a wg-manage
+  backend alongside Pangolin: label-scoped stray removal closes the
+  gap where slipp never called `wg-manage service rm` on its own
+  (previously an open backlog item). `slipp up --hub`
+  shells out to a configured `wg-deploy` checkout's `scripts/new-host.sh`
+  to hub-ify a freshly provisioned host before launch (`slipp providers
+  add wg-deploy`). `slipp.yaml` now records the `--dir` values a launch
+  actually scanned (`LocalConfig.project_dirs`) so exposure sync
+  reproduces the same declared set instead of a possibly-divergent
+  auto-detection -- verified this would otherwise break Bulletins' own
+  per-tier `--dir admin`/`--dir chat` launches. Hardening:
+  `shlex.quote()` on service names interpolated into remote wg-manage
+  commands, `WgManageError` so the post-deploy hook's "never raises"
+  contract actually holds. Five rounds of external review, each verified
+  against the code (reproductions, not trust) before fixing. Not yet
+  live-verified (see Next).
