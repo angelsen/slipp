@@ -65,7 +65,9 @@ class ProxyResolutionStage:
             resolved = context.proxy
         elif first_host.proxy_owner:
             resolved = first_host.proxy_owner
-            output.info(f"Using cached proxy owner for {first_host.ansible_host}: {resolved}")
+            output.info(
+                f"Using cached proxy owner for {first_host.ansible_host}: {resolved}"
+            )
         elif context.dry_run:
             # InventoryLoadStage fills in a dummy, unreachable host for dry
             # runs -- probing it would just burn the SSH connect timeout.

@@ -143,7 +143,9 @@ def _remove_wg_manage(host: DeploymentHostConfig, project_name: str, name: str) 
     output.success(f"Removed wg-manage service: {name}")
 
 
-def _resolve_domain_id(app_domain: str, domains: list[dict[str, Any]]) -> tuple[str, str]:
+def _resolve_domain_id(
+    app_domain: str, domains: list[dict[str, Any]]
+) -> tuple[str, str]:
     """Match app_domain's suffix against a configured Pangolin domain.
 
     Picks the *longest* matching baseDomain, not just the first in API list

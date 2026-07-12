@@ -173,8 +173,8 @@ class RoleGenerator:
         # block/rescue) rather than via notify, so only the container role -- whose
         # community.docker/podman tasks still notify a recreate handler -- needs one.
         if runtime != Runtime.SYSTEMD:
-            files[Path(f"roles/{role_name}/handlers/main.yml")] = (
-                self._render_handlers(service, project_name)
+            files[Path(f"roles/{role_name}/handlers/main.yml")] = self._render_handlers(
+                service, project_name
             )
 
         return files

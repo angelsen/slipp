@@ -22,9 +22,7 @@ SUPPORTED_PROVIDERS = ["gigahost", "pangolin", "wg-deploy"]
 
 @providers_app.command(name="add")
 def add_provider(
-    name: Annotated[
-        str, typer.Argument(help="Provider name (gigahost, pangolin)")
-    ],
+    name: Annotated[str, typer.Argument(help="Provider name (gigahost, pangolin)")],
 ) -> None:
     """Configure and verify an infrastructure provider."""
     if name not in SUPPORTED_PROVIDERS:
@@ -106,9 +104,10 @@ def _add_wg_deploy() -> None:
     raw_path = output.prompt("wg-deploy repo path")
     repo_path = Path(raw_path).expanduser().resolve()
 
-    if not (repo_path / "playbook.yml").is_file() or not (
-        repo_path / "scripts" / "new-host.sh"
-    ).is_file():
+    if (
+        not (repo_path / "playbook.yml").is_file()
+        or not (repo_path / "scripts" / "new-host.sh").is_file()
+    ):
         output.error(f"Not a wg-deploy checkout: {repo_path}")
         output.hint("Expected playbook.yml and scripts/new-host.sh in this directory")
         raise typer.Exit(1)
@@ -131,7 +130,9 @@ def list_providers() -> None:
     if config.pangolin:
         rows.append({"provider": "pangolin", "account": config.pangolin.org})
     if config.wg_deploy:
-        rows.append({"provider": "wg-deploy", "account": str(config.wg_deploy.repo_path)})
+        rows.append(
+            {"provider": "wg-deploy", "account": str(config.wg_deploy.repo_path)}
+        )
 
     if not rows:
         output.info("No providers configured")

@@ -44,7 +44,9 @@ def get_pangolin_client() -> PangolinClient:
         raise ProviderNotConfiguredError(
             "Pangolin not configured. Run: slipp providers add pangolin"
         )
-    return PangolinClient(config.session_cookie, org=config.org, base_url=config.base_url)
+    return PangolinClient(
+        config.session_cookie, org=config.org, base_url=config.base_url
+    )
 
 
 def resolve_dns_provider(domain: str) -> DNSProvider:
