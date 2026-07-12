@@ -65,10 +65,6 @@ class DNSProvider(Protocol):
         """Update an existing record (record.record_id must be set)."""
         ...
 
-    def delete_record(self, zone_id: str, record: DNSRecord) -> None:
-        """Delete a record (record.record_id must be set)."""
-        ...
-
     def find_zone(self, domain: str) -> DNSZone | None:
         """Find the zone managing a domain, or None if not found."""
         ...

@@ -55,7 +55,6 @@ class DockerfileGenerationStage:
                 files = self.generator.generate(
                     service=service,
                     output_dir=service.path,
-                    force_refresh=False,
                     container_runtime=runtime.value,
                 )
 

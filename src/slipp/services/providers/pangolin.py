@@ -14,6 +14,7 @@ from typing import Any
 import httpx
 
 from slipp.services.providers.http import api_request
+from slipp.utils.errors import ConfigError
 
 
 def resolve_site(sites: list[dict[str, Any]], site: str) -> dict[str, Any] | None:
@@ -33,6 +34,38 @@ def resolve_site(sites: list[dict[str, Any]], site: str) -> dict[str, Any] | Non
         ),
         None,
     )
+
+
+def resolve_domain(app_domain: str, domains: list[dict[str, Any]]) -> tuple[str, str]:
+    """Match app_domain's suffix against a configured Pangolin domain.
+
+    Picks the *longest* matching baseDomain, not just the first in API list
+    order -- an org can have both an apex (example.com) and a subdomain
+    (dev.example.com) configured as separate Pangolin domains, and the more
+    specific one should win regardless of API ordering.
+
+    Returns:
+        (domain_id, subdomain) -- subdomain is "" for an apex match.
+
+    Raises:
+        ConfigError: If no configured domain's baseDomain matches.
+    """
+    matches = [
+        d
+        for d in domains
+        if app_domain == d["baseDomain"] or app_domain.endswith(f".{d['baseDomain']}")
+    ]
+    match = max(matches, key=lambda d: len(d["baseDomain"]), default=None)
+    if not match:
+        available = ", ".join(d["baseDomain"] for d in domains)
+        raise ConfigError(
+            f"'{app_domain}' doesn't match any configured Pangolin domain"
+            + (f" ({available})" if available else "")
+        )
+
+    base = match["baseDomain"]
+    subdomain = app_domain[: -len(base) - 1] if app_domain != base else ""
+    return match["domainId"], subdomain
 
 
 class PangolinClient:

@@ -214,13 +214,11 @@ class CaddySite(BaseModel):
 
     Attributes:
         domain: Domain or subdomain
-        upstream_host: Backend host (default: localhost)
         upstream_port: Backend port
         path_prefix: Path routing (default: /)
     """
 
     domain: str = Field(description="Domain or subdomain")
-    upstream_host: str = Field(default="localhost", description="Backend host")
     upstream_port: int = Field(description="Backend port")
     path_prefix: str = Field(default="/", description="Path routing")
 
@@ -234,16 +232,12 @@ class CaddyConfig(BaseModel):
         sites: List of site configurations
         auto_https: Enable automatic HTTPS (default: True)
         sites_dir: Site configs directory (default: /etc/caddy/sites)
-        staging: Use Let's Encrypt staging for testing (default: False)
     """
 
     sites: list[CaddySite] = Field(default_factory=list)
     auto_https: bool = Field(default=True, description="Enable automatic HTTPS")
     sites_dir: str = Field(
         default="/etc/caddy/sites", description="Site configs directory"
-    )
-    staging: bool = Field(
-        default=False, description="Use Let's Encrypt staging for testing"
     )
 
 
@@ -291,7 +285,6 @@ class ProvisionConfig(BaseModel):
             "caddy_sites": [site.model_dump() for site in self.caddy_config.sites],
             "caddy_auto_https": self.caddy_config.auto_https,
             "caddy_sites_dir": self.caddy_config.sites_dir,
-            "caddy_staging": self.caddy_config.staging,
             "skip_caddy": self.skip_caddy,
             "proxy": self.proxy,
             "target_host": first_host.ansible_host,

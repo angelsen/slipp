@@ -12,7 +12,7 @@
 {%- if sites|length == 1 %}
 	{%- set site = sites[0] %}
 
-	reverse_proxy {{ site.upstream_host }}:{{ site.upstream_port }} {
+	reverse_proxy localhost:{{ site.upstream_port }} {
 		health_uri /health
 		health_interval 30s
 		health_timeout 5s
@@ -23,7 +23,7 @@
 	{%- for site in sites|sort(attribute='path_prefix', reverse=true) %}
 
 	handle {{ site.path_prefix }}* {
-		reverse_proxy {{ site.upstream_host }}:{{ site.upstream_port }} {
+		reverse_proxy localhost:{{ site.upstream_port }} {
 			health_uri /health
 			health_interval 30s
 			health_timeout 5s

@@ -69,7 +69,6 @@ class CaddyGenerator:
             "roles/caddy/templates/Caddyfile.j2",
             {
                 "admin_email": admin_email,
-                "caddy_staging": config.staging,
                 "caddy_sites_dir": config.sites_dir,
                 "app_domain": app_domain,
                 "caddy_auto_https": config.auto_https,
@@ -101,7 +100,6 @@ class CaddyGenerator:
             {
                 "caddy_auto_https": config.auto_https,
                 "caddy_sites_dir": config.sites_dir,
-                "caddy_staging": config.staging,
             },
             label="Caddy defaults/main.yml",
         )

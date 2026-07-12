@@ -24,6 +24,4 @@ class ProvisionState(BaseModel):
     srv_id: int | None = None
     ip: str | None = None
     phase: ProvisionPhase = ProvisionPhase.ORDERED
-    provider: str = "gigahost"
     created_at: datetime = Field(default_factory=datetime.now)
-    updated_at: datetime = Field(default_factory=datetime.now)

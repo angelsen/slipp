@@ -4,11 +4,10 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
-import yaml
 
 from slipp import output
 from slipp.constants import DEFAULT_ENV, get_inventory_filename
-from slipp.models.deployment import DeploymentHostConfig, InventoryConfig
+from slipp.services.config import write_minimal_inventory
 from slipp.services.launch.registration import register_project
 from slipp.services.providers import get_gigahost_client, provision_and_bootstrap
 from slipp.services.ssh import hint_ssh_log
@@ -39,18 +38,7 @@ def provision_command(
         raise typer.Exit(1)
 
     inventory_filename = get_inventory_filename(environment)
-    inventory_path = Path.cwd() / inventory_filename
-
-    host_config = DeploymentHostConfig(
-        inventory_hostname=environment,
-        ansible_host=ip,
-        ansible_user="slipp",
-        ansible_port=22,
-    )
-    inventory = InventoryConfig(hosts={environment: host_config})
-    inventory_path.write_text(
-        yaml.dump(inventory.to_ansible_format(), default_flow_style=False)
-    )
+    write_minimal_inventory(Path.cwd() / inventory_filename, environment, ip)
 
     register_project(
         name=name,

@@ -19,8 +19,8 @@ from slipp.services.config.detection import (
     ROLES_PATTERNS,
     detect_path,
 )
-from slipp.services.registry import ProjectRegistry
-from slipp.utils.errors import ConfigError
+from slipp.services.launch.registration import register_project
+from slipp.utils.errors import ConfigError, LaunchError
 
 
 def _resolve_required(
@@ -145,24 +145,18 @@ def add_command(
         roles_rel.append(galaxy_path)
 
     try:
-        LocalConfigService.create(
+        register_project(
             name=name,
+            project_root=project_root,
             inventory_path=inventory_rel,
             playbook_path=playbook_rel,
             roles_path=roles_rel,
             galaxy_path=galaxy_path,
             vault_path=vault,
-            project_root=project_root,
         )
-    except OSError as e:
-        raise ConfigError(f"Failed to create config: {e}") from e
+    except LaunchError as e:
+        raise ConfigError(str(e)) from e
 
-    try:
-        ProjectRegistry().register(name=name, project_path=project_root)
-    except OSError as e:
-        raise ConfigError(f"Failed to register project: {e}") from e
-
-    output.success(f"Registered '{name}'")
     output.kv("inventory", inventory_rel, indent=1)
     output.kv("playbook", playbook_rel, indent=1)
     output.kv("roles_path", ", ".join(roles_rel), indent=1)

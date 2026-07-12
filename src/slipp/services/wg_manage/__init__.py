@@ -10,21 +10,16 @@ project's commands = args -> service -> output layering.
 
 import json
 import shlex
+import subprocess
 from pathlib import Path
 from typing import Any
 
 from slipp import output
 from slipp.models.deployment import DeploymentHostConfig, DetectedService
 from slipp.scanner import scan
-from slipp.scanner.models import NODE_FRAMEWORKS, PYTHON_FRAMEWORKS
+from slipp.scanner.routing import classify_services
 from slipp.services.ssh import SSHResult, SSHService
 from slipp.utils.errors import WgManageError
-
-# Same convention as build_caddy_sites() (launch/stages/caddy.py): Node
-# frameworks serve as the frontend, Python as the backend, in slipp's
-# default multi-service routing split.
-_FRONTEND_FRAMEWORKS = NODE_FRAMEWORKS
-_BACKEND_FRAMEWORKS = PYTHON_FRAMEWORKS
 
 
 def service_label(project_name: str) -> str:
@@ -78,14 +73,16 @@ def build_wg_services(services: list[DetectedService], domain: str) -> list[dict
             }
         ]
 
-    backend = next((s for s in services if s.framework in _BACKEND_FRAMEWORKS), None)
-    frontend = next((s for s in services if s.framework in _FRONTEND_FRAMEWORKS), None)
+    roles = classify_services(services)
     # frontend is never `backend` (disjoint framework sets), and with >=2
     # services there's always at least one entry that isn't `backend` --
     # so primary is guaranteed non-None here, unlike build_caddy_sites()'s
-    # frontend/backend which can each independently be absent.
-    primary = frontend or next(s for s in services if s is not backend)
+    # frontend/backend which can each independently be absent. When no
+    # frontend exists, primary consumes the head of `others`.
+    primary = roles.frontend or roles.others[0]
+    subdomain_services = roles.others if roles.frontend else roles.others[1:]
 
+    backend = roles.backend
     route_flags = f"--route '/api/*=localhost:{backend.port}'" if backend else ""
     entries = [
         {
@@ -96,9 +93,7 @@ def build_wg_services(services: list[DetectedService], domain: str) -> list[dict
         }
     ]
 
-    for service in services:
-        if service is primary or service is backend:
-            continue
+    for service in subdomain_services:
         entries.append(
             {
                 "name": service.name,
@@ -109,6 +104,23 @@ def build_wg_services(services: list[DetectedService], domain: str) -> list[dict
         )
 
     return entries
+
+
+def make_hub(name: str, ip: str, repo_path: Path) -> None:
+    """Hub-ify a host by running wg-deploy's scripts/new-host.sh against it.
+
+    Interactive: ansible-vault may prompt for the vault password (no
+    stdout/stderr capture, so the prompt reaches the terminal).
+
+    Raises:
+        WgManageError: If new-host.sh exits non-zero.
+    """
+    result = subprocess.run(
+        ["bash", "scripts/new-host.sh", name, ip],
+        cwd=repo_path,
+    )
+    if result.returncode != 0:
+        raise WgManageError(f"new-host.sh failed (exit {result.returncode})")
 
 
 def _ssh_exec(host: DeploymentHostConfig, cmd: str) -> SSHResult:

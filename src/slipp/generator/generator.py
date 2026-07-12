@@ -42,7 +42,6 @@ class TemplateGenerator:
         self,
         service: DetectedService,
         output_dir: Path,
-        force_refresh: bool = False,
         container_runtime: str = "docker",
     ) -> list[GeneratedFile]:
         """Generate deployment files for detected service.
@@ -50,7 +49,6 @@ class TemplateGenerator:
         Args:
             service: Detected service from scanner
             output_dir: Directory to write generated files
-            force_refresh: Skip template cache, fetch from GitHub
             container_runtime: Container runtime (docker or podman)
 
         Returns:
@@ -66,7 +64,7 @@ class TemplateGenerator:
             ['Dockerfile']
         """
         template_path = self._extract_template_path(service.template_url)
-        template = self.fetcher.fetch_template(template_path, force_refresh)
+        template = self.fetcher.fetch_template(template_path)
         variables = extract_template_variables(service)
         rendered_content = render_go_template(
             template.content, variables, label=template_path

@@ -1,6 +1,5 @@
 """Orchestrated deploy - slipp up composes provision -> hub -> domain -> launch -> dns -> deploy."""
 
-import subprocess
 from pathlib import Path
 from typing import Annotated
 
@@ -8,6 +7,7 @@ import typer
 
 from slipp import output
 from slipp.commands.deploy import deploy_command
+from slipp.services import wg_manage
 from slipp.services.providers import (
     ProviderConfigService,
     provision_and_bootstrap,
@@ -24,6 +24,7 @@ from slipp.utils.errors import (
     LaunchError,
     ProviderError,
     SSHConnectionError,
+    WgManageError,
 )
 
 VALID_DNS_MODES = ["auto", "manual"]
@@ -67,12 +68,10 @@ def _make_hub(step: _StepCounter, name: str, ip: str) -> None:
         output.error("Hub-ification declined -- aborting (launch needs a hub)")
         raise typer.Exit(1)
 
-    result = subprocess.run(
-        ["bash", "scripts/new-host.sh", name, ip],
-        cwd=wg_deploy.repo_path,
-    )
-    if result.returncode != 0:
-        output.error(f"new-host.sh failed (exit {result.returncode})")
+    try:
+        wg_manage.make_hub(name, ip, wg_deploy.repo_path)
+    except WgManageError as e:
+        output.error(str(e))
         raise typer.Exit(1)
 
     output.success(f"{ip} is now a wg-manage hub")

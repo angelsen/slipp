@@ -11,14 +11,9 @@ from slipp.models.deployment import (
     DetectedService,
     ProvisionConfig,
 )
-from slipp.scanner.models import NODE_FRAMEWORKS, PYTHON_FRAMEWORKS
+from slipp.scanner.routing import classify_services
 from slipp.services.launch.context import FullContext
 from slipp.services.launch.stages.common import FileGenerationStage, require
-
-# Node frameworks serve as the frontend, Python as the backend, in slipp's
-# default multi-service Caddy routing convention.
-_FRONTEND_FRAMEWORKS = NODE_FRAMEWORKS
-_BACKEND_FRAMEWORKS = PYTHON_FRAMEWORKS
 
 
 def build_caddy_sites(services: list[DetectedService], domain: str) -> list[CaddySite]:
@@ -40,30 +35,30 @@ def build_caddy_sites(services: list[DetectedService], domain: str) -> list[Cadd
             CaddySite(domain=domain, upstream_port=services[0].port, path_prefix="/")
         ]
 
-    sites = []
-    frontend = next((s for s in services if s.framework in _FRONTEND_FRAMEWORKS), None)
-    backend = next((s for s in services if s.framework in _BACKEND_FRAMEWORKS), None)
+    roles = classify_services(services)
 
-    if backend:
+    sites = []
+    if roles.backend:
         sites.append(
-            CaddySite(domain=domain, upstream_port=backend.port, path_prefix="/api")
+            CaddySite(
+                domain=domain, upstream_port=roles.backend.port, path_prefix="/api"
+            )
         )
 
-    if frontend:
+    if roles.frontend:
         sites.append(
-            CaddySite(domain=domain, upstream_port=frontend.port, path_prefix="/")
+            CaddySite(domain=domain, upstream_port=roles.frontend.port, path_prefix="/")
         )
 
     # Add any remaining services as subdomains
-    for service in services:
-        if service != frontend and service != backend:
-            sites.append(
-                CaddySite(
-                    domain=f"{service.name}.{domain}",
-                    upstream_port=service.port,
-                    path_prefix="/",
-                )
+    for service in roles.others:
+        sites.append(
+            CaddySite(
+                domain=f"{service.name}.{domain}",
+                upstream_port=service.port,
+                path_prefix="/",
             )
+        )
 
     return sites
 
@@ -100,7 +95,6 @@ class CaddyConfigStage:
             caddy_config = CaddyConfig(
                 sites=caddy_sites,
                 auto_https=not is_ip,
-                staging=False,
             )
 
             output.success(f"Configured {len(caddy_sites)} Caddy site(s)")

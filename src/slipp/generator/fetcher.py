@@ -38,15 +38,12 @@ class TemplateFetcher:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.client = httpx.Client(timeout=30.0)
 
-    def fetch_template(
-        self, template_path: str, force_refresh: bool = False
-    ) -> TemplateFile:
+    def fetch_template(self, template_path: str) -> TemplateFile:
         """Fetch single template file from GitHub.
 
         Args:
             template_path: Relative path from repo root
                           (e.g., "scanner/templates/python-docker/Dockerfile")
-            force_refresh: Skip cache, fetch from GitHub
 
         Returns:
             Template file with content
@@ -61,10 +58,9 @@ class TemplateFetcher:
             >>> "FROM python:" in template.content
             True
         """
-        if not force_refresh:
-            cached = self._get_from_cache(template_path)
-            if cached:
-                return cached
+        cached = self._get_from_cache(template_path)
+        if cached:
+            return cached
 
         url = f"{self.BASE_URL}/{template_path}"
 

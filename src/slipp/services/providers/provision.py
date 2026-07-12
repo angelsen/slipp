@@ -269,7 +269,6 @@ def _poll_and_wait(client: GigahostClient, state: ProvisionState) -> tuple[str, 
                 "ip": ip,
                 "srv_id": srv_id,
                 "phase": ProvisionPhase.PROVISIONED,
-                "updated_at": datetime.now(),
             }
         )
     )
@@ -370,7 +369,6 @@ def install_server(
             ip=ip,
             phase=ProvisionPhase.INSTALLING,
             created_at=now,
-            updated_at=now,
         )
     )
 

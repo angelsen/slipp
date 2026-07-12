@@ -17,8 +17,8 @@ class GigahostClient:
     """Synchronous Gigahost API client.
 
     Implements the DNSProvider protocol (list_zones, list_records,
-    create_record, update_record, delete_record, find_zone) so it can be
-    used anywhere a DNSProvider is expected.
+    create_record, update_record, find_zone) so it can be used anywhere
+    a DNSProvider is expected.
     """
 
     BASE_URL = "https://api.gigahost.no/api/v0"
@@ -62,10 +62,6 @@ class GigahostClient:
         )
         return result.get("data", {})
 
-    def delete_ssh_key(self, key_id: int) -> None:
-        """DELETE /account/sshkey/{id}."""
-        self._request("DELETE", f"/account/sshkey/{key_id}")
-
     # --- DNS (implements DNSProvider protocol) ---
 
     def list_zones(self) -> list[DNSZone]:
@@ -95,14 +91,6 @@ class GigahostClient:
             json=self._record_payload(record),
         )
         return record
-
-    def delete_record(self, zone_id: str, record: DNSRecord) -> None:
-        """DELETE /dns/zones/{zone_id}/records/{record_id}?name=&type= (API quirk)."""
-        self._request(
-            "DELETE",
-            f"/dns/zones/{zone_id}/records/{record.record_id}",
-            params={"name": record.name, "type": record.type},
-        )
 
     def find_zone(self, domain: str) -> DNSZone | None:
         """Match domain (case/trailing-dot insensitive) against the zone list."""

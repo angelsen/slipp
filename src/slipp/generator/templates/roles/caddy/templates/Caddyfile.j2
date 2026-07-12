@@ -2,9 +2,6 @@
 {
 {% if caddy_auto_https %}
 	email {{ admin_email }}
-{% if caddy_staging %}
-	acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
-{% endif %}
 {% else %}
 	auto_https off
 {% endif %}

@@ -15,6 +15,7 @@ def register_project(
     inventory_path: str,
     playbook_path: str,
     runtime: str | None = None,
+    roles_path: list[str] | None = None,
     galaxy_path: str | None = None,
     vault_path: str | None = None,
     project_dirs: list[str] | None = None,
@@ -31,6 +32,7 @@ def register_project(
         inventory_path: Relative path to inventory
         playbook_path: Relative path to playbook
         runtime: How the app runs (systemd/docker/podman), if known
+        roles_path: Relative roles directories (drives managed_roles scanning)
         galaxy_path: Install path for ansible-galaxy, if any
         vault_path: Relative path to vault file, if any
         project_dirs: --dir values slipp launch scanned, see
@@ -45,6 +47,7 @@ def register_project(
             inventory_path=inventory_path,
             playbook_path=playbook_path,
             runtime=runtime,
+            roles_path=roles_path,
             galaxy_path=galaxy_path,
             vault_path=vault_path,
             project_root=project_root,
