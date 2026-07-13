@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from slipp import output
+from slipp.models.service import Runtime
 from slipp.output import format_path
 from slipp.services.config import LocalConfigService
 from slipp.services.config.detection import PLAYBOOK_PATTERNS, detect_path
@@ -19,6 +20,7 @@ def ensure_local_config(
     roles: list[str],
     vault: str | None,
     project_root: Path,
+    runtime: str | None = None,
 ) -> None:
     """Create or update slipp.yaml when --name and --inventory are both given.
 
@@ -31,6 +33,10 @@ def ensure_local_config(
         roles: Role search directories.
         vault: Vault file path.
         project_root: Project root directory.
+        runtime: How the app runs (systemd/docker/podman), if known. Without
+            this, external projects have no runtime in slipp.yaml and every
+            operational command (ssh/exec/logs/ps/status) falls back to
+            RuntimeDetector's docker/podman-only playbook grep.
 
     Raises:
         ConfigError: If the inventory file doesn't exist or config creation fails.
@@ -52,10 +58,10 @@ def ensure_local_config(
 
     try:
         if LocalConfigService.exists(project_root):
-            LocalConfigService.update(
-                {"name": name, "inventory": inventory},
-                project_root=project_root,
-            )
+            changes: dict[str, str | Runtime] = {"name": name, "inventory": inventory}
+            if runtime:
+                changes["runtime"] = Runtime(runtime.lower())
+            LocalConfigService.update(changes, project_root=project_root)
             output.info(f"Updated slipp.yaml with name '{name}'")
         else:
             LocalConfigService.create(
@@ -64,6 +70,7 @@ def ensure_local_config(
                 playbook_path=playbook_path,
                 roles_path=roles if roles else None,
                 vault_path=vault,
+                runtime=runtime,
                 project_root=project_root,
             )
             output.info(f"Created slipp.yaml with name '{name}'")
@@ -102,6 +109,7 @@ def persist_config_updates(
     galaxy_path_flag: str | None,
     vault: str | None,
     project_root: Path,
+    runtime: str | None = None,
 ) -> None:
     """Persist CLI flag overrides into slipp.yaml after a successful deploy.
 
@@ -114,6 +122,7 @@ def persist_config_updates(
         project_root: Root the deploy resolved against (cwd or a discovered
             enclosing project) -- flag paths are converted to be relative to
             this before persisting.
+        runtime: Runtime CLI override, if given.
     """
     changes: dict[str, Any] = {}
 
@@ -151,6 +160,8 @@ def persist_config_updates(
         _set("galaxy_path", galaxy_path_flag)
     if vault:
         _set("vault", vault)
+    if runtime:
+        changes["runtime"] = Runtime(runtime.lower())
 
     if not changes:
         return

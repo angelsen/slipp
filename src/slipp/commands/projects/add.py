@@ -103,6 +103,10 @@ def add_command(
         str | None,
         typer.Option("--vault", help="Path to vault.yml for secret management"),
     ] = None,
+    runtime: Annotated[
+        str | None,
+        typer.Option("--runtime", help="How the app runs: systemd, docker, podman"),
+    ] = None,
 ) -> None:
     """Register an Ansible project with slipp."""
     # Intentionally no root discovery: this command creates/claims THIS
@@ -153,6 +157,7 @@ def add_command(
             roles_path=roles_rel,
             galaxy_path=galaxy_path,
             vault_path=vault,
+            runtime=runtime,
         )
     except LaunchError as e:
         raise ConfigError(str(e)) from e
@@ -164,5 +169,7 @@ def add_command(
         output.kv("galaxy_path", galaxy_path, indent=1)
     if vault:
         output.kv("vault", vault, indent=1)
+    if runtime:
+        output.kv("runtime", runtime, indent=1)
 
     LocalConfigService.ensure_logs_gitignore(project_root)

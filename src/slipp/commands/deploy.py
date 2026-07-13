@@ -135,6 +135,10 @@ def deploy_command(
         str | None,
         typer.Option("--skip-tags", help="Ansible tags to skip (comma-separated)"),
     ] = None,
+    runtime: Annotated[
+        str | None,
+        typer.Option("--runtime", help="How the app runs: systemd, docker, podman"),
+    ] = None,
     ask_become_pass: AskBecomePassOption = False,
 ) -> None:
     """Execute ansible-playbook to deploy services and manage infrastructure."""
@@ -142,7 +146,9 @@ def deploy_command(
         # Bound to cwd, never a walked root: creates/updates *this* directory's
         # config. The resolve_root() below then finds the file just created
         # here, keeping the rest of deploy self-consistent.
-        ensure_local_config(name, inventory, playbook, roles, vault, Path.cwd())
+        ensure_local_config(
+            name, inventory, playbook, roles, vault, Path.cwd(), runtime
+        )
 
     project_root = LocalConfigService.resolve_root()
     project_name = resolve_project_name(cli_name=name)
@@ -220,12 +226,18 @@ def deploy_command(
             )
 
         if (
-            any([inventory, playbook, roles_list, galaxy_path_flag, vault])
+            any([inventory, playbook, roles_list, galaxy_path_flag, vault, runtime])
             and not dry_run
             and not name
         ):
             persist_config_updates(
-                inventory, playbook, roles_list, galaxy_path_flag, vault, project_root
+                inventory,
+                playbook,
+                roles_list,
+                galaxy_path_flag,
+                vault,
+                project_root,
+                runtime,
             )
 
         ensure_project_registered(project_name, project_root)
