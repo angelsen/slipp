@@ -3,6 +3,13 @@
 from difflib import SequenceMatcher
 
 
+def _score(query_clean: str, candidate_clean: str) -> float:
+    """Similarity score: length-weighted for substring containment, else SequenceMatcher ratio."""
+    if query_clean in candidate_clean or candidate_clean in query_clean:
+        return min(1.0, 0.9 + (len(query_clean) / len(candidate_clean)) * 0.1)
+    return SequenceMatcher(None, query_clean, candidate_clean).ratio()
+
+
 def fuzzy_match(
     query: str,
     candidates: list[str],
@@ -40,16 +47,9 @@ def fuzzy_match(
         if query_clean == candidate_clean:
             return candidate
 
-        if query_clean in candidate_clean or candidate_clean in query_clean:
-            score = 0.9 + (len(query_clean) / len(candidate_clean)) * 0.1
-            if score > best_score:
-                best_score = score
-                best_match = candidate
-            continue
-
-        ratio = SequenceMatcher(None, query_clean, candidate_clean).ratio()
-        if ratio >= threshold and ratio > best_score:
-            best_score = ratio
+        score = _score(query_clean, candidate_clean)
+        if score >= threshold and score > best_score:
+            best_score = score
             best_match = candidate
 
     return best_match
@@ -87,11 +87,7 @@ def get_suggestions(
         if query_clean == candidate_clean:
             continue
 
-        if query_clean in candidate_clean or candidate_clean in query_clean:
-            score = 0.9
-        else:
-            score = SequenceMatcher(None, query_clean, candidate_clean).ratio()
-
+        score = _score(query_clean, candidate_clean)
         if score >= threshold:
             scored.append((score, candidate))
 

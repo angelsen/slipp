@@ -1,8 +1,9 @@
 """Service data models with Pydantic v2 validation."""
 
 from enum import StrEnum
+from typing import Annotated
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, BeforeValidator, Field
 
 
 class Runtime(StrEnum):
@@ -20,6 +21,15 @@ class Runtime(StrEnum):
         return self in (Runtime.DOCKER, Runtime.PODMAN)
 
 
+def _lowercase_runtime(value: object) -> object:
+    """Tolerate hand-edited YAML (slipp.yaml, inventory host_vars) with mixed-case runtime values."""
+    return value.lower() if isinstance(value, str) else value
+
+
+LenientRuntime = Annotated[Runtime, BeforeValidator(_lowercase_runtime)]
+"""A Runtime field that tolerates mixed-case hand-edited YAML input."""
+
+
 class ServiceState(StrEnum):
     """Service runtime state.
 
@@ -29,7 +39,6 @@ class ServiceState(StrEnum):
     ACTIVE = "active"
     INACTIVE = "inactive"
     FAILED = "failed"
-    UNKNOWN = "unknown"
 
 
 class Service(BaseModel):
@@ -41,7 +50,7 @@ class Service(BaseModel):
         inventory_hostname: Ansible inventory host identifier (e.g., 'production', 'matrix-main')
         unit_name: Systemd unit name (e.g., 'api.service')
         runtime: Service runtime (systemd, docker, podman)
-        state: Runtime state (active, inactive, failed, unknown)
+        state: Runtime state (active, inactive, failed)
         projects: List of project names that own this service (can be multiple if host is shared)
         uptime: Optional uptime string
     """
@@ -55,19 +64,13 @@ class Service(BaseModel):
     runtime: Runtime = Field(
         ..., description="Service runtime (systemd, docker, podman)"
     )
-    state: ServiceState = Field(
-        default=ServiceState.UNKNOWN, description="Runtime state"
-    )
+    state: ServiceState = Field(..., description="Runtime state")
 
     projects: list[str] = Field(
         default_factory=list, description="Project names that own this service"
     )
 
     uptime: str | None = None
-
-    def __str__(self) -> str:
-        """String representation of service."""
-        return f"{self.name}@{self.host} ({self.runtime}) - {self.state}"
 
     # NOTE: Do NOT use use_enum_values=True - breaks Runtime.is_container()
     model_config = {}

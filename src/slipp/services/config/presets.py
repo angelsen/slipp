@@ -47,7 +47,12 @@ class PresetResolver:
             )
 
         if preset_name not in self.config.tag_presets:
-            raise PresetNotFoundError(f"Preset '{preset_name}' not found")
+            message = f"Preset '{preset_name}' not found"
+            if self.config.tag_presets:
+                message += (
+                    f"\nAvailable presets: {', '.join(self.config.tag_presets.keys())}"
+                )
+            raise PresetNotFoundError(message)
 
         args = self.config.tag_presets[preset_name]
         return parse_preset_args(args)

@@ -16,6 +16,7 @@ from slipp.services.run import CaddyProxy
 from slipp.services.ssh import hint_ssh_log
 from slipp.utils.errors import (
     CaddyProxyError,
+    ConfigError,
     HostNotFoundError,
     SSHAuthenticationError,
     SSHConnectionError,
@@ -41,7 +42,7 @@ def proxy_command(
     try:
         resolver = HostResolver()
         ansible_host = resolver.by_project(host)
-    except HostNotFoundError:
+    except (ConfigError, HostNotFoundError):
         ansible_host = AnsibleHost(
             inventory_hostname=host,
             ansible_host=host,

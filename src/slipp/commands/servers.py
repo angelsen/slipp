@@ -17,10 +17,6 @@ def list_servers() -> None:
     client = get_gigahost_client()
     servers = client.list_servers()
 
-    if not servers:
-        output.info("No servers found")
-        return
-
     rows = [
         {
             "name": s.get("srv_name") or s.get("srv_hostname") or "-",
@@ -34,4 +30,4 @@ def list_servers() -> None:
         for s in servers
     ]
 
-    output.table(rows)
+    output.empty_or_table(rows, "No servers found")

@@ -51,12 +51,8 @@ app = typer.Typer(
 
 @app.callback(invoke_without_command=True)
 def main(
-    ctx: typer.Context,
     version: Annotated[
         bool, typer.Option("--version", "-V", help="Show version and exit")
-    ] = False,
-    verbose: Annotated[
-        bool, typer.Option("--verbose", "-v", help="Enable verbose logging")
     ] = False,
     output_format: Annotated[
         OutputFormat,
@@ -72,11 +68,6 @@ def main(
         raise typer.Exit()
 
     output.set_output_format(output_format)
-
-    if verbose:
-        import logging
-
-        logging.basicConfig(level=logging.DEBUG, format="%(name)s: %(message)s")
 
 
 app.add_typer(bootstrap_app, name="bootstrap")

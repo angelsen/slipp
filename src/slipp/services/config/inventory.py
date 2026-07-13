@@ -14,16 +14,16 @@ from slipp.services.ansible import run_inventory
 from slipp.utils.errors import ConfigError, HostNotFoundError, InventoryParseError
 
 
-def _load_first_host_raw(project_root: Path) -> DeploymentHostConfig:
-    """Load the first host from the raw inventory YAML.
+def _resolve_inventory_path(project_root: Path) -> Path:
+    """Resolve a project's configured inventory file path.
 
-    Reads the inventory file directly (not via ansible-inventory, which
-    drops slipp-specific fields like app_domain/app_port/proxy_owner).
-    Shared core for load_first_host() (which converts failures to None)
-    and load_first_host_strict() (which adds the app_domain requirement).
+    Shared validation core for _load_first_host_raw() and
+    load_project_ansible_hosts() so both raise ConfigError consistently
+    for the same three failure conditions (no config, no inventory field,
+    missing inventory file).
 
     Raises:
-        ConfigError: If no inventory/host is configured.
+        ConfigError: If no inventory is configured or the file is missing.
     """
     # Must stay lazy: local.py top-imports this module (see
     # load_project_ansible_hosts).
@@ -36,6 +36,22 @@ def _load_first_host_raw(project_root: Path) -> DeploymentHostConfig:
     inventory_path = project_root / local_config.inventory
     if not inventory_path.exists():
         raise ConfigError(f"Inventory not found: {inventory_path}")
+
+    return inventory_path
+
+
+def _load_first_host_raw(project_root: Path) -> DeploymentHostConfig:
+    """Load the first host from the raw inventory YAML.
+
+    Reads the inventory file directly (not via ansible-inventory, which
+    drops slipp-specific fields like app_domain/app_port/proxy_owner).
+    Shared core for load_first_host() (which converts failures to None)
+    and load_first_host_strict() (which adds the app_domain requirement).
+
+    Raises:
+        ConfigError: If no inventory/host is configured.
+    """
+    inventory_path = _resolve_inventory_path(project_root)
 
     data = yaml.safe_load(inventory_path.read_text()) or {}
     inventory = InventoryConfig.from_ansible_format(data)
@@ -111,26 +127,16 @@ def load_project_ansible_hosts(project_path: Path) -> list[AnsibleHost]:
         List of AnsibleHost from inventory
 
     Raises:
-        HostNotFoundError: If config or inventory invalid
+        ConfigError: If no slipp.yaml, no inventory configured, or the
+            inventory file is missing.
+        HostNotFoundError: If the inventory parses but has no hosts.
     """
-    # Must stay lazy: local.py top-imports this module (InventoryService), so
-    # a top-level import here would be a mutual from-import cycle.
-    from slipp.services.config.local import LocalConfigService
-
-    local_config = LocalConfigService.load(project_path)
-    if not local_config:
-        raise HostNotFoundError(f"No slipp.yaml found in {project_path}")
-    if not local_config.inventory:
-        raise HostNotFoundError(f"No inventory configured in {project_path}")
-
-    inventory_path = project_path / local_config.inventory
-    if not inventory_path.exists():
-        raise HostNotFoundError(f"Inventory not found: {inventory_path}")
+    inventory_path = _resolve_inventory_path(project_path)
 
     try:
-        inventory_config = InventoryService.parse(inventory_path)
+        inventory_config = parse_inventory(inventory_path)
     except Exception as e:
-        raise HostNotFoundError(f"Failed to parse inventory: {e}")
+        raise HostNotFoundError(f"Failed to parse inventory: {e}") from e
 
     hosts = [
         AnsibleHost(
@@ -166,7 +172,7 @@ def load_project_hosts(project_path: Path) -> list[dict[str, str | int]]:
     """
     try:
         hosts = load_project_ansible_hosts(project_path)
-    except HostNotFoundError:
+    except (ConfigError, HostNotFoundError):
         return []
 
     return [
@@ -180,56 +186,48 @@ def load_project_hosts(project_path: Path) -> list[dict[str, str | int]]:
     ]
 
 
-class InventoryService:
-    """Service for loading and managing Ansible inventory.
+def parse_inventory(inventory_path: Path) -> InventoryConfig:
+    """Parse any Ansible inventory format.
 
-    Provides static methods for loading inventory from YAML files
-    and extracting host configurations.
+    Supports INI, YAML, JSON, and executable scripts.
+    Normalizes ansible_ssh_user -> ansible_user.
+
+    Args:
+        inventory_path: Path to inventory file
+
+    Returns:
+        InventoryConfig
+
+    Raises:
+        InventoryParseError: If parsing fails
     """
+    if not inventory_path.exists():
+        raise InventoryParseError(f"Inventory not found: {inventory_path}")
 
-    @staticmethod
-    def parse(inventory_path: Path) -> InventoryConfig:
-        """Parse any Ansible inventory format.
+    try:
+        data = run_inventory(inventory_path)
+        return InventoryConfig.from_ansible_inventory_json(data)
+    except Exception as e:
+        raise InventoryParseError(f"Failed to parse {inventory_path}: {e}") from e
 
-        Supports INI, YAML, JSON, and executable scripts.
-        Normalizes ansible_ssh_user -> ansible_user.
 
-        Args:
-            inventory_path: Path to inventory file
+def scan_roles_from_directories(
+    roles_paths: list[str], project_root: Path
+) -> list[str]:
+    """Scan role directories for role names (faster than ansible-playbook --list-tasks).
 
-        Returns:
-            InventoryConfig
+    Args:
+        roles_paths: List of role directory paths (relative or absolute)
+        project_root: Project root for resolving relative paths
 
-        Raises:
-            InventoryParseError: If parsing fails
-        """
-        if not inventory_path.exists():
-            raise InventoryParseError(f"Inventory not found: {inventory_path}")
-
-        try:
-            data = run_inventory(inventory_path)
-            return InventoryConfig.from_ansible_inventory_json(data)
-        except Exception as e:
-            raise InventoryParseError(f"Failed to parse {inventory_path}: {e}") from e
-
-    @staticmethod
-    def scan_roles_from_directories(
-        roles_paths: list[str], project_root: Path
-    ) -> list[str]:
-        """Scan role directories for role names (faster than ansible-playbook --list-tasks).
-
-        Args:
-            roles_paths: List of role directory paths (relative or absolute)
-            project_root: Project root for resolving relative paths
-
-        Returns:
-            Sorted list of unique role names
-        """
-        roles: set[str] = set()
-        for role_path_str in roles_paths:
-            role_path = Path(role_path_str)
-            if not role_path.is_absolute():
-                role_path = project_root / role_path
-            if role_path.exists():
-                roles.update(d.name for d in role_path.iterdir() if d.is_dir())
-        return sorted(roles)
+    Returns:
+        Sorted list of unique role names
+    """
+    roles: set[str] = set()
+    for role_path_str in roles_paths:
+        role_path = Path(role_path_str)
+        if not role_path.is_absolute():
+            role_path = project_root / role_path
+        if role_path.exists():
+            roles.update(d.name for d in role_path.iterdir() if d.is_dir())
+    return sorted(roles)

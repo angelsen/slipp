@@ -76,7 +76,11 @@ def default_expose(
     frontend = next((s for s in services if s.framework in NODE_FRAMEWORKS), None)
     backend = next((s for s in services if s.framework in PYTHON_FRAMEWORKS), None)
     primary = frontend or backend
-    assert primary is not None  # framework sets are exhaustive (scanner/models.py)
+    if primary is None:
+        raise ValueError(
+            "No frontend or backend service detected among: "
+            + ", ".join(s.name for s in services)
+        )
 
     expose = {primary.name: ExposeEntry(domain=domain)}
     if frontend and backend:

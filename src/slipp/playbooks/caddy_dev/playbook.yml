@@ -2,7 +2,7 @@
 # Caddy Dev Proxy Installation
 #
 # Installs Caddy with iptables redirect for dev proxy functionality.
-# Traffic flow: :443 → iptables PREROUTING → :8443 (Caddy) → localhost:443 (fallback)
+# Traffic flow: :443 → iptables PREROUTING → :8443 (Caddy) → localhost:{fallback_port} (fallback)
 #
 # Usage: ansible-playbook playbook.yml -i inventory
 

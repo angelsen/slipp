@@ -13,7 +13,7 @@ from typing import Any
 
 import httpx
 
-from slipp.services.providers.http import api_request
+from slipp.services.providers.http import ApiClientMixin
 from slipp.utils.errors import ConfigError
 
 
@@ -68,8 +68,10 @@ def resolve_domain(app_domain: str, domains: list[dict[str, Any]]) -> tuple[str,
     return match["domainId"], subdomain
 
 
-class PangolinClient:
+class PangolinClient(ApiClientMixin):
     """Synchronous Pangolin API client for sites (Newt) and public resources."""
+
+    PROVIDER_NAME = "Pangolin"
 
     def __init__(self, session_cookie: str, org: str, base_url: str):
         """Initialize with a p_session_token cookie value.
@@ -92,23 +94,6 @@ class PangolinClient:
                 "X-CSRF-Token": "x-csrf-protection",
             },
             timeout=30.0,
-        )
-
-    def _request(
-        self,
-        method: str,
-        path: str,
-        *,
-        params: dict[str, Any] | None = None,
-        json: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        """Issue a request and return the parsed JSON body.
-
-        Raises:
-            ProviderError: On any HTTP error status or network failure.
-        """
-        return api_request(
-            self._client, "Pangolin", method, path, params=params, json=json
         )
 
     # --- Sites ---

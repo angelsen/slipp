@@ -69,31 +69,20 @@ def logo_command(
         return
 
     if animate and save:
-        raise typer.BadParameter("Cannot use --animate with --save")
+        output.error("Cannot use --animate with --save")
+        raise typer.Exit(1)
 
     if theme and theme not in THEMES and theme != "none":
-        raise typer.BadParameter(
+        output.error(
             f"Unknown theme: {theme}. Use --list-themes to see available themes"
         )
-
-    effective_theme = theme
-    if save and theme is None:
-        effective_theme = "starlight"
-    elif theme == "none":
-        effective_theme = None
-
-    color_list = None
-    if colors:
-        if colors in COLOR_PALETTES:
-            color_list = COLOR_PALETTES[colors]
-        else:
-            color_list = [c.strip() for c in colors.split(",")]
+        raise typer.Exit(1)
 
     show_logo(
         save_path=save,
         font=font,
-        colors=color_list,
+        colors=colors,
         animate=animate,
         text=text,
-        theme=effective_theme,
+        theme=theme,
     )

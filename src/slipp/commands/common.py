@@ -11,13 +11,25 @@ from typing import Annotated
 import typer
 
 from slipp import output
+from slipp.constants import SecretEncoding
+from slipp.models.deployment import DeploymentHostConfig
 from slipp.models.host import AnsibleHost
 from slipp.models.service import Runtime, Service
 from slipp.scanner.workspaces import detect_workspace_members
+from slipp.services import wg_manage
+from slipp.services.config import (
+    HostResolver,
+    LocalConfigService,
+    RuntimeDetector,
+    is_wg_manage_host,
+    load_first_host,
+)
 from slipp.services.discovery import filter_services, find_service
 from slipp.services.discovery.pipeline import discover_and_enrich
-from slipp.utils.errors import AmbiguousServiceError
+from slipp.services.registry import ProjectRegistry
+from slipp.utils.errors import AmbiguousServiceError, WgManageError
 from slipp.utils.identifiers import parse_service_identifier
+from slipp.utils.matching import get_suggestions
 
 DryRunOption = Annotated[
     bool,
@@ -44,6 +56,69 @@ AskBecomePassOption = Annotated[
         help="Prompt for the sudo/become password (target host has no passwordless sudo)",
     ),
 ]
+
+ForceOption = Annotated[
+    bool,
+    typer.Option("--force", "-f", help="Skip confirmation prompt"),
+]
+
+ProjectOption = Annotated[
+    str | None,
+    typer.Option("--project", "-p", help="Project name"),
+]
+
+NumBytesOption = Annotated[
+    int,
+    typer.Option("--bytes", "-b", help="Bytes of entropy (default: 32 = 256-bit)"),
+]
+
+EncodingOption = Annotated[
+    SecretEncoding,
+    typer.Option(
+        "--encoding",
+        "-e",
+        help="Output encoding: hex (default), base64, or ulid",
+    ),
+]
+
+JwkOption = Annotated[bool, typer.Option("--jwk", help="Generate RSA JWK keypair")]
+
+BitsOption = Annotated[
+    int, typer.Option("--bits", help="RSA key size for --jwk (default: 2048)")
+]
+
+
+def validate_num_bytes_encoding(num_bytes: int, encoding: SecretEncoding) -> None:
+    """Reject a --bytes override that ULID encoding can't honor.
+
+    ULID is a fixed 128-bit (26-char) identifier -- --bytes has no effect
+    on it, so a non-default value would silently produce less entropy than
+    the user asked for.
+
+    Raises:
+        typer.BadParameter: If --bytes was overridden alongside --encoding ulid
+    """
+    if encoding == SecretEncoding.ulid and num_bytes != 32:
+        raise typer.BadParameter(
+            "--bytes has no effect with --encoding ulid (fixed 128-bit/26-char output)"
+        )
+
+
+def describe_secret(
+    secret: str,
+    encoding: SecretEncoding,
+    num_bytes: int,
+    *,
+    jwk: bool = False,
+    bits: int = 2048,
+) -> str:
+    """One-line description of a generated secret, for output.hint()."""
+    if jwk:
+        return f"RSA-{bits} JWK keypair"
+    if encoding == SecretEncoding.ulid:
+        return "26 char ULID"
+    bits_entropy = num_bytes * 8
+    return f"{len(secret)} {encoding.value} chars, {bits_entropy}-bit"
 
 
 def resolve_project_dirs(
@@ -106,12 +181,64 @@ def resolve_declared_dirs(project_root: Path) -> list[Path] | None:
         pass this straight to resolve_project_dirs(), which falls back to
         auto-detection for None exactly as before.
     """
-    from slipp.services.config import LocalConfigService
-
     local_config = LocalConfigService.load(project_root)
     if not local_config or not local_config.project_dirs:
         return None
     return [project_root / d for d in local_config.project_dirs]
+
+
+def sync_wg_manage_project(
+    project_root: Path,
+    project_name: str,
+    host: DeploymentHostConfig,
+    *,
+    dry_run: bool = False,
+    quiet: bool = False,
+) -> None:
+    """Resolve declared dirs + expose config, then converge wg-manage.
+
+    Shared by the post-deploy stray-cleanup hook and `resources sync` --
+    both need the same resolve-dirs -> load-config -> wg_manage.sync()
+    sequence, just with different quiet/dry_run defaults.
+    """
+    dirs, _ = resolve_project_dirs(
+        resolve_declared_dirs(project_root), root=project_root, quiet=quiet
+    )
+    local_config = LocalConfigService.load(project_root)
+    wg_manage.sync(
+        dirs,
+        project_name,
+        host,
+        expose=local_config.expose if local_config else None,
+        dry_run=dry_run,
+        quiet=quiet,
+    )
+
+
+def sync_wg_manage_after_deploy(project_root: Path, project_name: str) -> None:
+    """Best-effort post-deploy wg-manage exposure converge.
+
+    Removes stray wg-manage services this project labeled but no longer
+    declares (renamed/removed services since the last deploy), so a live
+    exposure never silently outlives the service it pointed at. No-op for
+    non-wg-manage projects. Shared by `slipp deploy` and `slipp up` so
+    both get the same post-deploy cleanup.
+
+    Never raises: a sync hiccup here shouldn't retroactively turn an
+    already-successful deploy into a failed one, it just means one fewer
+    thing got tidied up this run -- `slipp resources sync` remains
+    available to run by hand. wg_manage.sync() converts every internal
+    failure mode (SSH, scanning, missing config) to WgManageError, so
+    catching that one type here is actually exhaustive.
+    """
+    host = load_first_host(project_root)
+    if host is None or not is_wg_manage_host(host):
+        return
+
+    try:
+        sync_wg_manage_project(project_root, project_name, host, quiet=True)
+    except WgManageError as e:
+        output.warning(f"wg-manage exposure sync failed after deploy: {e}")
 
 
 def resolve_host_or_exit(
@@ -134,14 +261,27 @@ def resolve_host_or_exit(
         typer.Exit: If resolution is ambiguous
         HostNotFoundError: If no host matches (top-level handler reports it)
     """
-    from slipp.services.config import HostResolver
-
     try:
         return HostResolver().resolve(service=service, project=project)
     except AmbiguousServiceError as e:
         output.error(str(e))
         output.suggestions("Specify target:", e.get_suggestions(command=command))
         raise typer.Exit(1)
+
+
+def confirm_or_exit(message: str, *, force: bool = False) -> None:
+    """Prompt to confirm a destructive action, exiting cleanly if declined.
+
+    Args:
+        message: Yes/no question to show (e.g. "Remove service 'foo'?")
+        force: Skip the prompt and proceed unconditionally
+
+    Raises:
+        typer.Exit: If the user declines
+    """
+    if not force and not output.confirm(message, default=False):
+        output.info("Cancelled")
+        raise typer.Exit()
 
 
 def find_service_or_exit(
@@ -189,9 +329,6 @@ def _get_project_root(project_name: str) -> Path:
         Project root path from registry, or the enclosing project found by
         walking up from cwd (or cwd itself) if not found
     """
-    from slipp.services.config import LocalConfigService
-    from slipp.services.registry import ProjectRegistry
-
     project = ProjectRegistry().get(project_name)
     if project:
         return project.project_path
@@ -210,8 +347,6 @@ def _resolve_runtime(host: str | None) -> Runtime:
     Raises:
         RuntimeDetectionError: If runtime detection fails
     """
-    from slipp.services.config import LocalConfigService, RuntimeDetector
-
     project_root = (
         _get_project_root(host) if host else LocalConfigService.resolve_root()
     )
@@ -264,8 +399,6 @@ def _show_service_not_found_error(
         #   • matrix-synapse (active)
         #   ...
     """
-    from slipp.utils.matching import get_suggestions
-
     service_name, _, _ = parse_service_identifier(service_identifier)
     output.error(f"Service '{service_name}' not found on {host}")
 

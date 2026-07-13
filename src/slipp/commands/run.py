@@ -12,9 +12,9 @@ import typer
 from slipp import output
 from slipp.models.run import RunProfile
 from slipp.services.run import (
-    RunProfileExecutor,
     RunProfileService,
     build_profile,
+    execute_profile,
     merge_runtime_options,
 )
 from slipp.services.ssh import hint_ssh_log
@@ -51,7 +51,6 @@ def run_command(
 ) -> None:
     """Execute a run profile, or create/update one with --cmd."""
     service = RunProfileService()
-    executor = RunProfileExecutor()
 
     if cmd:
         profile = build_profile(
@@ -64,7 +63,7 @@ def run_command(
             tunnel_auth,
         )
         _save_profile(service, name, profile)
-        _execute_profile(executor, profile)
+        _run_profile(_apply_extra_args(profile, ctx.args))
 
     elif service.profile_exists(name):
         profile = service.get_profile(name)
@@ -78,12 +77,7 @@ def run_command(
             tunnel_auth,
         )
 
-        if ctx.args:
-            quoted_args = [shlex.quote(arg) for arg in ctx.args]
-            extended_cmd = f"{merged.cmd} {' '.join(quoted_args)}"
-            merged = merged.model_copy(update={"cmd": extended_cmd})
-
-        _execute_profile(executor, merged)
+        _run_profile(_apply_extra_args(merged, ctx.args))
 
     else:
         output.error(f"Profile '{name}' not found")
@@ -92,9 +86,18 @@ def run_command(
         raise typer.Exit(1)
 
 
-def _execute_profile(executor: RunProfileExecutor, profile: RunProfile) -> None:
+def _apply_extra_args(profile: RunProfile, extra_args: list[str]) -> RunProfile:
+    """Append shell-quoted trailing CLI args to the profile's command."""
+    if not extra_args:
+        return profile
+    quoted_args = [shlex.quote(arg) for arg in extra_args]
+    extended_cmd = f"{profile.cmd} {' '.join(quoted_args)}"
+    return profile.model_copy(update={"cmd": extended_cmd})
+
+
+def _run_profile(profile: RunProfile) -> None:
     """Execute profile and propagate the command's exit code."""
-    exit_code = executor.execute(profile)
+    exit_code = execute_profile(profile)
     if exit_code != 0:
         hint_ssh_log()
         raise typer.Exit(exit_code)

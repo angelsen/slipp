@@ -9,6 +9,7 @@ Mirrors and extends flyctl's python.go patterns.
 from pathlib import Path
 
 from slipp.scanner.helpers import (
+    DEFAULT_PYTHON_PORT,
     PYTHON_DOCKER_TEMPLATE,
     detect_python_dep_manager,
     extract_python_dependencies,
@@ -52,7 +53,7 @@ def configure_python(source_dir: Path) -> SourceInfo | None:
     dependencies = extract_python_dependencies(source_dir)
     return SourceInfo(
         family="Python",
-        port=8080,
+        port=DEFAULT_PYTHON_PORT,
         template_url=PYTHON_DOCKER_TEMPLATE,
         dependencies=dependencies,
     )

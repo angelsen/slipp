@@ -9,9 +9,18 @@ Resolution order:
 from dataclasses import dataclass
 from pathlib import Path
 
-from slipp.constants import PLAYBOOK_FILENAME, get_inventory_filename
+from slipp.constants import (
+    DEFAULT_ENV,
+    DEFAULT_GALAXY_PATH,
+    PLAYBOOK_FILENAME,
+    get_inventory_filename,
+)
 from slipp.models.local_config import LocalConfig
-from slipp.services.config.detection import PLAYBOOK_PATTERNS, detect_path
+from slipp.services.config.detection import (
+    INVENTORY_PATTERNS,
+    PLAYBOOK_PATTERNS,
+    detect_path,
+)
 from slipp.services.config.local import LocalConfigService
 from slipp.services.registry import ProjectRegistry
 from slipp.utils.errors import ProjectNameRequiredError, ProjectNotFoundError
@@ -29,6 +38,22 @@ def _resolve_cli_path(value: str) -> Path:
     against the wrong directory.
     """
     return Path(value).resolve()
+
+
+def _resolve_path(
+    cli_value: str | None,
+    local_value: str | None,
+    project_root: Path,
+    patterns: list[str],
+    fallback: Path,
+) -> tuple[Path, str]:
+    """Resolve a single config path with precedence: CLI > local > detected/default."""
+    if cli_value:
+        return _resolve_cli_path(cli_value), "cli"
+    if local_value:
+        return project_root / local_value, "local"
+    detected = detect_path(project_root, patterns)
+    return detected or fallback, "default"
 
 
 def resolve_project_name(cli_name: str | None = None) -> str:
@@ -75,7 +100,7 @@ def resolve_vault_target(target: str | None) -> tuple["ConfigResolver", Path | N
     Raises:
         ProjectNotFoundError: If target names an unregistered project
     """
-    if target and Path(target).exists():
+    if target and Path(target).is_file():
         return ConfigResolver(), Path(target)
 
     resolver = ConfigResolver.for_project(target) if target else ConfigResolver()
@@ -89,8 +114,8 @@ class ResolvedConfig:
     Attributes:
         inventory: Resolved inventory path
         playbook: Resolved playbook path
-        roles_path: Role directories for ansible --roles-path
-        galaxy_path: Install path for ansible-galaxy (may be None)
+        roles_path: Role directories (sets ANSIBLE_ROLES_PATH)
+        galaxy_path: Resolved install path for ansible-galaxy
         vault: Resolved vault path (may be None)
         inventory_source: Where inventory was resolved from
         playbook_source: Where playbook was resolved from
@@ -99,7 +124,7 @@ class ResolvedConfig:
     inventory: Path
     playbook: Path
     roles_path: list[Path]
-    galaxy_path: Path | None
+    galaxy_path: Path
     vault: Path | None
     inventory_source: str  # "cli", "local", "default"
     playbook_source: str
@@ -183,7 +208,8 @@ class ConfigResolver:
         cli_playbook: str | None = None,
         cli_roles: list[str] | None = None,
         cli_vault: str | None = None,
-        environment: str = "production",
+        cli_galaxy_path: str | None = None,
+        environment: str = DEFAULT_ENV,
     ) -> ResolvedConfig:
         """Resolve all config values with precedence: CLI > local > default.
 
@@ -192,31 +218,27 @@ class ConfigResolver:
             cli_playbook: Playbook from CLI flag
             cli_roles: Roles from CLI flag
             cli_vault: Vault from CLI flag
+            cli_galaxy_path: Galaxy install path from CLI flag
             environment: Environment name for default inventory filename
 
         Returns:
             ResolvedConfig with all paths and source tracking
         """
-        if cli_inventory:
-            inventory = _resolve_cli_path(cli_inventory)
-            inv_source = "cli"
-        elif self._local_config and self._local_config.inventory:
-            inventory = self.project_root / self._local_config.inventory
-            inv_source = "local"
-        else:
-            inventory = self.project_root / get_inventory_filename(environment)
-            inv_source = "default"
+        inventory, inv_source = _resolve_path(
+            cli_inventory,
+            self._local_config.inventory if self._local_config else None,
+            self.project_root,
+            INVENTORY_PATTERNS,
+            self.project_root / get_inventory_filename(environment),
+        )
 
-        if cli_playbook:
-            playbook = _resolve_cli_path(cli_playbook)
-            pb_source = "cli"
-        elif self._local_config and self._local_config.playbook:
-            playbook = self.project_root / self._local_config.playbook
-            pb_source = "local"
-        else:
-            detected = detect_path(self.project_root, PLAYBOOK_PATTERNS)
-            playbook = detected or (self.project_root / PLAYBOOK_FILENAME)
-            pb_source = "default"
+        playbook, pb_source = _resolve_path(
+            cli_playbook,
+            self._local_config.playbook if self._local_config else None,
+            self.project_root,
+            PLAYBOOK_PATTERNS,
+            self.project_root / PLAYBOOK_FILENAME,
+        )
 
         if cli_roles:
             roles_path = [_resolve_cli_path(r) for r in cli_roles]
@@ -225,10 +247,12 @@ class ConfigResolver:
         else:
             roles_path = []
 
-        if self._local_config and self._local_config.galaxy_path:
+        if cli_galaxy_path:
+            galaxy_path = _resolve_cli_path(cli_galaxy_path)
+        elif self._local_config and self._local_config.galaxy_path:
             galaxy_path = self.project_root / self._local_config.galaxy_path
         else:
-            galaxy_path = None
+            galaxy_path = self.project_root / DEFAULT_GALAXY_PATH
 
         vault = self.resolve_vault(cli_vault)
 

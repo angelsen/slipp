@@ -67,13 +67,13 @@ def _copy_ssh_keys(
     output.info("3. Copying SSH keys...")
 
     if dry_run:
-        output.hint(f"Would copy /root/.ssh to /home/{slipp_user}/.ssh")
+        output.hint(f"Would copy ~{root_user}/.ssh to /home/{slipp_user}/.ssh")
         return
 
-    if not ssh.execute("test -d /root/.ssh").ok:
-        raise BootstrapError("Root user must have SSH keys configured")
+    if not ssh.execute(f"test -d ~{root_user}/.ssh").ok:
+        raise BootstrapError(f"{root_user} user must have SSH keys configured")
 
-    ssh.execute(f"cp -r /root/.ssh /home/{slipp_user}/").check(
+    ssh.execute(f"cp -r ~{root_user}/.ssh /home/{slipp_user}/").check(
         "Failed to copy SSH keys"
     )
     ssh.execute(f"chown -R {slipp_user}:{slipp_user} /home/{slipp_user}/.ssh").check(
@@ -110,7 +110,6 @@ def _configure_sudoers(ssh: SSHService, username: str, dry_run: bool) -> None:
 # Authentication: SSH key (passphrase-protected)
 # Authorization: User selects privilege via exec --user flag
 # Default behavior: exec runs as slipp user (least privilege)
-# Updated: 2025-11-18 for exec-user-control feature
 
 {username} ALL=(ALL) NOPASSWD: ALL
 """
@@ -233,10 +232,13 @@ def provision_account(
     )
 
     with SSHService(root_config) as ssh:
-        _install_prerequisites(ssh, dry_run)
-        _create_user(ssh, slipp_user, dry_run)
-        _copy_ssh_keys(ssh, root_user, slipp_user, dry_run)
-        _configure_sudoers(ssh, slipp_user, dry_run)
+        try:
+            _install_prerequisites(ssh, dry_run)
+            _create_user(ssh, slipp_user, dry_run)
+            _copy_ssh_keys(ssh, root_user, slipp_user, dry_run)
+            _configure_sudoers(ssh, slipp_user, dry_run)
+        except SSHCommandError as e:
+            raise BootstrapError(f"Provisioning step failed: {e}") from e
 
         if not dry_run:
             _verify_setup(host, ssh_port, slipp_user, ssh_key)

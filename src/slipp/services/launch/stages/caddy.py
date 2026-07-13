@@ -4,7 +4,7 @@ from pathlib import Path
 
 from slipp import output
 from slipp.utils.network import is_ip_address
-from slipp.generator.caddy_generator import CaddyGenerator
+from slipp.generator.caddy_generator import generate_caddy_role
 from slipp.models.deployment import (
     CaddyConfig,
     CaddySite,
@@ -161,9 +161,7 @@ class CaddyRoleStage(FileGenerationStage[FullContext]):
         if provision_config.caddy_config.auto_https:
             admin_email = require(first_host.admin_email, "admin_email")
 
-        caddy_generator = CaddyGenerator()
-
-        caddy_files = caddy_generator.generate(
+        caddy_files = generate_caddy_role(
             provision_config.caddy_config,
             context.project_name,
             app_domain,

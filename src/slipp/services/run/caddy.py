@@ -9,26 +9,28 @@ Traffic flow:
                           ┌───────────────┴───────────────┐
                           ↓                               ↓
                  dev domain match              fallback to Traefik
-                 (TLS terminate)               (HTTPS proxy to :443)
+                 (TLS terminate)          (HTTPS proxy to :{fallback_port})
                           ↓
                  localhost:{tunnel_port}
 """
 
 import json
-import logging
 import re
 import shlex
 from contextlib import ExitStack
 from importlib.resources import files
 from pathlib import Path
-from tempfile import NamedTemporaryFile
 
+from slipp import output
 from slipp.models.host import AnsibleHost
-from slipp.services.ansible import maybe_become_password_file, run_playbook
+from slipp.services.ansible import (
+    maybe_become_password_file,
+    run_playbook,
+    spinner_progress_callback,
+)
 from slipp.services.ssh import SSHService
-from slipp.utils.errors import CaddyProxyError
-
-logger = logging.getLogger(__name__)
+from slipp.utils.errors import CaddyProxyError, SSHCommandError
+from slipp.utils.files import get_log_dir, temp_secret_file
 
 
 def _slugify(text: str) -> str:
@@ -48,7 +50,7 @@ def _domain_to_route_id(domain: str) -> str:
     return f"dev-{_slugify(domain)}"
 
 
-def _push_route(host: AnsibleHost, route_config: dict, error_prefix: str) -> None:
+def _push_route(ssh: SSHService, route_config: dict, error_prefix: str) -> None:
     """Prepend a route to Caddy's config via the admin API, idempotently.
 
     Caddy rejects a config containing two routes with the same "@id", so
@@ -57,8 +59,22 @@ def _push_route(host: AnsibleHost, route_config: dict, error_prefix: str) -> Non
     duplicate it: any existing route sharing this route's "@id" is
     filtered out of the current list before the new one is prepended.
 
+    Note:
+        The GET -> filter -> PATCH sequence below is not atomic. Two
+        concurrent slipp sessions targeting the same host could race and
+        drop each other's routes. Acceptable for a single-developer tool;
+        if concurrent sessions become a real need, switch to an atomic
+        DELETE by "@id" (as cleanup already does) followed by a POST that
+        appends to the routes array.
+
+        route_config is piped in via stdin rather than embedded in the
+        command string - it may contain an HTTP basic auth password hash
+        (see add_route's `auth` param), and every SSH command is logged
+        verbatim to .slipp/logs/ (see _prepare_sudo_command for the same
+        stdin-piping pattern used for sudo passwords).
+
     Args:
-        host: Remote host running Caddy
+        ssh: Open SSH connection to the host running Caddy
         route_config: Caddy route object to prepend. Must include "@id".
         error_prefix: Message prefix used if the push fails
 
@@ -67,27 +83,22 @@ def _push_route(host: AnsibleHost, route_config: dict, error_prefix: str) -> Non
     """
     route_json = json.dumps(route_config)
     route_id_json = json.dumps(route_config["@id"])
-    jq_filter = shlex.quote(
-        f'[{route_json}] + (map(select(.["@id"] != {route_id_json})))'
+    jq_program = shlex.quote(
+        f'[$newroute] + (map(select(.["@id"] != {route_id_json})))'
     )
 
     add_cmd = (
-        f"curl -sf http://localhost:2019/config/apps/http/servers/srv1/routes | "
-        f"jq {jq_filter} | "
-        f"curl -sf -X PATCH 'http://localhost:2019/config/apps/http/servers/srv1/routes' "
-        f"-H 'Content-Type: application/json' -d @-"
+        "route_json=$(cat) && "
+        "curl -sf http://localhost:2019/config/apps/http/servers/srv1/routes | "
+        f'jq --argjson newroute "$route_json" {jq_program} | '
+        "curl -sf -X PATCH 'http://localhost:2019/config/apps/http/servers/srv1/routes' "
+        "-H 'Content-Type: application/json' -d @-"
     )
 
     try:
-        with SSHService(host) as ssh:
-            result = ssh.execute(add_cmd)
-
-            if not result.ok:
-                detail = result.stderr.strip() or result.stdout.strip()
-                raise CaddyProxyError(f"{error_prefix}: {detail}")
-
-    except CaddyProxyError:
-        raise
+        ssh.execute(add_cmd, stdin_data=route_json).check(error_prefix)
+    except SSHCommandError as e:
+        raise CaddyProxyError(str(e)) from e
     except Exception as e:
         raise CaddyProxyError(f"{error_prefix}: {e}") from e
 
@@ -152,12 +163,27 @@ class CaddyProxy:
         self.fallback_port = fallback_port
         self.ask_become_pass = ask_become_pass
         self.route_ids: list[str] = []
+        self._ssh: SSHService | None = None
 
     def __enter__(self) -> "CaddyProxy":
         return self
 
     def __exit__(self, exc_type: object, exc_val: object, exc_tb: object) -> None:
         self.cleanup()
+
+    def _connection(self) -> SSHService:
+        """One SSH connection to this host, reused across all Caddy API calls.
+
+        A CaddyProxy instance is reused for every route added/removed on a
+        given host during a single `slipp run` -- opening a fresh SSH
+        connection per call would mean one handshake per route instead of
+        one per host.
+        """
+        if self._ssh is None:
+            ssh = SSHService(self.host)
+            ssh.connect()
+            self._ssh = ssh
+        return self._ssh
 
     def is_port_443_free(self) -> bool:
         """Check if port 443 is available on the host.
@@ -171,9 +197,8 @@ class CaddyProxy:
         """
         check_cmd = "ss -tln 2>/dev/null | grep -q ':443 '"
 
-        with SSHService(self.host) as ssh:
-            # grep -q exits 0 when the port is bound, 1 when free
-            return not ssh.execute(check_cmd).ok
+        # grep -q exits 0 when the port is bound, 1 when free
+        return not self._connection().execute(check_cmd).ok
 
     def is_installed(self) -> bool:
         """Check if Caddy dev proxy is installed and healthy.
@@ -193,13 +218,15 @@ class CaddyProxy:
         """
         check_cmd = (
             "systemctl is-active caddy 2>/dev/null | grep -qx active && "
-            "sudo iptables -t nat -S PREROUTING 2>/dev/null | grep -q 'slipp dev proxy' && "
+            "iptables -t nat -S PREROUTING 2>/dev/null | grep -q 'slipp dev proxy' && "
             "curl -sf http://localhost:2019/config/ >/dev/null && "
             "curl -sf http://localhost:2020/check >/dev/null"
         )
 
-        with SSHService(self.host) as ssh:
-            return ssh.execute(f"bash -c '{check_cmd}'").ok
+        # Wrapped in a single leading `sudo sh -c` (rather than `bash -c
+        # '... sudo iptables ...'`) so _prepare_sudo_command's password
+        # piping actually applies -- see its docstring.
+        return self._connection().execute(f"sudo sh -c '{check_cmd}'").ok
 
     def ensure_installed(self) -> bool:
         """Install Caddy dev proxy if not already installed.
@@ -220,35 +247,27 @@ class CaddyProxy:
             return True
 
         playbook_path = _get_playbook_path()
+        inventory_content = f"[caddy_dev]\n{self.host.to_ini_line()}\n"
 
-        with NamedTemporaryFile(
-            mode="w",
-            suffix=".ini",
-            prefix="slipp-inventory-",
-            delete=False,
-        ) as f:
-            inv_line = f"{self.host.inventory_hostname} ansible_host={self.host.ansible_host} ansible_user={self.host.ansible_user}"
-            if self.host.ansible_port != 22:
-                inv_line += f" ansible_port={self.host.ansible_port}"
-            if self.host.key_file:
-                inv_line += f" ansible_ssh_private_key_file={self.host.key_file}"
-
-            f.write(f"[caddy_dev]\n{inv_line}\n")
-            inventory_path = Path(f.name)
-
-        try:
+        with temp_secret_file(
+            inventory_content, prefix="slipp-inventory-", suffix=".ini"
+        ) as inventory_path:
             extra_vars: dict[str, str] = {"fallback_port": str(self.fallback_port)}
             if self.acme_email:
                 extra_vars["acme_email"] = self.acme_email
 
+            log_dir = get_log_dir()
             with ExitStack() as stack:
                 become_pw_file = maybe_become_password_file(stack, self.ask_become_pass)
-                result = run_playbook(
-                    str(playbook_path),
-                    str(inventory_path),
-                    extra_vars=extra_vars,
-                    become_pw_file=become_pw_file,
-                )
+                with output.spinner("Installing Caddy dev proxy") as update:
+                    result = run_playbook(
+                        str(playbook_path),
+                        str(inventory_path),
+                        extra_vars=extra_vars,
+                        become_pw_file=become_pw_file,
+                        log_dir=log_dir,
+                        on_progress=spinner_progress_callback(update),
+                    )
 
             if result.exit_code != 0:
                 hint = (
@@ -256,15 +275,12 @@ class CaddyProxy:
                     if self.ask_become_pass
                     else "\nHint: retry with --ask-become-pass if the target host has no passwordless sudo"
                 )
-                raise CaddyProxyError(
-                    f"Caddy installation failed (exit code {result.exit_code})\n"
-                    "Check the ansible output above for details" + hint
-                )
+                message = f"Caddy installation failed (exit code {result.exit_code})"
+                if result.log_path:
+                    message += f"\nSee log: {result.log_path}"
+                raise CaddyProxyError(message + hint)
 
             return False
-
-        finally:
-            inventory_path.unlink(missing_ok=True)
 
     def add_proxy_route(
         self, from_domain: str, from_path: str, to_host: str, to_path: str
@@ -311,7 +327,7 @@ class CaddyProxy:
         }
 
         _push_route(
-            self.host,
+            self._connection(),
             route_config,
             f"Failed to add proxy route for {from_domain}{from_path}",
         )
@@ -373,7 +389,9 @@ class CaddyProxy:
         }
 
         # Prepend to routes so dev routes match before fallback (first match wins)
-        _push_route(self.host, route_config, f"Failed to add route for {domain}")
+        _push_route(
+            self._connection(), route_config, f"Failed to add route for {domain}"
+        )
 
         self.route_ids.append(route_id)
         return route_id
@@ -390,21 +408,24 @@ class CaddyProxy:
         remove_cmd = f"curl -sf -X DELETE 'http://localhost:2019/id/{route_id}'"
 
         try:
-            with SSHService(self.host) as ssh:
-                result = ssh.execute(remove_cmd)
-                if not result.ok:
-                    logger.warning(
-                        f"Failed to remove route {route_id}: {result.text.strip()}"
-                    )
+            result = self._connection().execute(remove_cmd)
+            if not result.ok:
+                output.warning(
+                    f"Failed to remove route {route_id}: {result.text.strip()}"
+                )
         except Exception as e:
-            # Best-effort cleanup - log warning but don't fail
-            logger.warning(f"Failed to remove route {route_id}: {e}")
+            # Best-effort cleanup - warn but don't fail
+            output.warning(f"Failed to remove route {route_id}: {e}")
 
     def cleanup(self) -> None:
-        """Remove all routes added by this instance.
+        """Remove all routes added by this instance and close the connection.
 
         Called automatically on exit to clean up dev routes.
         """
         for route_id in self.route_ids:
             self.remove_route(route_id)
         self.route_ids.clear()
+
+        if self._ssh is not None:
+            self._ssh.close()
+            self._ssh = None

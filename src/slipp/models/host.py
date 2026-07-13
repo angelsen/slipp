@@ -1,8 +1,8 @@
 """Ansible host models with Pydantic v2 validation."""
 
-from pathlib import Path
-
 from pydantic import BaseModel, Field
+
+from slipp.models.types import OptionalPathStr
 
 
 class AnsibleHost(BaseModel):
@@ -27,7 +27,7 @@ class AnsibleHost(BaseModel):
     )
     ansible_user: str = Field(default="root", description="SSH user")
     ansible_port: int = Field(default=22, ge=1, le=65535, description="SSH port")
-    key_file: Path | None = Field(default=None, description="SSH private key path")
+    key_file: OptionalPathStr = Field(default=None, description="SSH private key path")
 
     def connection_string(self) -> str:
         """SSH connection string for display.
@@ -36,3 +36,29 @@ class AnsibleHost(BaseModel):
             Connection string in format: user@host:port
         """
         return f"{self.ansible_user}@{self.ansible_host}:{self.ansible_port}"
+
+    @property
+    def ssh_target(self) -> str:
+        """SSH positional target (no port -- port is a separate -p flag).
+
+        Returns:
+            Target string in format: user@host
+        """
+        return f"{self.ansible_user}@{self.ansible_host}"
+
+    def to_ini_line(self) -> str:
+        """Format as an Ansible INI inventory host line.
+
+        Returns:
+            e.g. "myhost ansible_host=1.2.3.4 ansible_user=root ansible_port=2222"
+        """
+        parts = [
+            self.inventory_hostname,
+            f"ansible_host={self.ansible_host}",
+            f"ansible_user={self.ansible_user}",
+        ]
+        if self.ansible_port != 22:
+            parts.append(f"ansible_port={self.ansible_port}")
+        if self.key_file:
+            parts.append(f"ansible_ssh_private_key_file={self.key_file}")
+        return " ".join(parts)

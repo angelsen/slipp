@@ -6,9 +6,9 @@ Provides a single source of truth for resolving which user to run commands as.
 
 from dataclasses import dataclass
 
-from slipp.models.service import Runtime, Service
+from slipp.models.service import Service
 from slipp.services.ssh.client import SSHService
-from slipp.utils.errors import SudoPasswordRequired
+from slipp.utils.errors import SudoPasswordError
 
 
 @dataclass
@@ -17,12 +17,10 @@ class UserResolution:
 
     Attributes:
         user: Resolved username
-        source: How the user was determined ("explicit", "detected", "default")
         warning: Optional warning message (e.g., detection failed)
     """
 
     user: str
-    source: str
     warning: str | None = None
 
 
@@ -56,7 +54,7 @@ class UserResolver:
         # RuntimeError) still propagates.
         try:
             self.ssh.ensure_sudo("Detecting service user")
-        except SudoPasswordRequired:
+        except SudoPasswordError:
             return None
 
         # Exit codes intentionally unchecked: detection is best-effort here;
@@ -104,24 +102,23 @@ class UserResolver:
             default_user: Fallback user (typically SSH user)
 
         Returns:
-            UserResolution with user, source, and optional warning
+            UserResolution with user and optional warning
         """
         if explicit_user:
-            return UserResolution(user=explicit_user, source="explicit")
+            return UserResolution(user=explicit_user)
 
         if service:
-            if Runtime(service.runtime).is_container():
-                return UserResolution(user="root", source="detected")
+            if service.runtime.is_container():
+                return UserResolution(user="root")
 
             detected = self.get_service_user(service.unit_name)
             if detected:
-                return UserResolution(user=detected, source="detected")
+                return UserResolution(user=detected)
 
             return UserResolution(
                 user=default_user,
-                source="default",
                 warning=f"Could not detect user for '{service.name}', using {default_user}. "
                 "Hint: Use -u <user> to specify explicitly",
             )
 
-        return UserResolution(user=default_user, source="default")
+        return UserResolution(user=default_user)

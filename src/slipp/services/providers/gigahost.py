@@ -10,10 +10,10 @@ from typing import Any
 import httpx
 
 from slipp.services.providers.dns import DNSRecord, DNSZone
-from slipp.services.providers.http import api_request
+from slipp.services.providers.http import ApiClientMixin
 
 
-class GigahostClient:
+class GigahostClient(ApiClientMixin):
     """Synchronous Gigahost API client.
 
     Implements the DNSProvider protocol (list_zones, list_records,
@@ -22,6 +22,7 @@ class GigahostClient:
     """
 
     BASE_URL = "https://api.gigahost.no/api/v0"
+    PROVIDER_NAME = "Gigahost"
 
     def __init__(self, api_key: str):
         """Initialize with a flux_live_* personal API key."""
@@ -29,23 +30,6 @@ class GigahostClient:
             base_url=self.BASE_URL,
             headers={"Authorization": f"Bearer {api_key}"},
             timeout=30.0,
-        )
-
-    def _request(
-        self,
-        method: str,
-        path: str,
-        *,
-        params: dict[str, Any] | None = None,
-        json: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        """Issue a request and return the parsed JSON body.
-
-        Raises:
-            ProviderError: On any HTTP error status or network failure.
-        """
-        return api_request(
-            self._client, "Gigahost", method, path, params=params, json=json
         )
 
     # --- Account ---
@@ -163,8 +147,6 @@ class GigahostClient:
         pid: str | None = None,
         first_name: str | None = None,
         last_name: str | None = None,
-        use_gigahost_ns: bool = True,
-        nameservers: list[str] | None = None,
     ) -> dict[str, Any]:
         """POST /dns/domains/register -- register a .no domain.
 
@@ -172,7 +154,6 @@ class GigahostClient:
             registrant_type: "organization" or "person"
             org_number, company_name: required when registrant_type is "organization"
             pid, first_name, last_name: required when registrant_type is "person"
-            nameservers: required (min 2) when use_gigahost_ns is False
         """
         payload: dict[str, Any] = {
             "domain_name": domain_name,
@@ -181,7 +162,7 @@ class GigahostClient:
             "applicant_name": applicant_name,
             "zip_code": zip_code,
             "city": city,
-            "use_gigahost_ns": use_gigahost_ns,
+            "use_gigahost_ns": True,
         }
         if registrant_type == "organization":
             payload["org_number"] = org_number
@@ -190,8 +171,6 @@ class GigahostClient:
             payload["pid"] = pid
             payload["first_name"] = first_name
             payload["last_name"] = last_name
-        if nameservers:
-            payload["nameservers"] = nameservers
 
         result = self._request("POST", "/dns/domains/register", json=payload)
         return result.get("data", {})
@@ -224,31 +203,24 @@ class GigahostClient:
         *,
         hostname: str = "",
         key_id: int | None = None,
-        firstboot: str | None = None,
-        language: str = "en_US",
-        keyboard: str = "us",
-        timezone: str = "Europe/Oslo",
     ) -> dict[str, Any]:
         """POST /servers/{id}/reinstall.
 
         Args:
             key_id: SSH key ID from account (param name discovered from web UI).
-            firstboot: Shell script to run on first boot.
 
         Returns:
             The meta dict (contains root_passwd if no SSH key, sshkey bool).
         """
         payload: dict[str, Any] = {
             "os_id": str(os_id),
-            "language": language,
-            "keyboard": keyboard,
-            "timezone": timezone,
+            "language": "en_US",
+            "keyboard": "us",
+            "timezone": "Europe/Oslo",
             "hostname": hostname or f"srv{server_id}",
         }
         if key_id is not None:
             payload["key_id"] = str(key_id)
-        if firstboot:
-            payload["firstboot"] = firstboot
 
         result = self._request("POST", f"/servers/{server_id}/reinstall", json=payload)
         return result.get("meta", {})
@@ -267,36 +239,25 @@ class GigahostClient:
         region_id: int,
         *,
         os_id: int | None = None,
-        iso_id: int | None = None,
-        rescue: int | None = None,
         billing_period: str = "hourly",
-        quantity: int = 1,
-        backups: int | None = None,
         hostnames: list[str] | None = None,
         ssh_keys: list[int] | None = None,
     ) -> list[int]:
-        """POST /deploy/servers -- order one or more servers.
-
-        Exactly one of os_id, iso_id, or rescue should be given.
+        """POST /deploy/servers -- order a server.
 
         Returns:
-            List of order IDs (poll with get_deploy_status).
+            List of order IDs (poll with get_deploy_status). Always a single
+            ID -- get_deploy_status/_poll_and_wait only handle one server.
         """
         payload: dict[str, Any] = {
             "pid": product_id,
             "price_id": price_id,
             "region_id": region_id,
             "billing_period": billing_period,
-            "quantity": quantity,
+            "quantity": 1,
         }
         if os_id is not None:
             payload["os_id"] = os_id
-        if iso_id is not None:
-            payload["iso_id"] = iso_id
-        if rescue is not None:
-            payload["rescue"] = rescue
-        if backups is not None:
-            payload["backups"] = backups
         if hostnames:
             payload["hostnames"] = hostnames
         if ssh_keys:

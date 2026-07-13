@@ -9,67 +9,18 @@ from slipp import output
 from slipp.commands.common import (
     AskBecomePassOption,
     DryRunOption,
-    resolve_declared_dirs,
-    resolve_project_dirs,
+    sync_wg_manage_after_deploy,
 )
-from slipp.constants import DEFAULT_ENV, DEFAULT_GALAXY_PATH
+from slipp.constants import DEFAULT_ENV
+from slipp.models.service import Runtime
 from slipp.output import format_path
-from slipp.services import wg_manage
-from slipp.services.config import (
-    ConfigResolver,
-    LocalConfigService,
-    is_wg_manage_host,
-    load_first_host,
-    resolve_project_name,
-)
+from slipp.services.config import LocalConfigService, resolve_project_name
 from slipp.services.deploy import (
     ensure_local_config,
-    ensure_project_registered,
-    execute_playbook,
-    install_galaxy_requirements,
-    persist_config_updates,
     resolve_environment_and_tags,
-    validate_deploy_files,
+    run_deploy,
 )
-from slipp.utils.errors import WgManageError
-from slipp.utils.files import get_log_dir
-from slipp.utils.network import format_app_url
-
-
-def _sync_wg_manage_after_deploy(project_root: Path, project_name: str) -> None:
-    """Best-effort post-deploy wg-manage exposure converge.
-
-    Removes stray wg-manage services this project labeled but no longer
-    declares (renamed/removed services since the last deploy), so a live
-    exposure never silently outlives the service it pointed at. No-op for
-    non-wg-manage projects.
-
-    Never raises: a sync hiccup here shouldn't retroactively turn an
-    already-successful deploy into a failed one, it just means one fewer
-    thing got tidied up this run -- `slipp resources sync` remains
-    available to run by hand. wg_manage.sync() converts every internal
-    failure mode (SSH, scanning, missing config) to WgManageError, so
-    catching that one type here is actually exhaustive, unlike catching
-    typer.Exit (a CLI-layer concept the service doesn't raise at all).
-    """
-    host = load_first_host(project_root)
-    if host is None or not is_wg_manage_host(host):
-        return
-
-    dirs, _ = resolve_project_dirs(
-        resolve_declared_dirs(project_root), root=project_root, quiet=True
-    )
-    local_config = LocalConfigService.load(project_root)
-    try:
-        wg_manage.sync(
-            dirs,
-            project_name,
-            host,
-            expose=local_config.expose if local_config else None,
-            quiet=True,
-        )
-    except WgManageError as e:
-        output.warning(f"wg-manage exposure sync failed after deploy: {e}")
+from slipp.utils.errors import DeployError
 
 
 def deploy_command(
@@ -136,7 +87,7 @@ def deploy_command(
         typer.Option("--skip-tags", help="Ansible tags to skip (comma-separated)"),
     ] = None,
     runtime: Annotated[
-        str | None,
+        Runtime | None,
         typer.Option("--runtime", help="How the app runs: systemd, docker, podman"),
     ] = None,
     ask_become_pass: AskBecomePassOption = False,
@@ -147,7 +98,14 @@ def deploy_command(
         # config. The resolve_root() below then finds the file just created
         # here, keeping the rest of deploy self-consistent.
         ensure_local_config(
-            name, inventory, playbook, roles, vault, Path.cwd(), runtime
+            name,
+            inventory,
+            playbook,
+            roles,
+            vault,
+            Path.cwd(),
+            runtime,
+            galaxy_path_flag,
         )
 
     project_root = LocalConfigService.resolve_root()
@@ -156,92 +114,43 @@ def deploy_command(
         target, preset, tags, skip_tags
     )
 
-    resolver = ConfigResolver(project_root)
-    roles_list = roles if roles else None
-    config = resolver.resolve(
-        cli_inventory=inventory,
-        cli_playbook=playbook,
-        cli_roles=roles_list,
-        cli_vault=vault,
-        environment=environment,
-    )
-
-    inventory_file = str(config.inventory)
-    playbook_file = str(config.playbook)
-    roles_paths = [str(r) for r in config.roles_path]
-
-    galaxy_path = (
-        galaxy_path_flag
-        or (str(config.galaxy_path) if config.galaxy_path else None)
-        or DEFAULT_GALAXY_PATH
-    )
-    if galaxy_path not in roles_paths:
-        roles_paths.append(galaxy_path)
-
-    needs_vault_password, vault_file = validate_deploy_files(
-        config, resolver, inventory, playbook
-    )
-
-    log_dir = get_log_dir(project_root)
-    install_galaxy_requirements(requirements, galaxy_path, force_requirements, log_dir)
-
-    result = execute_playbook(
-        playbook_file,
-        inventory_file,
-        dry_run=dry_run,
-        vault_file=vault_file,
-        needs_vault_password=needs_vault_password,
-        tags=resolved_tags,
-        skip_tags=resolved_skip_tags,
-        roles_paths=roles_paths,
-        log_dir=log_dir,
-        ask_become_pass=ask_become_pass,
-    )
-
-    if result.exit_code == 0 and result.no_hosts_matched:
-        output.error(
-            "Playbook matched no hosts "
-            "(check the playbook's 'hosts:' pattern against your inventory groups)"
+    try:
+        result = run_deploy(
+            project_root,
+            project_name,
+            environment,
+            resolved_tags,
+            resolved_skip_tags,
+            cli_name=name,
+            cli_inventory=inventory,
+            cli_playbook=playbook,
+            cli_roles=roles if roles else None,
+            cli_vault=vault,
+            cli_galaxy_path=galaxy_path_flag,
+            requirements=requirements,
+            runtime=runtime,
+            dry_run=dry_run,
+            force_requirements=force_requirements,
+            ask_become_pass=ask_become_pass,
         )
-        output.hint(f"See log: {format_path(log_dir, resolver.project_root)}")
+    except DeployError as e:
+        output.error(str(e))
+        if e.log_dir:
+            output.hint(f"See log: {format_path(e.log_dir, project_root)}")
         raise typer.Exit(1)
 
-    if result.exit_code == 0:
-        output.success_animation("Deploy completed")
-
-        # dry_run means the playbook ran in ansible --check mode -- nothing
-        # on the host actually changed, so a real SSH `service rm` here
-        # would apply destructive changes the user explicitly asked to
-        # preview rather than perform.
-        if not dry_run:
-            _sync_wg_manage_after_deploy(project_root, project_name)
-
-        host = load_first_host(project_root)
-        if host and host.app_domain:
-            has_caddy = (project_root / "roles" / "caddy").exists()
-            # app_port only matters for --proxy none deploys; a Caddy-fronted
-            # domain already implies :80/:443.
-            output.hint(
-                f"  {format_app_url(host.app_domain, has_caddy=has_caddy, port=host.app_port)}"
-            )
-
-        if (
-            any([inventory, playbook, roles_list, galaxy_path_flag, vault, runtime])
-            and not dry_run
-            and not name
-        ):
-            persist_config_updates(
-                inventory,
-                playbook,
-                roles_list,
-                galaxy_path_flag,
-                vault,
-                project_root,
-                runtime,
-            )
-
-        ensure_project_registered(project_name, project_root)
-        LocalConfigService.ensure_logs_gitignore(project_root)
-    else:
-        output.hint(f"Review log: {format_path(log_dir, resolver.project_root)}")
+    if result.exit_code != 0:
+        output.hint(f"Review log: {format_path(result.log_dir, project_root)}")
         raise typer.Exit(result.exit_code)
+
+    output.success_animation("Deploy completed")
+
+    # dry_run means the playbook ran in ansible --check mode -- nothing on
+    # the host actually changed, so a real SSH `service rm` here would apply
+    # destructive changes the user explicitly asked to preview rather than
+    # perform.
+    if not dry_run:
+        sync_wg_manage_after_deploy(project_root, project_name)
+
+    if result.app_url:
+        output.hint(f"  {result.app_url}")

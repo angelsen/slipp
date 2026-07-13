@@ -7,8 +7,11 @@ project's vault, and decrypting/merging vaults into environment variables.
 from dataclasses import dataclass
 from pathlib import Path
 
+from slipp.models.registry import RegisteredProject
+from slipp.services.config import LocalConfigService
+from slipp.services.registry import ProjectRegistry
 from slipp.services.vault.crypto import decrypt_vault, list_keys
-from slipp.utils.errors import DuplicateEnvVarError, VaultDecryptError
+from slipp.utils.errors import ConfigError, DuplicateEnvVarError, ProjectNotFoundError
 
 
 @dataclass(frozen=True)
@@ -18,6 +21,19 @@ class VaultInfo:
     project: str
     vault: str  # relative path from slipp.yaml
     secret_count: int | None  # None = unreadable/malformed
+
+
+def _project_vault_path(project: RegisteredProject) -> tuple[str, Path] | None:
+    """Resolve a registered project's configured vault path, if any.
+
+    Returns (relative_vault, absolute_path) as configured in slipp.yaml, or
+    None if the project has no slipp.yaml or no vault configured. Does not
+    check whether the path exists on disk.
+    """
+    local_config = LocalConfigService.load(project.project_path)
+    if not (local_config and local_config.vault):
+        return None
+    return local_config.vault, project.project_path / local_config.vault
 
 
 def list_project_vaults() -> list[VaultInfo]:
@@ -31,17 +47,13 @@ def list_project_vaults() -> list[VaultInfo]:
         vault path that exists on disk. secret_count is None if the vault
         file couldn't be parsed (malformed) rather than aborting the listing.
     """
-    from slipp.services.config import LocalConfigService
-    from slipp.services.registry import ProjectRegistry
-
     vaults: list[VaultInfo] = []
     for project in ProjectRegistry().list_all():
-        local_config = LocalConfigService.load(project.project_path)
-        if not (local_config and local_config.vault):
+        resolved = _project_vault_path(project)
+        if resolved is None:
             continue
-
-        vault_path = project.project_path / local_config.vault
-        if not vault_path.exists():
+        relative_vault, vault_path = resolved
+        if not vault_path.is_file():
             continue
 
         try:
@@ -55,7 +67,7 @@ def list_project_vaults() -> list[VaultInfo]:
         vaults.append(
             VaultInfo(
                 project=project.name,
-                vault=local_config.vault,
+                vault=relative_vault,
                 secret_count=secret_count,
             )
         )
@@ -80,22 +92,19 @@ def decrypt_vault_to_env(
         Dict of {ENV_VAR: value} pairs
 
     Raises:
-        VaultDecryptError: If project not found or decryption fails
+        ProjectNotFoundError: If project isn't registered
+        ConfigError: If project has no vault configured
+        VaultDecryptError: If decryption fails
     """
-    from slipp.services.config import LocalConfigService
-    from slipp.services.registry import ProjectRegistry
-
-    registry = ProjectRegistry()
-    project = registry.get(project_name)
+    project = ProjectRegistry().get(project_name)
 
     if not project:
-        raise VaultDecryptError(f"Project '{project_name}' not found in registry")
+        raise ProjectNotFoundError(f"Project '{project_name}' not found in registry")
 
-    local_config = LocalConfigService.load(project.project_path)
-    if not local_config or not local_config.vault:
-        raise VaultDecryptError(f"Project '{project_name}' has no vault configured")
-
-    vault_path = project.project_path / local_config.vault
+    resolved = _project_vault_path(project)
+    if resolved is None:
+        raise ConfigError(f"Project '{project_name}' has no vault configured")
+    _, vault_path = resolved
 
     secrets = decrypt_vault(vault_path, password_file)
 

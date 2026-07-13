@@ -47,7 +47,7 @@ def dns_sync_command() -> None:
     ip = host.ansible_host
 
     output.info(f"Syncing DNS for {domain} -> {ip}")
-    sync_and_report(resolve_dns_provider(domain), domain, ip)
+    sync_and_report(resolve_dns_provider(), domain, ip)
 
 
 @dns_app.command(name="list")
@@ -55,20 +55,17 @@ def dns_list_command(
     domain: Annotated[str, typer.Argument(help="Domain to list records for")],
 ) -> None:
     """List current DNS records for a domain."""
-    provider = resolve_dns_provider(domain)
+    provider = resolve_dns_provider()
     zone = provider.find_zone(domain)
     if zone is None:
         output.error(f"No zone found for {domain}")
         raise typer.Exit(1)
     records = provider.list_records(zone.zone_id)
 
-    if not records:
-        output.info("No records found")
-        return
-
-    output.table(
+    output.empty_or_table(
         [
             {"name": r.name, "type": r.type, "value": r.value, "ttl": r.ttl}
             for r in records
-        ]
+        ],
+        "No records found",
     )

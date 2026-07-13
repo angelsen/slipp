@@ -6,7 +6,11 @@ Extracts dependencies internally using language-specific helper.
 
 from pathlib import Path
 
-from slipp.scanner.helpers import PYTHON_DOCKER_TEMPLATE, extract_python_dependencies
+from slipp.scanner.helpers import (
+    DEFAULT_PYTHON_PORT,
+    PYTHON_DOCKER_TEMPLATE,
+    extract_python_dependencies,
+)
 from slipp.scanner.models import SourceInfo
 
 
@@ -38,7 +42,7 @@ def configure_flask(source_dir: Path) -> SourceInfo | None:
 
     return SourceInfo(
         family="Flask",
-        port=8080,
+        port=DEFAULT_PYTHON_PORT,
         template_url=PYTHON_DOCKER_TEMPLATE,
         dependencies=dependencies,  # Include for metadata
     )

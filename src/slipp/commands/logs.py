@@ -9,8 +9,7 @@ from slipp.commands.common import (
     find_service_or_exit,
     resolve_host_or_exit,
 )
-from slipp.models.service import Runtime
-from slipp.services.ssh import SSHService, hint_ssh_log
+from slipp.services.ssh import SSHService, build_logs_command, hint_ssh_log
 
 
 def logs_command(
@@ -34,15 +33,7 @@ def logs_command(
         ssh_config, service, include_system=all_services
     )
 
-    if Runtime(target_service.runtime).is_container() and not target_service.unit_name:
-        cmd = f"sudo {target_service.runtime} logs --tail={lines}"
-        if follow:
-            cmd += " --follow"
-        cmd += f" {target_service.name}"
-    else:
-        cmd = f"sudo journalctl -u {target_service.unit_name} -n {lines}"
-        if follow:
-            cmd += " -f"
+    cmd = build_logs_command(target_service, lines, follow)
 
     output.task(f"Logs for {target_service.name}@{target_service.host}")
     output.info(f"({target_service.runtime}, {target_service.state})")

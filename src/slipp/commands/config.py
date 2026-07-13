@@ -4,7 +4,6 @@ Shows local slipp.yaml settings, inventory hosts, and global
 registry status. Supports both human-readable table and JSON output.
 """
 
-import json
 from pathlib import Path
 
 import typer
@@ -87,25 +86,30 @@ def _show_table(project_root: Path) -> None:
 def _show_json(project_root: Path) -> None:
     """Display config as JSON."""
     resolver = ConfigResolver(project_root)
+
+    if not resolver.has_local_config:
+        output.json(
+            {
+                "error": "No slipp.yaml found in current directory or any parent",
+                "has_local_config": False,
+            }
+        )
+        raise typer.Exit(1)
+
     registry = ProjectRegistry()
     local_config = resolver.local_config
+    assert local_config is not None
 
-    project = None
-    if local_config:
-        project = registry.get(local_config.name)
+    project = registry.get(local_config.name)
 
     result = {
-        "project_name": local_config.name if local_config else None,
+        "project_name": local_config.name,
         "project_root": str(project_root),
-        "has_local_config": resolver.has_local_config,
-        "local_config": None,
+        "has_local_config": True,
+        "local_config": local_config.model_dump(),
         "global_registry": None,
-        "hosts": None,
+        "hosts": load_project_hosts(project_root),
     }
-
-    if resolver.has_local_config and local_config:
-        result["local_config"] = local_config.model_dump()
-        result["hosts"] = load_project_hosts(project_root)
 
     if project:
         result["global_registry"] = {
@@ -114,4 +118,4 @@ def _show_json(project_root: Path) -> None:
             "registered_at": project.registered_at.isoformat(),
         }
 
-    output.stdout(json.dumps(result, indent=2))
+    output.json(result)

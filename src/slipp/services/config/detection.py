@@ -32,3 +32,12 @@ def detect_path(
         elif not is_dir and path.is_file():
             return path
     return None
+
+
+def has_caddy_role(project_root: Path) -> bool:
+    """True if this project's generated Ansible project has a Caddy role.
+
+    Used to decide whether a project's public URL is Caddy-fronted
+    (:443/https) or exposed directly on its app_port (:app_port/http).
+    """
+    return (project_root / "roles" / "caddy").exists()

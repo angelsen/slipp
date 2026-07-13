@@ -5,21 +5,39 @@ ProvisionStateService) so their load/save/corruption-recovery mechanics
 can't drift apart.
 """
 
+import fcntl
 import json
-import logging
 import os
 import shutil
+from contextlib import contextmanager
 from pathlib import Path
-from typing import TypeVar, overload
+from typing import Iterator, TypeVar, overload
 
 import yaml
 from pydantic import BaseModel
 
+from slipp import output
 from slipp.utils.files import atomic_write_text
 
-logger = logging.getLogger(__name__)
-
 ModelT = TypeVar("ModelT", bound=BaseModel)
+
+
+@contextmanager
+def config_store_lock(path: Path) -> Iterator[None]:
+    """Exclusive lock guarding read-modify-write access to a config store file.
+
+    Without this, two concurrent CLI invocations can both load the same
+    "existing" content and the slower writer silently discards the other's
+    change on save.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = path.with_suffix(path.suffix + ".lock")
+    with open(lock_path, "w") as lock_file:
+        fcntl.flock(lock_file, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file, fcntl.LOCK_UN)
 
 
 def slipp_config_dir(subdir: str | None = None) -> Path:
@@ -71,10 +89,10 @@ def load_model(
     except (json.JSONDecodeError, yaml.YAMLError) as e:
         backup_path = path.with_suffix(path.suffix + ".backup")
         shutil.copy(path, backup_path)
-        logger.warning(f"{label} corrupted: {e}. Backed up to: {backup_path}")
+        output.warning(f"{label} corrupted: {e}. Backed up to: {backup_path}")
         return default
     except Exception as e:
-        logger.warning(f"Failed to load {label}: {e}")
+        output.warning(f"Failed to load {label}: {e}")
         return default
 
 

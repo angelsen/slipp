@@ -8,7 +8,11 @@ connection messages before calling them.
 import subprocess
 
 from slipp.models.host import AnsibleHost
-from slipp.services.ssh.command import CommandBuilder, build_ssh_command
+from slipp.services.ssh.command import (
+    build_container_command,
+    build_ssh_command,
+    build_vps_command,
+)
 
 
 def _run_interactive(cmd: list[str]) -> int:
@@ -50,7 +54,7 @@ def ssh_as_user(host: AnsibleHost, target_user: str) -> int:
         return ssh_session(host)
 
     inner_cmd = "sh -c 'cd ~ && exec /bin/sh'"
-    remote_cmd = CommandBuilder.vps_command(target_user, inner_cmd, host.ansible_user)
+    remote_cmd = build_vps_command(target_user, inner_cmd, host.ansible_user)
     cmd = build_ssh_command(host, flags=["-t"], remote_command=remote_cmd)
     return _run_interactive(cmd)
 
@@ -72,7 +76,7 @@ def container_shell(
     Returns:
         Exit code from session
     """
-    exec_cmd = CommandBuilder.container_command(
+    exec_cmd = build_container_command(
         container_name, "/bin/sh", user=user, runtime=runtime, interactive=True
     )
 

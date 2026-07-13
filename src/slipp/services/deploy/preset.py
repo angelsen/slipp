@@ -2,8 +2,7 @@
 
 from slipp import output
 from slipp.constants import DEFAULT_ENV
-from slipp.services.config import PresetResolver, parse_preset_args
-from slipp.utils.errors import PresetNotFoundError
+from slipp.services.config import PresetResolver
 
 
 def resolve_environment_and_tags(
@@ -31,20 +30,16 @@ def resolve_environment_and_tags(
     Raises:
         PresetNotFoundError: If preset is given but not found.
     """
-    presets = PresetResolver().list_presets()
+    resolver = PresetResolver()
+    presets = resolver.list_presets()
 
     if preset:
         environment = target
-        if preset not in presets:
-            message = f"Preset '{preset}' not found"
-            if presets:
-                message += f"\nAvailable presets: {', '.join(presets.keys())}"
-            raise PresetNotFoundError(message)
-        preset_tags, preset_skip_tags = parse_preset_args(presets[preset])
+        preset_tags, preset_skip_tags = resolver.resolve(preset)
         output.info(f"Using preset '{preset}': {presets[preset]}")
     elif target != DEFAULT_ENV and target in presets:
         environment = DEFAULT_ENV
-        preset_tags, preset_skip_tags = parse_preset_args(presets[target])
+        preset_tags, preset_skip_tags = resolver.resolve(target)
         output.info(f"Using preset '{target}': {presets[target]}")
     else:
         environment = target

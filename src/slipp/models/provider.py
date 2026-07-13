@@ -6,9 +6,9 @@ services/providers/dns.py, which holds the DNS-specific Protocol and
 wire models shared across provider implementations.
 """
 
-from pathlib import Path
-
 from pydantic import BaseModel, Field
+
+from slipp.models.types import PathStr
 
 
 class GigahostConfig(BaseModel):
@@ -17,12 +17,10 @@ class GigahostConfig(BaseModel):
     Attributes:
         api_key: Personal API key, format flux_live_<64 hex chars>
         account_name: Cached account display name (from GET /account)
-        account_id: Cached customer ID (from GET /account)
     """
 
     api_key: str = Field(..., min_length=1, description="flux_live_* API key")
     account_name: str | None = None
-    account_id: int | None = None
 
 
 class PangolinConfig(BaseModel):
@@ -49,7 +47,7 @@ class WgDeployConfig(BaseModel):
             scripts/new-host.sh for hub-ification (`slipp up --hub`).
     """
 
-    repo_path: Path
+    repo_path: PathStr
 
 
 class ProvidersConfig(BaseModel):

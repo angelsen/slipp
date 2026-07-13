@@ -1,12 +1,13 @@
 """Command builder service for VPS and container execution.
 
 Extracts command building logic from exec.py into a shared service.
-Provides static methods for building properly formatted shell commands.
+Provides functions for building properly formatted shell commands.
 """
 
 import shlex
 
 from slipp.models.host import AnsibleHost
+from slipp.models.service import Service
 
 
 def build_ssh_command(
@@ -41,89 +42,98 @@ def build_ssh_command(
     if host.key_file:
         cmd += ["-i", str(host.key_file)]
     cmd += flags or []
-    cmd.append(f"{host.ansible_user}@{host.ansible_host}")
+    cmd.append(host.ssh_target)
     if remote_command:
         cmd.append(remote_command)
     return cmd
 
 
-class CommandBuilder:
-    """Build commands for VPS and container execution.
+def build_vps_command(target_user: str, cmd: str, current_user: str) -> str:
+    """Build command to execute on VPS.
 
-    This class provides static methods to build properly formatted
-    commands for different execution contexts.
+    Handles sudo escalation when target user differs from current user.
+
+    Args:
+        target_user: User to run command as
+        cmd: Command to execute
+        current_user: Current SSH user
+
+    Returns:
+        Full command string (with sudo if needed)
+
+    Examples:
+        >>> build_vps_command("root", "ls", "deploy")
+        'sudo ls'
+        >>> build_vps_command("postgres", "psql", "deploy")
+        'sudo -u postgres psql'
+        >>> build_vps_command("deploy", "ls", "deploy")
+        'ls'
     """
+    if target_user == current_user:
+        return cmd
 
-    @staticmethod
-    def vps_command(target_user: str, cmd: str, current_user: str) -> str:
-        """Build command to execute on VPS.
+    if target_user == "root":
+        return f"sudo {cmd}"
 
-        Handles sudo escalation when target user differs from current user.
+    return f"sudo -u {target_user} {cmd}"
 
-        Args:
-            target_user: User to run command as
-            cmd: Command to execute
-            current_user: Current SSH user
 
-        Returns:
-            Full command string (with sudo if needed)
+def build_container_command(
+    container: str,
+    cmd: str,
+    user: str | None = None,
+    runtime: str = "docker",
+    interactive: bool = False,
+) -> str:
+    """Build container exec command.
 
-        Examples:
-            >>> CommandBuilder.vps_command("root", "ls", "deploy")
-            'sudo ls'
-            >>> CommandBuilder.vps_command("postgres", "psql", "deploy")
-            'sudo -u postgres psql'
-            >>> CommandBuilder.vps_command("deploy", "ls", "deploy")
-            'ls'
-        """
-        if target_user == current_user:
-            return cmd
+    Args:
+        container: Container name
+        cmd: Command to execute inside container
+        user: User inside container (None = container default, usually root)
+        runtime: Container runtime (podman/docker)
+        interactive: If True, add -it flags for interactive use
 
-        if target_user == "root":
-            return f"sudo {cmd}"
+    Returns:
+        Full container exec command string
 
-        return f"sudo -u {target_user} {cmd}"
+    Examples:
+        >>> build_container_command("nginx", "cat /etc/nginx/nginx.conf", runtime="docker")
+        'docker exec nginx cat /etc/nginx/nginx.conf'
+        >>> build_container_command("db", "psql", user="postgres", runtime="podman")
+        'podman exec -u postgres db psql'
+        >>> build_container_command("app", "/bin/sh", interactive=True)
+        'docker exec -it app /bin/sh'
+    """
+    parts = [runtime, "exec"]
 
-    @staticmethod
-    def container_command(
-        container: str,
-        cmd: str,
-        user: str | None = None,
-        runtime: str = "docker",
-        interactive: bool = False,
-    ) -> str:
-        """Build container exec command.
+    if interactive:
+        parts.append("-it")
 
-        Args:
-            container: Container name
-            cmd: Command to execute inside container
-            user: User inside container (None = container default, usually root)
-            runtime: Container runtime (podman/docker)
-            interactive: If True, add -it flags for interactive use
+    if user and user != "root":
+        parts.extend(["-u", shlex.quote(user)])
 
-        Returns:
-            Full container exec command string
+    # cmd stays raw on purpose: `slipp exec` commands are the user's own
+    # shell input and should be interpreted remotely, same as an ssh
+    # prompt. Only the identifiers around it get quoted.
+    parts.append(shlex.quote(container))
+    parts.append(cmd)
 
-        Examples:
-            >>> CommandBuilder.container_command("nginx", "cat /etc/nginx/nginx.conf", runtime="docker")
-            'docker exec nginx cat /etc/nginx/nginx.conf'
-            >>> CommandBuilder.container_command("db", "psql", user="postgres", runtime="podman")
-            'podman exec -u postgres db psql'
-            >>> CommandBuilder.container_command("app", "/bin/sh", interactive=True)
-            'docker exec -it app /bin/sh'
-        """
-        parts = [runtime, "exec"]
+    return " ".join(parts)
 
-        if interactive:
-            parts.append("-it")
 
-        if user and user != "root":
-            parts.extend(["-u", shlex.quote(user)])
+def build_logs_command(service: Service, lines: int, follow: bool) -> str:
+    """Build command to fetch a service's logs via journalctl.
 
-        # cmd stays raw on purpose: `slipp exec` commands are the user's own
-        # shell input and should be interpreted remotely, same as an ssh
-        # prompt. Only the identifiers around it get quoted.
-        parts.append(shlex.quote(container))
-        parts.append(cmd)
+    Args:
+        service: Target service
+        lines: Number of log lines to show
+        follow: Whether to stream/follow output
 
-        return " ".join(parts)
+    Returns:
+        Full command string
+    """
+    cmd = f"sudo journalctl -u {shlex.quote(service.unit_name)} -n {lines}"
+    if follow:
+        cmd += " -f"
+    return cmd

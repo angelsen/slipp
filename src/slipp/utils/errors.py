@@ -4,6 +4,8 @@ All slipp operations raise subclasses of SlippError for consistent
 error handling across the CLI, services, and commands.
 """
 
+from pathlib import Path
+
 
 class SlippError(Exception):
     """Base exception for slipp."""
@@ -29,7 +31,7 @@ class SSHCommandError(SlippError):
     pass
 
 
-class SudoPasswordRequired(SSHCommandError):
+class SudoPasswordError(SSHCommandError):
     """A remote sudo command failed because a password is required."""
 
     pass
@@ -197,6 +199,18 @@ class AnsibleError(SlippError):
     """Ansible operation failed."""
 
     pass
+
+
+class DeployError(SlippError):
+    """Deploy orchestration failed before or without a playbook exit code.
+
+    Carries the log directory so the CLI layer can print a "review log"
+    hint without recomputing it.
+    """
+
+    def __init__(self, message: str, *, log_dir: Path | None = None):
+        self.log_dir = log_dir
+        super().__init__(message)
 
 
 class AnsibleNotFoundError(AnsibleError):

@@ -7,44 +7,59 @@ import httpx
 from slipp.utils.errors import ProviderError
 
 
-def api_request(
-    client: httpx.Client,
-    provider: str,
-    method: str,
-    path: str,
-    *,
-    params: dict[str, Any] | None = None,
-    json: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Issue a request and return the parsed JSON body.
+class ApiClientMixin:
+    """Shared `_request` for provider clients wrapping an httpx.Client.
 
-    Args:
-        client: Configured httpx client (base_url, auth headers).
-        provider: Human-readable provider name for error messages
-            (e.g. "Gigahost", "Pangolin").
-
-    Raises:
-        ProviderError: On any HTTP error status or network failure.
+    Subclasses set `PROVIDER_NAME` (used in error messages) and `self._client`
+    (a configured httpx.Client) in their own `__init__`.
     """
-    try:
-        response = client.request(method, path, params=params, json=json)
-        response.raise_for_status()
-    except httpx.HTTPStatusError as e:
-        detail = _extract_error_message(e.response)
-        raise ProviderError(
-            f"{provider} API error ({e.response.status_code}) on {method} {path}: {detail}"
-        ) from e
-    except httpx.RequestError as e:
-        raise ProviderError(
-            f"Network error calling {provider} API ({method} {path}): {e}"
-        ) from e
 
-    if not response.content:
-        return {}
-    try:
-        return response.json()
-    except ValueError:
-        return {}
+    PROVIDER_NAME: str
+    _client: httpx.Client
+
+    def close(self) -> None:
+        """Close the underlying HTTP connection pool."""
+        self._client.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        self.close()
+
+    def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        json: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Issue a request and return the parsed JSON body.
+
+        Raises:
+            ProviderError: On any HTTP error status or network failure.
+        """
+        try:
+            response = self._client.request(method, path, params=params, json=json)
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            detail = _extract_error_message(e.response)
+            raise ProviderError(
+                f"{self.PROVIDER_NAME} API error ({e.response.status_code}) "
+                f"on {method} {path}: {detail}"
+            ) from e
+        except httpx.RequestError as e:
+            raise ProviderError(
+                f"Network error calling {self.PROVIDER_NAME} API ({method} {path}): {e}"
+            ) from e
+
+        if not response.content:
+            return {}
+        try:
+            return response.json()
+        except ValueError:
+            return {}
 
 
 def _extract_error_message(response: httpx.Response) -> str:

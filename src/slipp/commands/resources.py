@@ -16,7 +16,6 @@ Two backends, dispatched on the project's inventory `proxy_owner` host var:
   converge-from-declared-config shape applies.
 """
 
-import json
 from pathlib import Path
 from typing import Annotated
 
@@ -25,10 +24,10 @@ import typer
 from slipp import output
 from slipp.commands.common import (
     DryRunOption,
-    resolve_declared_dirs,
-    resolve_project_dirs,
+    ForceOption,
+    confirm_or_exit,
+    sync_wg_manage_project,
 )
-from slipp.constants import OutputFormat
 from slipp.models.deployment import DeploymentHostConfig
 from slipp.services import wg_manage
 from slipp.services.config import (
@@ -80,15 +79,7 @@ def _list_wg_manage(host: DeploymentHostConfig) -> None:
     """List wg-manage services on `host` (all of them, not just this project's)."""
     services = wg_manage.fetch_services(host)
 
-    if output.get_output_format() == OutputFormat.json:
-        output.stdout(json.dumps(services, indent=2))
-        return
-
-    if not services:
-        output.info("No wg-manage services found")
-        return
-
-    output.table(
+    output.empty_or_table(
         [
             {
                 "name": s.get("name"),
@@ -96,7 +87,8 @@ def _list_wg_manage(host: DeploymentHostConfig) -> None:
                 "label": s.get("label") or "-",
             }
             for s in services
-        ]
+        ],
+        "No wg-manage services found",
     )
 
 
@@ -119,17 +111,7 @@ def sync_resource(
     if wg_host:
         if site:
             output.hint("--site is ignored for wg-manage sync (Pangolin projects only)")
-        dirs, _ = resolve_project_dirs(
-            resolve_declared_dirs(project_root), root=project_root
-        )
-        local_config = LocalConfigService.load(project_root)
-        wg_manage.sync(
-            dirs,
-            project_name,
-            wg_host,
-            expose=local_config.expose if local_config else None,
-            dry_run=dry_run,
-        )
+        sync_wg_manage_project(project_root, project_name, wg_host, dry_run=dry_run)
         return
 
     if not site:
@@ -167,15 +149,7 @@ def list_resources() -> None:
 
     resources = get_pangolin_client().list_resources()
 
-    if not resources:
-        output.info("No resources found")
-        return
-
-    if output.get_output_format() == OutputFormat.json:
-        output.stdout(json.dumps(resources, indent=2))
-        return
-
-    output.table(
+    output.empty_or_table(
         [
             {
                 "name": r.get("name"),
@@ -186,17 +160,20 @@ def list_resources() -> None:
                 or "-",
             }
             for r in resources
-        ]
+        ],
+        "No resources found",
     )
 
 
 @resources_app.command(name="remove")
 def remove_resource(
     name: Annotated[str, typer.Argument(help="Resource/service name")],
+    force: ForceOption = False,
 ) -> None:
     """Remove an exposed service: a wg-manage service labeled to this project, or a public Pangolin resource."""
     wg_host = _wg_manage_host_for_cwd()
     if wg_host:
+        confirm_or_exit(f"Remove service '{name}'?", force=force)
         # remove_service refuses entries not labeled to this project.
         wg_manage.remove_service(wg_host, resolve_project_name(), name)
         output.success(f"Removed wg-manage service: {name}")
@@ -207,6 +184,8 @@ def remove_resource(
     if not match:
         output.error(f"Resource '{name}' not found")
         raise typer.Exit(1)
+
+    confirm_or_exit(f"Remove resource '{match.get('fullDomain')}'?", force=force)
 
     client.delete_resource(match["resourceId"])
     output.success(f"Removed Pangolin resource: {match.get('fullDomain')}")

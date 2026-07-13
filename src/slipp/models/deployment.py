@@ -8,10 +8,11 @@ All models use Pydantic v2 for validation and serialization.
 
 from pathlib import Path
 
-from pydantic import BaseModel, Field, field_serializer, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from slipp.models.host import AnsibleHost
-from slipp.models.service import Runtime
+from slipp.models.service import LenientRuntime, Runtime
+from slipp.models.types import PathStr
 from slipp.utils.identifiers import validate_config_name
 
 
@@ -32,7 +33,7 @@ class DetectedService(BaseModel):
 
     name: str
     framework: str
-    path: Path
+    path: PathStr
     port: int
     template_url: str
     dependencies: list[str] = Field(default_factory=list)
@@ -42,11 +43,6 @@ class DetectedService(BaseModel):
     def _validate_name(cls, value: str) -> str:
         """Directory names become systemd units/paths/YAML -- see validator."""
         return validate_config_name(value, "service name")
-
-    @field_serializer("path")
-    def serialize_path(self, path: Path) -> str:
-        """Serialize Path to string for JSON output."""
-        return str(path)
 
 
 class DeploymentHostConfig(AnsibleHost):
@@ -77,7 +73,7 @@ class DeploymentHostConfig(AnsibleHost):
     admin_email: str | None = Field(
         default=None, description="Admin email for HTTPS certs"
     )
-    runtime: Runtime = Field(
+    runtime: LenientRuntime = Field(
         default=Runtime.DOCKER, description="How the app runs (systemd, docker, podman)"
     )
     app_port: int | None = Field(
@@ -266,15 +262,10 @@ class ProvisionConfig(BaseModel):
     services: list[DetectedService] = Field(description="Detected services")
     inventory: InventoryConfig = Field(description="Inventory configuration")
     project_name: str = Field(description="Project name")
-    project_root: Path = Field(description="Absolute path to project")
+    project_root: PathStr = Field(description="Absolute path to project")
     caddy_config: CaddyConfig = Field(description="Caddy configuration")
     skip_caddy: bool = Field(default=False, description="Skip Caddy role generation")
     proxy: str = Field(default="caddy", description="Reverse proxy mode")
-
-    @field_serializer("project_root")
-    def serialize_path(self, path: Path) -> str:
-        """Serialize Path to string for JSON output."""
-        return str(path)
 
     def to_dict(self) -> dict:
         """Convert to dict for template rendering.
@@ -294,9 +285,6 @@ class ProvisionConfig(BaseModel):
             "caddy_sites_dir": self.caddy_config.sites_dir,
             "skip_caddy": self.skip_caddy,
             "proxy": self.proxy,
-            "target_host": first_host.ansible_host,
-            "ssh_user": first_host.ansible_user,
-            "ssh_port": first_host.ansible_port,
             "app_domain": first_host.app_domain or "",
             "runtime": first_host.runtime,
         }
@@ -313,12 +301,25 @@ class ComposeConfig(BaseModel):
 
     services: list[DetectedService] = Field(description="Detected services")
     project_name: str = Field(description="Project name")
-    project_root: Path = Field(description="Project root directory")
+    project_root: PathStr = Field(description="Project root directory")
 
     def to_dict(self) -> dict:
         """Convert to dict for Jinja2 template context."""
+        root = Path(self.project_root)
+        services = []
+        for s in self.services:
+            data = s.model_dump()
+            try:
+                rel = Path(data["path"]).relative_to(root)
+                data["build_context"] = "." if str(rel) == "." else f"./{rel}"
+            except ValueError:
+                # Service outside project_root (e.g. --dir pointed elsewhere)
+                # -- fall back to an absolute context path.
+                data["build_context"] = data["path"]
+            services.append(data)
+
         return {
-            "services": [s.model_dump() for s in self.services],
+            "services": services,
             "project_name": self.project_name,
             "project_root": str(self.project_root),
         }

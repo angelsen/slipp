@@ -1,6 +1,5 @@
-"""Run profile execution service.
+"""Run profile execution.
 
-Extracts profile execution orchestration from run.py into a service.
 Handles the complex workflow of vault loading, tunnel setup, Caddy proxy, and command execution.
 """
 
@@ -52,13 +51,16 @@ def resolve_tunnel_host(host_spec: str) -> AnsibleHost:
 
     try:
         return resolver.by_project(host_spec)
-    except HostNotFoundError:
+    except (ConfigError, HostNotFoundError):
         pass
 
+    output.warning(
+        f"'{host_spec}' isn't a registered project, assuming slipp@{host_spec}"
+    )
     return AnsibleHost(
         inventory_hostname=host_spec,
         ansible_host=host_spec,
-        ansible_user="root",
+        ansible_user="slipp",
     )
 
 
@@ -117,7 +119,7 @@ class CaddyCheckResult:
         return not self.missing_hosts and not self.unreachable_hosts
 
 
-def run_command(
+def run_shell_command(
     cmd: str, cwd: Path | None = None, env: dict[str, str] | None = None
 ) -> int:
     """Run command, letting Ctrl+C propagate naturally.
@@ -138,226 +140,222 @@ def run_command(
     return process.wait()
 
 
-class RunProfileExecutor:
-    """Execute run profiles with tunnels, vault, and Caddy proxy.
+def _check_caddy_requirements(
+    resolved: list[ResolvedTunnelOut],
+    caddy_proxies: dict[str, CaddyProxy],
+    stack: ExitStack,
+) -> CaddyCheckResult:
+    """Check Caddy dev proxy is installed on all tunnel-out hosts.
 
-    This service orchestrates the complex workflow of:
-    1. Loading vault secrets into environment
-    2. Setting up SSH tunnels (forward and reverse)
-    3. Configuring Caddy dev proxy routes
-    4. Running the command with proper signal handling
-    5. Cleaning up resources on completion/failure
+    Populates `caddy_proxies` with the checked instances (via
+    `_get_or_create_proxy`, deduped by host) so `_setup_caddy_routes`
+    reuses the same SSH connection instead of opening a second one per
+    host. Safe to cache even on a failed check: `execute_profile` aborts
+    before route setup whenever any host is missing/unreachable.
     """
+    missing: list[str] = []
+    unreachable: list[str] = []
+    checked: set[str] = set()
 
-    def check_caddy_requirements(
-        self, resolved: list[ResolvedTunnelOut]
-    ) -> CaddyCheckResult:
-        """Check Caddy dev proxy is installed on all tunnel-out hosts."""
-        hosts_to_check: dict[str, tuple[str, AnsibleHost]] = {}
-        for r in resolved:
-            if r.host.ansible_host not in hosts_to_check:
-                hosts_to_check[r.host.ansible_host] = (r.host_spec, r.host)
+    for r in resolved:
+        if r.host.ansible_host in checked:
+            continue
+        checked.add(r.host.ansible_host)
 
-        missing: list[str] = []
-        unreachable: list[str] = []
-        for host_spec, host in hosts_to_check.values():
-            proxy = CaddyProxy(host)
-
-            try:
-                if not proxy.is_installed():
-                    missing.append(host_spec)
-            except (SSHConnectionError, SSHAuthenticationError) as e:
-                unreachable.append(f"{host_spec}: {e}")
-
-        return CaddyCheckResult(
-            missing_hosts=missing,
-            unreachable_hosts=unreachable,
-        )
-
-    def load_vault_secrets(self, vaults: list[str]) -> dict[str, str]:
-        """Load secrets from vault(s) into environment dict.
-
-        Args:
-            vaults: List of vault project names
-
-        Returns:
-            Environment variables from the vaults
-
-        Raises:
-            DuplicateEnvVarError: If duplicate env vars found across vaults
-            VaultDecryptError: If vault decryption fails
-        """
-        with vault_password_file(confirm=False) as pw_file:
-            env = merge_vault_envs(vaults, pw_file)
-            output.success(f"Loaded {len(env)} env vars from {', '.join(vaults)}")
-            return env
-
-    def setup_tunnels(
-        self,
-        tunnels: TunnelConfig,
-        resolved_out: list[ResolvedTunnelOut],
-    ) -> TunnelManager:
-        """Setup SSH tunnels."""
-        tunnel_manager = TunnelManager()
-
-        created_tunnels: dict[tuple[int, str], str] = {}
-
+        proxy = _get_or_create_proxy(r.host, caddy_proxies, stack)
         try:
-            for r in resolved_out:
-                tunnel_key = (r.local_port, r.host.ansible_host)
-                if tunnel_key not in created_tunnels:
-                    tunnel_manager.start_tunnel_out(r.local_port, r.domain, r.host)
-                    created_tunnels[tunnel_key] = r.domain
-                    output.success(f"Tunnel: localhost:{r.local_port} → {r.domain}")
+            if not proxy.is_installed():
+                missing.append(r.host_spec)
+        except (SSHConnectionError, SSHAuthenticationError) as e:
+            unreachable.append(f"{r.host_spec}: {e}")
 
-            for spec in tunnels.in_:
-                container_spec = parse_container_tunnel_in(spec)
-                if container_spec:
-                    runtime, container, remote_port, local_port, host_spec = (
-                        container_spec
-                    )
-                    host = resolve_tunnel_host(host_spec)
-                    tunnel_manager.start_container_tunnel_in(
-                        runtime, container, remote_port, local_port, host
-                    )
-                    output.success(
-                        f"Tunnel: localhost:{local_port} ← {container}:{remote_port}@{host_spec}"
-                    )
-                else:
-                    service, remote_port, host_spec = parse_tunnel_in(spec)
-                    host = resolve_tunnel_host(host_spec)
-                    tunnel_manager.start_tunnel_in(service, remote_port, host)
-                    output.success(
-                        f"Tunnel: localhost:{remote_port} ← {service}@{host_spec}"
-                    )
+    return CaddyCheckResult(
+        missing_hosts=missing,
+        unreachable_hosts=unreachable,
+    )
 
-            return tunnel_manager
 
-        except TunnelError:
-            tunnel_manager.cleanup()
-            raise
+def _load_vault_secrets(vaults: list[str]) -> dict[str, str]:
+    """Load secrets from vault(s) into environment dict.
 
-    def setup_caddy_routes(
-        self,
-        resolved: list[ResolvedTunnelOut],
-        caddy_proxies: dict[str, CaddyProxy],
-        stack: ExitStack,
-        auth: tuple[str, str] | None = None,
-    ) -> None:
-        """Setup Caddy dev proxy routes for pre-resolved tunnel-out specs."""
-        for r in resolved:
-            if r.host.ansible_host not in caddy_proxies:
-                caddy_proxies[r.host.ansible_host] = stack.enter_context(
-                    CaddyProxy(r.host)
+    Args:
+        vaults: List of vault project names
+
+    Returns:
+        Environment variables from the vaults
+
+    Raises:
+        DuplicateEnvVarError: If duplicate env vars found across vaults
+        VaultDecryptError: If vault decryption fails
+    """
+    with vault_password_file(confirm=False) as pw_file:
+        env = merge_vault_envs(vaults, pw_file)
+        output.success(f"Loaded {len(env)} env vars from {', '.join(vaults)}")
+        return env
+
+
+def _setup_tunnels(
+    tunnels: TunnelConfig,
+    resolved_out: list[ResolvedTunnelOut],
+) -> TunnelManager:
+    """Setup SSH tunnels."""
+    tunnel_manager = TunnelManager()
+
+    created_tunnels: set[tuple[int, str]] = set()
+
+    try:
+        for r in resolved_out:
+            tunnel_key = (r.local_port, r.host.ansible_host)
+            if tunnel_key not in created_tunnels:
+                tunnel_manager.start_tunnel_out(r.local_port, r.host)
+                created_tunnels.add(tunnel_key)
+                output.success(f"Tunnel: localhost:{r.local_port} → {r.domain}")
+
+        for spec in tunnels.in_:
+            container_spec = parse_container_tunnel_in(spec)
+            if container_spec:
+                runtime, container, remote_port, local_port, host_spec = container_spec
+                host = resolve_tunnel_host(host_spec)
+                tunnel_manager.start_container_tunnel_in(
+                    runtime, container, remote_port, local_port, host
+                )
+                output.success(
+                    f"Tunnel: localhost:{local_port} ← {container}:{remote_port}@{host_spec}"
+                )
+            else:
+                service, remote_port, host_spec = parse_tunnel_in(spec)
+                host = resolve_tunnel_host(host_spec)
+                tunnel_manager.start_tunnel_in(service, remote_port, host)
+                output.success(
+                    f"Tunnel: localhost:{remote_port} ← {service}@{host_spec}"
                 )
 
-            proxy = caddy_proxies[r.host.ansible_host]
-            proxy.add_route(r.domain, r.local_port, auth=auth)
-            suffix = f" (auth: {auth[0]})" if auth else ""
-            output.success(f"Route: {r.domain} → :{r.local_port}{suffix}")
+        return tunnel_manager
 
-    def setup_proxy_routes(
-        self,
-        proxy_routes: list[ProxyRoute],
-        caddy_proxies: dict[str, CaddyProxy],
-        stack: ExitStack,
-    ) -> None:
-        """Setup proxy routes, resolving host for each route.
+    except TunnelError:
+        tunnel_manager.cleanup()
+        raise
 
-        Args:
-            proxy_routes: List of proxy routes to configure
-            caddy_proxies: Dict to populate with CaddyProxy instances
-            stack: ExitStack that owns cleanup for any CaddyProxy created here
 
-        Raises:
-            CaddyProxyError: If route setup fails
-        """
-        for route in proxy_routes:
-            host = resolve_tunnel_host(route.host)
+def _get_or_create_proxy(
+    host: AnsibleHost,
+    caddy_proxies: dict[str, CaddyProxy],
+    stack: ExitStack,
+) -> CaddyProxy:
+    """Get the cached CaddyProxy for this host, or create and cache one."""
+    if host.ansible_host not in caddy_proxies:
+        caddy_proxies[host.ansible_host] = stack.enter_context(CaddyProxy(host))
+    return caddy_proxies[host.ansible_host]
 
-            if host.ansible_host not in caddy_proxies:
-                caddy_proxies[host.ansible_host] = stack.enter_context(CaddyProxy(host))
 
-            proxy = caddy_proxies[host.ansible_host]
-            proxy.add_proxy_route(
-                route.from_domain,
-                route.from_path,
-                route.to_host,
-                route.to_path,
-            )
-            output.success(
-                f"Route: {route.from_domain}{route.from_path} → {route.to_host}"
-            )
+def _setup_caddy_routes(
+    resolved: list[ResolvedTunnelOut],
+    caddy_proxies: dict[str, CaddyProxy],
+    stack: ExitStack,
+    auth: tuple[str, str] | None = None,
+) -> None:
+    """Setup Caddy dev proxy routes for pre-resolved tunnel-out specs."""
+    for r in resolved:
+        proxy = _get_or_create_proxy(r.host, caddy_proxies, stack)
+        proxy.add_route(r.domain, r.local_port, auth=auth)
+        suffix = f" (auth: {auth[0]})" if auth else ""
+        output.success(f"Route: {r.domain} → :{r.local_port}{suffix}")
 
-    def execute(self, profile: RunProfile) -> int:
-        """Execute profile, return the command's exit code (130 on Ctrl+C).
 
-        Args:
-            profile: Run profile configuration
+def _setup_proxy_routes(
+    proxy_routes: list[ProxyRoute],
+    caddy_proxies: dict[str, CaddyProxy],
+    stack: ExitStack,
+) -> None:
+    """Setup proxy routes, resolving host for each route.
 
-        Raises:
-            ProfileExecutionError: If Caddy requirements not met
-            ConfigError: If env var format is invalid
-            DuplicateEnvVarError: If duplicate env vars found
-            VaultDecryptError: If vault decryption fails
-            TunnelError: If tunnel setup fails
-            CaddyProxyError: If Caddy route setup fails
-        """
-        resolved_out: list[ResolvedTunnelOut] = []
-        if profile.tunnels and profile.tunnels.out:
-            resolved_out = resolve_tunnel_out_specs(profile.tunnels.out)
+    Args:
+        proxy_routes: List of proxy routes to configure
+        caddy_proxies: Dict to populate with CaddyProxy instances
+        stack: ExitStack that owns cleanup for any CaddyProxy created here
 
-        if resolved_out:
-            check_result = self.check_caddy_requirements(resolved_out)
-            if not check_result.success:
-                messages = []
-                if check_result.missing_hosts:
-                    messages.append(
-                        f"Dev proxy not installed on: {', '.join(check_result.missing_hosts)}\n"
-                        f"Run: slipp bootstrap <host> proxy --email <email>"
-                    )
-                if check_result.unreachable_hosts:
-                    messages.append(
-                        "Could not reach: "
-                        + "; ".join(check_result.unreachable_hosts)
-                        + "\nCheck SSH access/keys before bootstrapping"
-                    )
-                raise ProfileExecutionError("\n".join(messages))
+    Raises:
+        CaddyProxyError: If route setup fails
+    """
+    for route in proxy_routes:
+        host = resolve_tunnel_host(route.host)
+        proxy = _get_or_create_proxy(host, caddy_proxies, stack)
+        proxy.add_proxy_route(
+            route.from_domain,
+            route.from_path,
+            route.to_host,
+            route.to_path,
+        )
+        output.success(f"Route: {route.from_domain}{route.from_path} → {route.to_host}")
 
-        env: dict[str, str] = {}
-        caddy_proxies: dict[str, CaddyProxy] = {}
 
-        try:
-            with ExitStack() as stack:
-                if profile.vaults:
-                    output.info("Loading vault secrets...")
-                    env = self.load_vault_secrets(profile.vaults)
+def execute_profile(profile: RunProfile) -> int:
+    """Execute profile, return the command's exit code (130 on Ctrl+C).
 
-                if profile.env:
-                    cli_env = parse_env_vars(profile.env)
-                    env = {**env, **cli_env}
+    Args:
+        profile: Run profile configuration
 
-                if profile.tunnels and (resolved_out or profile.tunnels.in_):
-                    output.info("Setting up tunnels...")
-                    stack.enter_context(
-                        self.setup_tunnels(profile.tunnels, resolved_out)
-                    )
+    Raises:
+        ProfileExecutionError: If Caddy requirements not met
+        ConfigError: If env var format is invalid
+        DuplicateEnvVarError: If duplicate env vars found
+        VaultDecryptError: If vault decryption fails
+        TunnelError: If tunnel setup fails
+        CaddyProxyError: If Caddy route setup fails
+    """
+    resolved_out: list[ResolvedTunnelOut] = []
+    if profile.tunnels and profile.tunnels.out:
+        resolved_out = resolve_tunnel_out_specs(profile.tunnels.out)
 
-                    if resolved_out:
-                        output.info("Adding Caddy routes...")
-                        auth = None
-                        if profile.tunnels.auth:
-                            username, password_hash = profile.tunnels.auth.split(":", 1)
-                            auth = (username, password_hash)
-                        self.setup_caddy_routes(
-                            resolved_out, caddy_proxies, stack, auth=auth
+    env: dict[str, str] = {}
+    caddy_proxies: dict[str, CaddyProxy] = {}
+
+    try:
+        with ExitStack() as stack:
+            if resolved_out:
+                check_result = _check_caddy_requirements(
+                    resolved_out, caddy_proxies, stack
+                )
+                if not check_result.success:
+                    messages = []
+                    if check_result.missing_hosts:
+                        messages.append(
+                            f"Dev proxy not installed on: {', '.join(check_result.missing_hosts)}\n"
+                            f"Run: slipp bootstrap <host> proxy --email <email>"
                         )
+                    if check_result.unreachable_hosts:
+                        messages.append(
+                            "Could not reach: "
+                            + "; ".join(check_result.unreachable_hosts)
+                            + "\nCheck SSH access/keys before bootstrapping"
+                        )
+                    raise ProfileExecutionError("\n".join(messages))
 
-                if profile.proxy:
-                    output.info("Adding proxy routes...")
-                    self.setup_proxy_routes(profile.proxy, caddy_proxies, stack)
+            if profile.vaults:
+                output.info("Loading vault secrets...")
+                env = _load_vault_secrets(profile.vaults)
 
-                return run_command(profile.cmd, env=env)
+            if profile.env:
+                cli_env = parse_env_vars(profile.env)
+                env = {**env, **cli_env}
 
-        except KeyboardInterrupt:
-            return 130
+            if profile.tunnels and (resolved_out or profile.tunnels.in_):
+                output.info("Setting up tunnels...")
+                stack.enter_context(_setup_tunnels(profile.tunnels, resolved_out))
+
+                if resolved_out:
+                    output.info("Adding Caddy routes...")
+                    auth = None
+                    if profile.tunnels.auth:
+                        username, password_hash = profile.tunnels.auth.split(":", 1)
+                        auth = (username, password_hash)
+                    _setup_caddy_routes(resolved_out, caddy_proxies, stack, auth=auth)
+
+            if profile.proxy:
+                output.info("Adding proxy routes...")
+                _setup_proxy_routes(profile.proxy, caddy_proxies, stack)
+
+            return run_shell_command(profile.cmd, env=env)
+
+    except KeyboardInterrupt:
+        return 130

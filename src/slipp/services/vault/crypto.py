@@ -4,9 +4,7 @@ Encrypt/decrypt operations, vault file IO, and vault-format introspection
 (listing keys, scanning for encrypted content and vault_* references).
 """
 
-import os
 import re
-import tempfile
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
@@ -14,12 +12,14 @@ from typing import Iterator
 import yaml
 
 from slipp.utils.cli_tools import check_tool_installed, run_checked
+from slipp.utils.config_store import config_store_lock
 from slipp.utils.errors import (
     AnsibleVaultNotInstalledError,
     VaultDecryptError,
     VaultError,
     VaultFileNotFoundError,
 )
+from slipp.utils.files import atomic_write_text, temp_secret_file
 
 
 class _VaultLoader(yaml.SafeLoader):
@@ -55,16 +55,10 @@ def vault_password_file(confirm: bool = True) -> Iterator[Path]:
     """
     from slipp import output
 
-    password = output.prompt_password("Vault password", confirm=confirm)
+    password = output.prompt_password("Vault password", require_confirmation=confirm)
 
-    # mkstemp already creates the file 0600; no extra chmod needed.
-    fd, path = tempfile.mkstemp(prefix="vault_pass_", text=True)
-    try:
-        with os.fdopen(fd, "w") as f:
-            f.write(password)
-        yield Path(path)
-    finally:
-        Path(path).unlink(missing_ok=True)
+    with temp_secret_file(password, prefix="vault_pass_") as path:
+        yield path
 
 
 def encrypt_string(
@@ -106,6 +100,30 @@ def encrypt_string(
     return result.stdout
 
 
+def encrypt_secrets(
+    secrets: dict[str, str], *, confirm_password: bool = False
+) -> dict[str, str]:
+    """Encrypt a batch of name -> plaintext pairs under one password prompt.
+
+    Args:
+        secrets: Mapping of secret name to plaintext value.
+        confirm_password: Prompt twice and verify match (for a brand-new vault).
+
+    Returns:
+        Dict mapping name to encrypted YAML snippet (encrypt_string() output).
+
+    Raises:
+        AnsibleVaultNotInstalledError: If ansible-vault not installed.
+        VaultError: If encryption fails.
+        PasswordMismatchError: If confirm_password=True and passwords don't match.
+    """
+    with vault_password_file(confirm=confirm_password) as pw_file:
+        return {
+            name: encrypt_string(value, name, password_file=pw_file)
+            for name, value in secrets.items()
+        }
+
+
 def list_keys(vault_path: Path) -> list[str]:
     """List variable names from an inline vault file.
 
@@ -121,7 +139,7 @@ def list_keys(vault_path: Path) -> list[str]:
     Raises:
         VaultFileNotFoundError: If vault file doesn't exist
     """
-    if not vault_path.exists():
+    if not vault_path.is_file():
         raise VaultFileNotFoundError(f"Vault file not found: {vault_path}")
 
     with open(vault_path) as f:
@@ -129,21 +147,41 @@ def list_keys(vault_path: Path) -> list[str]:
 
     if data is None:
         return []
+    if not isinstance(data, dict):
+        raise VaultDecryptError(
+            f"Expected YAML mapping in {vault_path}, got {type(data).__name__}"
+        )
 
     return list(data.keys())
 
 
-def append_to_vault(vault_path: Path, encrypted_yaml: str) -> None:
-    """Append encrypted YAML to vault file.
+def write_missing_secrets(vault_path: Path, secrets: dict[str, str]) -> list[str]:
+    """Add secrets for keys not already in the vault, creating it if needed.
+
+    Re-checks existing keys under the vault lock immediately before writing,
+    closing the gap between an earlier unlocked "what's missing" check (e.g.
+    in `SecretSynchronizer.sync()`) and the actual write - without this, two
+    concurrent syncs that both decided the same key was missing would both
+    append/overwrite, leaving a duplicate or clobbered entry.
 
     Args:
         vault_path: Path to vault.yml file
-        encrypted_yaml: Output from encrypt_string()
-    """
-    vault_path.parent.mkdir(parents=True, exist_ok=True)
+        secrets: Dict of {name: encrypted_yaml} for keys believed missing
 
-    with open(vault_path, "a") as f:
-        f.write(encrypted_yaml)
+    Returns:
+        Keys actually written (a subset of `secrets` if another process
+        already added some of them first)
+    """
+    with config_store_lock(vault_path):
+        vault_exists = vault_path.is_file()
+        existing_keys = set(list_keys(vault_path)) if vault_exists else set()
+        to_add = {k: v for k, v in secrets.items() if k not in existing_keys}
+        if not to_add:
+            return []
+
+        existing = vault_path.read_text() if vault_exists else ""
+        atomic_write_text(vault_path, existing + "".join(to_add.values()))
+        return list(to_add.keys())
 
 
 def has_vault_content(path: Path) -> bool:
@@ -158,13 +196,13 @@ def has_vault_content(path: Path) -> bool:
     if path.is_file():
         files = [path]
     else:
-        files = list(path.rglob("*.yml"))
+        files = list(path.rglob("*.yml")) + list(path.rglob("*.yaml"))
 
     for f in files:
         try:
             if "$ANSIBLE_VAULT" in f.read_text():
                 return True
-        except Exception:
+        except (OSError, UnicodeDecodeError):
             continue
     return False
 
@@ -189,24 +227,6 @@ def extract_vault_refs(yaml_content: str) -> set[str]:
     return set(matches)
 
 
-def write_vault(vault_path: Path, secrets: dict[str, str]) -> None:
-    """Write encrypted vault file (overwrites existing).
-
-    Args:
-        vault_path: Path to vault.yml file
-        secrets: Dict of {name: encrypted_yaml} from encrypt_string()
-
-    Note:
-        Each value should be the full output from encrypt_string(),
-        which includes the variable name and !vault tag.
-    """
-    vault_path.parent.mkdir(parents=True, exist_ok=True)
-
-    with open(vault_path, "w") as f:
-        for encrypted_yaml in secrets.values():
-            f.write(encrypted_yaml)
-
-
 def _decrypt_inline_value(encrypted_value: str, password_file: Path) -> str:
     """Decrypt a single inline vault value.
 
@@ -220,16 +240,14 @@ def _decrypt_inline_value(encrypted_value: str, password_file: Path) -> str:
     Raises:
         VaultDecryptError: If decryption fails
     """
-    fd, temp_path = tempfile.mkstemp(prefix="vault_val_", suffix=".yml", text=True)
-    try:
-        with os.fdopen(fd, "w") as f:
-            f.write(encrypted_value)
-
+    with temp_secret_file(
+        encrypted_value, prefix="vault_val_", suffix=".yml"
+    ) as temp_path:
         result = run_checked(
             [
                 "ansible-vault",
                 "decrypt",
-                temp_path,
+                str(temp_path),
                 "--vault-password-file",
                 str(password_file),
                 "--output",
@@ -240,8 +258,6 @@ def _decrypt_inline_value(encrypted_value: str, password_file: Path) -> str:
         )
 
         return result.stdout.strip()
-    finally:
-        Path(temp_path).unlink(missing_ok=True)
 
 
 def decrypt_vault(vault_path: Path, password_file: Path) -> dict[str, str]:
@@ -264,7 +280,7 @@ def decrypt_vault(vault_path: Path, password_file: Path) -> dict[str, str]:
     """
     check_tool_installed("ansible-vault", AnsibleVaultNotInstalledError)
 
-    if not vault_path.exists():
+    if not vault_path.is_file():
         raise VaultFileNotFoundError(f"Vault file not found: {vault_path}")
 
     content = vault_path.read_text()
@@ -286,15 +302,24 @@ def decrypt_vault(vault_path: Path, password_file: Path) -> dict[str, str]:
             secrets = yaml.safe_load(result.stdout)
             if secrets is None:
                 return {}
+            if not isinstance(secrets, dict):
+                raise VaultDecryptError(
+                    f"Expected YAML mapping in {vault_path}, "
+                    f"got {type(secrets).__name__}"
+                )
             return {k: str(v) for k, v in secrets.items()}
         except yaml.YAMLError as e:
-            raise VaultDecryptError(f"Invalid YAML in vault: {e}")
+            raise VaultDecryptError(f"Invalid YAML in vault: {e}") from e
 
     else:
         try:
             data = yaml.load(content, Loader=_VaultLoader)
             if data is None:
                 return {}
+            if not isinstance(data, dict):
+                raise VaultDecryptError(
+                    f"Expected YAML mapping in {vault_path}, got {type(data).__name__}"
+                )
 
             secrets: dict[str, str] = {}
             for key, value in data.items():
@@ -305,4 +330,4 @@ def decrypt_vault(vault_path: Path, password_file: Path) -> dict[str, str]:
 
             return secrets
         except yaml.YAMLError as e:
-            raise VaultDecryptError(f"Invalid YAML in vault: {e}")
+            raise VaultDecryptError(f"Invalid YAML in vault: {e}") from e

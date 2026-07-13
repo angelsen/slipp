@@ -4,6 +4,7 @@ This module handles all file system operations for local project configuration.
 Similar to RegistryIO but for local slipp.yaml files.
 """
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -12,8 +13,9 @@ import yaml
 from slipp import output
 from slipp.models.local_config import ExposeEntry, LocalConfig
 from slipp.models.service import Runtime
-from slipp.services.config.inventory import InventoryService
+from slipp.services.config.inventory import scan_roles_from_directories
 from slipp.services.registry import ProjectRegistry
+from slipp.utils.config_store import config_store_lock
 from slipp.utils.errors import ConfigParseError
 from slipp.utils.files import atomic_write_text
 
@@ -91,18 +93,6 @@ class LocalConfigService:
         return LocalConfigService.find_root(start) or (start or Path.cwd())
 
     @staticmethod
-    def exists(project_root: Path | None = None) -> bool:
-        """Check if local config exists.
-
-        Args:
-            project_root: Project root directory (defaults to cwd)
-
-        Returns:
-            True if slipp.yaml exists
-        """
-        return LocalConfigService.get_config_path(project_root).exists()
-
-    @staticmethod
     def load(project_root: Path | None = None) -> LocalConfig | None:
         """Load config from slipp.yaml if it exists.
 
@@ -120,6 +110,10 @@ class LocalConfigService:
         try:
             with open(config_path) as f:
                 data = yaml.safe_load(f) or {}
+            if isinstance(data, dict):
+                unknown = set(data) - set(LocalConfig.model_fields)
+                for key in sorted(unknown):
+                    output.warning(f"Unknown key in slipp.yaml: {key}")
             return LocalConfig(**data)
         except Exception as e:
             output.warning(f"Ignoring invalid {config_path}: {e}")
@@ -148,7 +142,7 @@ class LocalConfigService:
             name: Project identifier (required)
             inventory_path: Relative path to inventory
             playbook_path: Relative path to playbook
-            roles_path: Role directories for ansible --roles-path
+            roles_path: Role directories (sets ANSIBLE_ROLES_PATH)
             galaxy_path: Install path for ansible-galaxy
             vault_path: Optional vault file path
             runtime: How the app runs (systemd/docker/podman), if known
@@ -161,15 +155,48 @@ class LocalConfigService:
             Created LocalConfig
         """
         root = project_root or Path.cwd()
+        config = LocalConfigService.build(
+            name=name,
+            inventory_path=inventory_path,
+            playbook_path=playbook_path,
+            roles_path=roles_path,
+            galaxy_path=galaxy_path,
+            vault_path=vault_path,
+            runtime=runtime,
+            project_root=root,
+            project_dirs=project_dirs,
+            expose=expose,
+        )
+        LocalConfigService.save(config, root)
+        return config
+
+    @staticmethod
+    def build(
+        name: str,
+        inventory_path: str,
+        playbook_path: str = "playbook.yml",
+        roles_path: list[str] | None = None,
+        galaxy_path: str | None = None,
+        vault_path: str | None = None,
+        runtime: str | None = None,
+        project_root: Path | None = None,
+        project_dirs: list[str] | None = None,
+        expose: dict[str, ExposeEntry] | None = None,
+    ) -> LocalConfig:
+        """Construct a new LocalConfig without writing it to disk.
+
+        Same parameters as `create()`, for callers that need to build a
+        config and save it atomically alongside an existence check (see
+        `create_or_update_with`).
+        """
+        root = project_root or Path.cwd()
 
         managed_roles: list[str] = []
         roles_list = roles_path or []
         if roles_list:
-            managed_roles = InventoryService.scan_roles_from_directories(
-                roles_list, root
-            )
+            managed_roles = scan_roles_from_directories(roles_list, root)
 
-        config = LocalConfig(
+        return LocalConfig(
             name=name,
             inventory=inventory_path,
             playbook=playbook_path,
@@ -181,9 +208,6 @@ class LocalConfigService:
             project_dirs=project_dirs,
             expose=expose,
         )
-
-        LocalConfigService.save(config, root)
-        return config
 
     @staticmethod
     def update(
@@ -202,21 +226,100 @@ class LocalConfigService:
         Raises:
             ConfigParseError: If config doesn't exist or is invalid
         """
+        return LocalConfigService.update_with(lambda _: changes, project_root)
+
+    @staticmethod
+    def update_with(
+        mutator: Callable[[LocalConfig], dict[str, Any]],
+        project_root: Path | None = None,
+    ) -> LocalConfig:
+        """Update existing local config via a read-then-write mutator.
+
+        Unlike `update()`, `changes` isn't known until the current config is
+        loaded - `mutator` receives the config loaded under the lock and
+        returns the changes dict, so callers doing dict-merge updates (e.g.
+        adding one key to `tag_presets`) don't have to load outside the lock
+        to compute `changes`, which would reintroduce the read-modify-write
+        race this lock exists to prevent.
+
+        Args:
+            mutator: Called with the current config; returns a changes dict.
+            project_root: Project root (defaults to cwd)
+
+        Returns:
+            Updated LocalConfig
+
+        Raises:
+            ConfigParseError: If config doesn't exist or is invalid
+        """
         root = project_root or Path.cwd()
-        config = LocalConfigService.load(root)
+        config_path = LocalConfigService.get_config_path(root)
 
-        if config is None:
-            raise ConfigParseError(f"No slipp.yaml found in {root}")
+        with config_store_lock(config_path):
+            config = LocalConfigService.load(root)
 
+            if config is None:
+                if config_path.exists():
+                    raise ConfigParseError(f"Invalid slipp.yaml at {config_path}")
+                raise ConfigParseError(f"No slipp.yaml found in {root}")
+
+            return LocalConfigService._apply_changes(config, mutator, root)
+
+    @staticmethod
+    def _apply_changes(
+        config: LocalConfig,
+        mutator: Callable[[LocalConfig], dict[str, Any]],
+        root: Path,
+    ) -> LocalConfig:
+        """Apply a mutator's changes to `config` and save. Caller holds the lock."""
+        changes = mutator(config)
         updated = config.model_copy(update=changes)
 
         if "roles_path" in changes and changes["roles_path"]:
-            updated.managed_roles = InventoryService.scan_roles_from_directories(
+            updated.managed_roles = scan_roles_from_directories(
                 changes["roles_path"], root
             )
 
         LocalConfigService.save(updated, root)
         return updated
+
+    @staticmethod
+    def create_or_update_with(
+        create: Callable[[], LocalConfig],
+        mutator: Callable[[LocalConfig], dict[str, Any]],
+        project_root: Path | None = None,
+    ) -> tuple[LocalConfig, bool]:
+        """Create a new config, or update the existing one, atomically.
+
+        Re-checks existence under the lock immediately before branching,
+        closing the gap between an earlier unlocked "does it exist" check
+        and the write -- without this, two concurrent callers on a project
+        with no slipp.yaml yet could both take the create path, and the
+        loser's write is silently discarded.
+
+        Args:
+            create: Called with no args to build a brand-new config, if
+                none exists yet.
+            mutator: Called with the current config if one exists; returns
+                a changes dict (same contract as `update_with`).
+            project_root: Project root (defaults to cwd)
+
+        Returns:
+            (config, created) -- created is True if this call created the
+            file, False if it updated an existing one.
+        """
+        root = project_root or Path.cwd()
+        config_path = LocalConfigService.get_config_path(root)
+
+        with config_store_lock(config_path):
+            config = LocalConfigService.load(root)
+
+            if config is None:
+                new_config = create()
+                LocalConfigService.save(new_config, root)
+                return new_config, True
+
+            return LocalConfigService._apply_changes(config, mutator, root), False
 
     @staticmethod
     def save(config: LocalConfig, project_root: Path | None = None) -> Path:
@@ -265,6 +368,12 @@ class LocalConfigService:
         for field in field_order:
             if field in data:
                 ordered_data[field] = data[field]
+        # Any LocalConfig field not listed above still gets written, just
+        # appended after the explicitly ordered ones -- so adding a field
+        # to the model can't silently vanish from slipp.yaml on save.
+        for field, value in data.items():
+            if field not in ordered_data:
+                ordered_data[field] = value
 
         content = (
             "# slipp.yaml - Project configuration (git-tracked)\n"

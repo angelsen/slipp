@@ -16,7 +16,7 @@ from slipp.utils.errors import (
     SSHAuthenticationError,
     SSHCommandError,
     SSHConnectionError,
-    SudoPasswordRequired,
+    SudoPasswordError,
 )
 from slipp.utils.files import get_log_dir, open_log
 
@@ -178,7 +178,7 @@ class SSHResult:
 
 
 class SSHService:
-    """SSH client with connection pooling and best practices.
+    """SSH client with automatic resource cleanup and best practices.
 
     This class provides a secure SSH client wrapper with:
     - Context manager for automatic cleanup
@@ -266,14 +266,21 @@ class SSHService:
                 timeout=10.0,
                 banner_timeout=10.0,
                 auth_timeout=10.0,
-                allow_agent=True,
-                look_for_keys=True,
+                # A configured key_file is a deliberate identity choice (e.g. a
+                # deploy key) — don't let a rejected key silently fall through
+                # to the agent or ~/.ssh/id_* discovery and auth as someone else.
+                allow_agent=not self.config.key_file,
+                look_for_keys=not self.config.key_file,
             )
         except paramiko.AuthenticationException as e:
+            self.client.close()
+            self.client = None
             raise SSHAuthenticationError(
                 f"Authentication failed for {self.config.connection_string()}"
             ) from e
         except Exception as e:
+            self.client.close()
+            self.client = None
             raise SSHConnectionError(
                 f"Failed to connect to {self.config.connection_string()}: {e}"
             ) from e
@@ -283,7 +290,7 @@ class SSHService:
 
         Probes ``sudo -n true``; on failure prompts for the password (main
         thread + tty only), verifies it, and caches it for every later
-        SSHService to the same connection. Raises SudoPasswordRequired when
+        SSHService to the same connection. Raises SudoPasswordError when
         prompting is impossible or the password is rejected 3 times.
         """
         key = self.config.connection_string()
@@ -293,7 +300,7 @@ class SSHService:
             _sudo_passwordless.add(key)
             return
         if not _can_prompt():
-            raise SudoPasswordRequired(
+            raise SudoPasswordError(
                 f"{context}: sudo requires a password on {key} and no "
                 "terminal is available to prompt. Run a single-host command "
                 "from a terminal (e.g. 'slipp ps -p <project>') to enter it."
@@ -323,11 +330,9 @@ class SSHService:
                 None,
             )
             if fatal:
-                raise SudoPasswordRequired(f"{context}: {fatal}")
+                raise SudoPasswordError(f"{context}: {fatal}")
             output.warning("Sudo password rejected, try again.")
-        raise SudoPasswordRequired(
-            f"{context}: sudo password rejected after 3 attempts."
-        )
+        raise SudoPasswordError(f"{context}: sudo password rejected after 3 attempts.")
 
     def _prepare_sudo_command(self, command: str) -> tuple[str, str | None]:
         """Rewrite a sudo command to read the password from stdin.
@@ -362,7 +367,7 @@ class SSHService:
         return f"LC_MESSAGES=C sudo {rest}", None
 
     def check_sudo(self, result: SSHResult, context: str) -> None:
-        """Raise SudoPasswordRequired if a result looks like a sudo auth failure."""
+        """Raise SudoPasswordError if a result looks like a sudo auth failure."""
         if (
             not result.ok
             and not result.stdout.strip()
@@ -378,7 +383,7 @@ class SSHService:
                 else "Commands with embedded sudo can't be prompted for a "
                 "password; use a leading sudo (e.g. 'slipp exec -u root ...')."
             )
-            raise SudoPasswordRequired(
+            raise SudoPasswordError(
                 f"{context}: sudo requires a password on this host. {hint}"
             )
 

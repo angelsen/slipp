@@ -4,9 +4,8 @@ from pathlib import Path
 
 from slipp.generator.compose_generator import generate_compose
 from slipp.models.deployment import ComposeConfig
-from slipp.models.service import Runtime
 from slipp.services.launch.context import FullContext
-from slipp.services.launch.stages.common import FileGenerationStage
+from slipp.services.launch.stages.common import FileGenerationStage, is_systemd_runtime
 
 
 class ComposeGenerationStage(FileGenerationStage[FullContext]):
@@ -30,10 +29,8 @@ class ComposeGenerationStage(FileGenerationStage[FullContext]):
             Dictionary mapping docker-compose.yml path to generated YAML
             content, or empty if the runtime is systemd.
         """
-        if context.inventory_config is not None:
-            first_host = context.inventory_config.first_host
-            if first_host.runtime == Runtime.SYSTEMD:
-                return {}
+        if is_systemd_runtime(context):
+            return {}
 
         compose_config = ComposeConfig(
             services=context.services,

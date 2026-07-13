@@ -4,8 +4,8 @@ import shlex
 import subprocess
 
 from slipp.models.host import AnsibleHost
-from slipp.services.ssh import CommandBuilder, SSHService, build_ssh_command
-from slipp.utils.errors import ImageTransferError
+from slipp.services.ssh import SSHService, build_ssh_command, build_vps_command
+from slipp.utils.errors import ImageTransferError, SSHCommandError
 
 
 def detect_local_runtime(image: str) -> str | None:
@@ -62,13 +62,15 @@ def list_images(
     else:
         base_cmd = f"{remote_runtime} images --format '{fmt}'"
 
-    cmd = CommandBuilder.vps_command("root", base_cmd, ssh_config.ansible_user)
+    cmd = build_vps_command("root", base_cmd, ssh_config.ansible_user)
 
     with SSHService(ssh_config) as ssh:
         result = ssh.execute(cmd)
 
-    if not result.ok:
-        raise ImageTransferError(f"Failed to list images: {result.stderr.strip()}")
+    try:
+        result.check("Failed to list images")
+    except SSHCommandError as e:
+        raise ImageTransferError(str(e)) from e
 
     if not result.stdout.strip():
         return []
@@ -107,7 +109,7 @@ def push_image(
         stderr=subprocess.PIPE,
     )
 
-    load_cmd = CommandBuilder.vps_command(
+    load_cmd = build_vps_command(
         "root", f"{remote_runtime} load", ssh_config.ansible_user
     )
     ssh_cmd = build_ssh_command(ssh_config, remote_command=load_cmd)
@@ -140,12 +142,11 @@ def push_image(
         raise ImageTransferError(message)
 
     if rename and rename != image:
-        tag_cmd = CommandBuilder.vps_command(
+        tag_cmd = build_vps_command(
             "root", f"{remote_runtime} tag {image} {rename}", ssh_config.ansible_user
         )
         with SSHService(ssh_config) as ssh:
-            tag_result = ssh.execute(tag_cmd)
-            if not tag_result.ok:
-                raise ImageTransferError(
-                    f"Failed to tag image as {rename}\n{tag_result.text.strip()}"
-                )
+            try:
+                ssh.execute(tag_cmd).check(f"Failed to tag image as {rename}")
+            except SSHCommandError as e:
+                raise ImageTransferError(str(e)) from e

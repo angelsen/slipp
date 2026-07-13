@@ -4,12 +4,11 @@ import asyncio
 import base64
 import hashlib
 import json
-import logging
 
 from aiohttp import web
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-logger = logging.getLogger(__name__)
+from slipp import output
 
 
 class CallbackServer:
@@ -28,6 +27,7 @@ class CallbackServer:
         self._app = web.Application()
         self._app.router.add_get("/callback", self._handle_callback)
         self._runner: web.AppRunner | None = None
+        self._received = asyncio.Event()
 
     async def start(self) -> None:
         """Start the callback server."""
@@ -69,11 +69,12 @@ class CallbackServer:
         try:
             raw_credentials = self._decrypt(encrypted)
             self.credentials = raw_credentials.get("resources")
+            self._received.set()
             raise web.HTTPFound(location=raw_credentials["successUrl"])
         except web.HTTPFound:
             raise
-        except Exception:
-            logger.warning("Credential decryption failed", exc_info=True)
+        except Exception as e:
+            output.warning(f"Credential decryption failed: {e}")
             return web.Response(text="Decryption failed", status=400)
 
     def _decrypt(self, encrypted: str) -> dict:
@@ -114,9 +115,8 @@ class CallbackServer:
         Returns:
             Received credentials list, or None if timeout reached.
         """
-        start = asyncio.get_event_loop().time()
-        while asyncio.get_event_loop().time() - start < timeout:
-            if self.credentials is not None:
-                return self.credentials
-            await asyncio.sleep(0.5)
-        return None
+        try:
+            await asyncio.wait_for(self._received.wait(), timeout)
+        except asyncio.TimeoutError:
+            return None
+        return self.credentials

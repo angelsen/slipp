@@ -20,6 +20,26 @@ from slipp.services.launch.context import (
 )
 from slipp.utils.errors import LaunchError
 
+
+def resolve_runtime(context: ScanContext) -> Runtime | None:
+    """The effective runtime for this launch context, if known yet.
+
+    Prefers the first inventory host's runtime when inventory is loaded;
+    falls back to DockerfileContext.container_runtime for contexts that
+    haven't loaded inventory yet. None if neither source is available.
+    """
+    if context.inventory_config is not None:
+        return context.inventory_config.first_host.runtime
+    if isinstance(context, DockerfileContext):
+        return Runtime(context.container_runtime)
+    return None
+
+
+def is_systemd_runtime(context: ScanContext) -> bool:
+    """True when this launch context targets systemd (no container image/compose)."""
+    return resolve_runtime(context) == Runtime.SYSTEMD
+
+
 CtxT = TypeVar("CtxT", bound=BaseContext)
 T = TypeVar("T")
 
@@ -47,6 +67,25 @@ def require(value: T | None, what: str) -> T:
     if value is None:
         raise LaunchError(f"Internal pipeline error: {what} not set by a prior stage")
     return value
+
+
+def skip_if_dry_run(context: BaseContext, action: str) -> bool:
+    """Print a dry-run notice and report whether the caller should skip.
+
+    Shared by registration stages, which perform a real side effect
+    (writing slipp.yaml + registering globally) that dry-run must not do.
+
+    Args:
+        context: Any launch context (dry_run + project_name live on BaseContext).
+        action: Verb phrase for the notice, e.g. "register project".
+
+    Returns:
+        True if this is a dry run and the caller should return early.
+    """
+    if context.dry_run:
+        output.info(f"Dry run: would {action} '{context.project_name}'")
+        return True
+    return False
 
 
 def resolve_expose(context: FullContext, domain: str) -> dict[str, ExposeEntry]:
@@ -92,6 +131,21 @@ def resolve_expose(context: FullContext, domain: str) -> dict[str, ExposeEntry]:
         else:
             context.expose = default_expose(context.services, domain)
     return context.expose
+
+
+def relative_or_absolute(path: Path, root: Path) -> str:
+    """Path relative to root when nested inside it, else absolute.
+
+    User-supplied paths (--dir, --inventory, --roles-path) can point
+    anywhere on disk, not just inside the project root -- relative_to()
+    raises for a sibling/unrelated directory, so this falls back to
+    storing the absolute path rather than failing registration over a
+    cosmetic preference.
+    """
+    try:
+        return str(path.relative_to(root))
+    except ValueError:
+        return str(path)
 
 
 def is_customized(path: Path) -> bool:
@@ -140,7 +194,7 @@ def write_generated_file(
             inventory files (hosts, vars.yml, vault.yml), which carry no
             marker and may hold real secrets from a prior run.
     """
-    display_path = str(path.relative_to(context.output_dir))
+    display_path = relative_or_absolute(path, context.output_dir)
 
     if context.dry_run:
         output.hint(f"  Would create: {display_path}")
@@ -159,7 +213,7 @@ def write_generated_file(
     is_new_file = not path.exists()
     path.write_text(content)
     icon = output.ICON_CHECK if is_new_file else output.ICON_REFRESH
-    output.list_items([display_path], bullet=icon)
+    output.list_items([display_path], bullet_char=icon)
     context.generated_files.append(path)
 
 

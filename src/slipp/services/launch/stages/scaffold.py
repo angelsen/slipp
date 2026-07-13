@@ -13,7 +13,12 @@ from slipp.services.ansible import (
 )
 from slipp.services.launch.context import ScaffoldContext
 from slipp.services.launch.registration import register_project
-from slipp.services.launch.stages.common import require, write_generated_file
+from slipp.services.launch.stages.common import (
+    relative_or_absolute,
+    require,
+    skip_if_dry_run,
+    write_generated_file,
+)
 from slipp.utils.errors import LaunchError
 
 
@@ -113,10 +118,7 @@ class ScaffoldInventoryStage:
             return
 
         host_inventory_dir = require(context.inventory_dir, "inventory dir")
-
-        host_inventory_dir.mkdir(parents=True, exist_ok=True)
         inventory_dir = context.output_dir / "inventory"
-        inventory_dir.mkdir(parents=True, exist_ok=True)
 
         hosts_content = f"""[{context.host_group}]
 {context.hostname} ansible_host={context.host_ip} ansible_user=slipp ansible_become=true ansible_become_user=root
@@ -155,8 +157,7 @@ class ScaffoldRegistrationStage:
         so a broken registration can't be masked by a false "Scaffold
         complete!" summary.
         """
-        if context.dry_run:
-            output.info(f"Dry run: would register project '{context.project_name}'")
+        if skip_if_dry_run(context, "register project"):
             return
 
         host_inventory_dir = require(context.inventory_dir, "inventory dir")
@@ -166,7 +167,7 @@ class ScaffoldRegistrationStage:
         if context.roles_path:
             roles_path_obj = Path(context.roles_path)
             galaxy_path = (
-                str(roles_path_obj.relative_to(context.output_dir))
+                relative_or_absolute(roles_path_obj, context.output_dir)
                 if roles_path_obj.is_absolute()
                 else str(roles_path_obj)
             )
@@ -178,7 +179,8 @@ class ScaffoldRegistrationStage:
             playbook_path=str(playbook_path.relative_to(context.output_dir)),
             galaxy_path=galaxy_path,
             vault_path=str(
-                host_inventory_dir.relative_to(context.output_dir) / "vault.yml"
+                Path(relative_or_absolute(host_inventory_dir, context.output_dir))
+                / "vault.yml"
             ),
         )
 
@@ -198,8 +200,11 @@ class ScaffoldSummaryStage:
 
         output.stdout(f"Generated {len(context.generated_files)} files:")
         output.list_items(
-            [str(f.relative_to(context.output_dir)) for f in context.generated_files],
-            bullet=output.ICON_BULLET,
+            [
+                relative_or_absolute(f, context.output_dir)
+                for f in context.generated_files
+            ],
+            bullet_char=output.ICON_BULLET,
         )
 
         output.blank()

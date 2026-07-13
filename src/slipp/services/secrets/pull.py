@@ -13,7 +13,7 @@ from slipp.services.secrets.nor_auth import (
     PullSession,
     find_available_port,
 )
-from slipp.services.vault import append_to_vault, encrypt_string, vault_password_file
+from slipp.services.vault import encrypt_secrets, write_missing_secrets
 from slipp.utils.errors import ProjectNotFoundError, PullTimeoutError, VaultError
 
 
@@ -80,10 +80,8 @@ def _store_in_vault(
     """
     vault_path = _resolve_vault_path(target)
 
-    with vault_password_file(confirm=False) as pw_file:
-        for var_name, value in variables.items():
-            encrypted = encrypt_string(value, var_name, password_file=pw_file)
-            append_to_vault(vault_path, encrypted)
+    encrypted = encrypt_secrets(variables, confirm_password=not vault_path.exists())
+    write_missing_secrets(vault_path, encrypted)
 
     return variables
 

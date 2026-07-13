@@ -1,14 +1,20 @@
 """Dockerfile generation stage."""
 
+from pathlib import Path
+
 from slipp import output
 from slipp.generator import TemplateGenerator
 from slipp.models.service import Runtime
-from slipp.services.launch.context import DockerfileContext, ScanContext
-from slipp.services.launch.stages.common import write_generated_file
+from slipp.services.launch.context import ScanContext
+from slipp.services.launch.stages.common import (
+    FileGenerationStage,
+    resolve_runtime,
+    require,
+)
 from slipp.utils.errors import LaunchError
 
 
-class DockerfileGenerationStage:
+class DockerfileGenerationStage(FileGenerationStage[ScanContext]):
     """Generate Dockerfiles for all services.
 
     Generates Dockerfile templates for each service in the configuration
@@ -21,7 +27,9 @@ class DockerfileGenerationStage:
     """
 
     def __init__(self, template_generator: TemplateGenerator):
+        super().__init__("Generating Dockerfiles")
         self.generator = template_generator
+        self._runtime: Runtime | None = None
 
     def execute(self, context: ScanContext) -> None:
         """Generate and write Dockerfiles for all services.
@@ -34,12 +42,8 @@ class DockerfileGenerationStage:
             context: Launch context containing services, inventory config,
                 and generation options.
         """
-        if context.inventory_config is not None:
-            first_host = context.inventory_config.first_host
-            runtime = first_host.runtime
-        elif isinstance(context, DockerfileContext):
-            runtime = Runtime(context.container_runtime)
-        else:
+        runtime = resolve_runtime(context)
+        if runtime is None:
             raise LaunchError(
                 "No inventory config loaded and no container_runtime available"
             )
@@ -48,20 +52,27 @@ class DockerfileGenerationStage:
             output.info("Skipping Dockerfiles (systemd runtime, no container image)")
             return
 
-        output.info("Generating Dockerfiles...")
+        self._runtime = runtime
+        super().execute(context)
 
+    def generate_content(self, context: ScanContext) -> dict[Path, str]:
+        """Generate Dockerfile content for every service.
+
+        Args:
+            context: Launch context containing services and generation options.
+
+        Returns:
+            Dictionary mapping each generated Dockerfile path to its content.
+        """
+        runtime = require(self._runtime, "runtime")
+
+        content: dict[Path, str] = {}
         for service in context.services:
-            try:
-                files = self.generator.generate(
-                    service=service,
-                    output_dir=service.path,
-                    container_runtime=runtime.value,
-                )
+            file = self.generator.generate(
+                service=service,
+                output_dir=service.path,
+                container_runtime=runtime,
+            )
+            content[file.path] = file.content
 
-                for file in files:
-                    write_generated_file(
-                        file.path, file.content, context, respect_customized=True
-                    )
-
-            except Exception as e:
-                raise LaunchError(f"Failed to generate {service.name}: {e}") from e
+        return content

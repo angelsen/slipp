@@ -1,19 +1,27 @@
 """Simple JSON-based cache with TTL support."""
 
 import json
+import os
 import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from slipp.utils.files import atomic_write_text
+
 
 class Cache:
     """Simple file-based cache with TTL (Time To Live).
 
-    Cache is stored as JSON in ~/.cache/slipp/cache.json. Multiple `Cache`
-    instances (e.g. one per host during parallel discovery) share a
-    class-level lock and reload from disk on every read/write so concurrent
-    instances don't clobber each other's entries.
+    Cache is stored as JSON in ~/.cache/slipp/cache.json (or
+    $XDG_CACHE_HOME/slipp/cache.json). Multiple `Cache`
+    instances within one process (e.g. one per host during parallel
+    discovery) share a class-level thread lock and reload from disk on
+    every read/write so concurrent instances don't clobber each other's
+    entries. This does not guard against concurrent separate `slipp`
+    processes, which have no cross-process file lock - acceptable since
+    cache entries are TTL'd and losing one to a race just costs an extra
+    network round trip, not correctness.
 
     Example:
         >>> cache = Cache()
@@ -27,7 +35,10 @@ class Cache:
 
     def __init__(self):
         """Initialize cache."""
-        cache_dir = Path.home() / ".cache" / "slipp"
+        xdg_cache = os.getenv("XDG_CACHE_HOME")
+        cache_dir = (
+            Path(xdg_cache) / "slipp" if xdg_cache else Path.home() / ".cache" / "slipp"
+        )
 
         self.cache_dir = cache_dir
         self.cache_file = cache_dir / "cache.json"
@@ -52,9 +63,9 @@ class Cache:
     def _save(self) -> None:
         """Save cache to disk."""
         try:
-            with open(self.cache_file, "w") as f:
-                json.dump(self._cache, f, indent=2, default=str)
-        except IOError:
+            content = json.dumps(self._cache, indent=2, default=str)
+            atomic_write_text(self.cache_file, content)
+        except (IOError, OSError):
             pass
 
     def get(self, key: str) -> Any | None:

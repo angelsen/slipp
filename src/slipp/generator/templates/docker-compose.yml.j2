@@ -6,7 +6,7 @@ services:
 {% for service in services %}
   {{ service.name }}:
     build:
-      context: ./{{ service.path.replace(project_root + '/', '') if service.path.startswith(project_root) else service.path }}
+      context: {{ service.build_context }}
       dockerfile: Dockerfile
     ports:
       - "{{ service.port }}:{{ service.port }}"

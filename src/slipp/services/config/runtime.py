@@ -66,7 +66,7 @@ class RuntimeDetector:
             return None
 
         try:
-            output = run_list_tasks(playbook, inventory).lower()
+            output = run_list_tasks(playbook, inventory, config.roles_path).lower()
 
             has_docker = "docker" in output
             has_podman = "podman" in output

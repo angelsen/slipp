@@ -6,20 +6,23 @@ from typing import Annotated
 import typer
 
 from slipp import output
-from slipp.commands.deploy import deploy_command
+from slipp.commands.common import sync_wg_manage_after_deploy
 from slipp.commands.dns import sync_and_report
 from slipp.commands.provision import provision_or_exit
-from slipp.services import wg_manage
-from slipp.services.providers import (
-    ProviderConfigService,
-    register_domain_interactive,
-)
-from slipp.constants import DEFAULT_ENV
+from slipp.constants import DEFAULT_ENV, DEFAULT_SSH_PORT, DEFAULT_SSH_USER
 from slipp.models.deployment import DeploymentHostConfig, InventoryConfig
 from slipp.models.service import Runtime
+from slipp.services import wg_manage
+from slipp.services.config import LocalConfigService
+from slipp.services.deploy import run_deploy
 from slipp.services.launch import FullContext, run_full_pipeline
-from slipp.services.providers import get_gigahost_client
-from slipp.utils.errors import LaunchError, ProviderError
+from slipp.services.providers import (
+    GigahostClient,
+    ProviderConfigService,
+    ensure_domain_registered,
+    get_gigahost_client,
+)
+from slipp.utils.errors import DeployError, LaunchError, ProviderError
 
 VALID_DNS_MODES = ["auto", "manual"]
 
@@ -100,17 +103,26 @@ def up_command(
         output.error(f"--dns must be one of: {', '.join(VALID_DNS_MODES)}")
         raise typer.Exit(1)
 
-    client = get_gigahost_client()
+    _client: GigahostClient | None = None
+
+    def get_client() -> GigahostClient:
+        nonlocal _client
+        if _client is None:
+            _client = get_gigahost_client()
+        return _client
+
     step = _StepCounter()
 
     if host:
         ip = host
         output.info(f"Using existing host: {ip}")
-        ssh_user = "root"
-        output.hint("Assuming SSH user 'root' -- edit inventory if different")
+        ssh_user = DEFAULT_SSH_USER
+        output.hint(
+            f"Assuming SSH user '{DEFAULT_SSH_USER}' -- edit inventory if different"
+        )
     else:
         step("Provisioning server...")
-        ip = provision_or_exit(client, name)
+        ip = provision_or_exit(get_client(), name)
         ssh_user = "slipp"
 
     if hub:
@@ -120,15 +132,7 @@ def up_command(
     if resolved_domain:
         step(f"Checking domain {resolved_domain}...")
         try:
-            available, reason = client.check_domain(resolved_domain)
-            if available:
-                register_domain_interactive(client, resolved_domain)
-                output.success(f"Registered {resolved_domain}")
-            else:
-                output.info(
-                    f"{resolved_domain} already registered"
-                    + (f": {reason}" if reason else "")
-                )
+            ensure_domain_registered(get_client(), resolved_domain)
         except ProviderError as e:
             output.error(f"Domain registration failed: {e}")
             raise typer.Exit(1)
@@ -149,7 +153,7 @@ def up_command(
                     inventory_hostname=environment,
                     ansible_host=ip,
                     ansible_user=ssh_user,
-                    ansible_port=22,
+                    ansible_port=DEFAULT_SSH_PORT,
                     app_domain=resolved_domain,
                     admin_email=f"admin@{resolved_domain}",
                     runtime=Runtime.DOCKER,
@@ -168,12 +172,19 @@ def up_command(
         output.hint(f"Point {resolved_domain} A record to {ip}")
     else:
         step(f"Syncing DNS for {resolved_domain}...")
-        sync_and_report(client, resolved_domain, ip)
+        sync_and_report(get_client(), resolved_domain, ip)
 
     step("Deploying...")
-    deploy_command(target=environment)
+    project_root = LocalConfigService.resolve_root()
+    try:
+        result = run_deploy(project_root, name, environment, tags=None, skip_tags=None)
+    except DeployError as e:
+        output.error(str(e))
+        raise typer.Exit(1)
+
+    if result.exit_code != 0:
+        raise typer.Exit(result.exit_code)
+
+    sync_wg_manage_after_deploy(project_root, name)
 
     output.success("slipp up complete")
-
-
-__all__ = ["up_command"]

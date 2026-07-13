@@ -65,9 +65,7 @@ def _test_ssh_connectivity(host: str, user: str, port: int) -> bool:
         return False
 
 
-def get_inventory_config(
-    environment: str = DEFAULT_ENV, reconfigure: bool = False
-) -> InventoryConfig:
+def get_inventory_config(environment: str = DEFAULT_ENV) -> InventoryConfig:
     """Get inventory configuration via interactive prompts.
 
     Prompts for:
@@ -80,7 +78,6 @@ def get_inventory_config(
 
     Args:
         environment: Environment name (production, dev, staging, etc.)
-        reconfigure: If True, skip loading existing configuration
 
     Returns:
         InventoryConfig with specified environment host populated
@@ -119,7 +116,7 @@ def get_inventory_config(
 
     valid_runtimes = [r.value for r in Runtime]
     while True:
-        runtime = output.prompt("Runtime", default=Runtime.PODMAN.value)
+        runtime = output.prompt("Runtime", default=Runtime.DOCKER.value)
         if runtime in valid_runtimes:
             break
         output.warning(

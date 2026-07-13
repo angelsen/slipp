@@ -1,11 +1,11 @@
-"""Ansible playbook generator for Podman deployments."""
+"""Ansible playbook generator for docker/podman/systemd deployments."""
 
 from slipp.generator.env import render_template
 from slipp.models.deployment import ProvisionConfig
 
 
 def generate_playbook(config: ProvisionConfig) -> str:
-    """Generate Ansible playbook.yml content for Podman systemd deployments.
+    """Generate Ansible playbook.yml content for docker/podman/systemd deployments.
 
     Args:
         config: Provision configuration with services, inventory, and Caddy config

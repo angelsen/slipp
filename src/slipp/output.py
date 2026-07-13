@@ -49,7 +49,7 @@ LAUNCH_FRAMES = [
     "",
 ]
 
-_console = Console()
+_console = Console(markup=False, highlight=False)
 _err_console = Console(stderr=True)
 
 _output_format: OutputFormat = OutputFormat.table
@@ -67,12 +67,12 @@ def _print_data(msg: str) -> None:
 
 def success(msg: str) -> None:
     """✓ green on stderr."""
-    _print_ui(f"[green]✓[/green] {msg}")
+    _print_ui(f"[green]{ICON_CHECK}[/green] {msg}")
 
 
 def error(msg: str) -> None:
     """✗ red on stderr."""
-    _err_console.print(f"[red]✗[/red] {msg}")
+    _print_ui(f"[red]✗[/red] {msg}")
 
 
 def info(msg: str) -> None:
@@ -105,6 +105,13 @@ def stdout(data: str) -> None:
     _print_data(data)
 
 
+def json(data: Any) -> None:
+    """Serialize data as indented JSON to stdout."""
+    import json as _json
+
+    stdout(_json.dumps(data, indent=2))
+
+
 def kv(key: str, value: Any, indent: int = 0) -> None:
     """key: value pair on stderr."""
     prefix = "  " * indent
@@ -121,15 +128,13 @@ def table(rows: list[dict[str, Any]]) -> None:
     """Display rows as a table, or as JSON when output format is json.
 
     Headers are uppercase. Numbers are right-aligned, text is left-aligned.
-    Empty list produces no output.
+    An empty list produces "[]" in JSON mode, no output in table mode.
     """
-    if not rows:
+    if _output_format == OutputFormat.json:
+        json(rows)
         return
 
-    if _output_format == OutputFormat.json:
-        import json
-
-        stdout(json.dumps(rows, indent=2))
+    if not rows:
         return
 
     tbl = Table(
@@ -154,10 +159,32 @@ def table(rows: list[dict[str, Any]]) -> None:
     _err_console.print(tbl)
 
 
+def empty_or_table(
+    rows: list[dict[str, Any]],
+    empty_msg: str,
+    *,
+    hint_msg: str | None = None,
+    warn: bool = False,
+) -> None:
+    """Display rows as a table, or an info/warning message if empty.
+
+    Always calls table() -- including on the empty path, so JSON mode still
+    emits "[]" rather than nothing.
+    """
+    if not rows:
+        (warning if warn else info)(empty_msg)
+        if hint_msg:
+            hint(hint_msg)
+        table([])
+        return
+
+    table(rows)
+
+
 def list_items(
     items: list[str],
     numbered: bool = False,
-    bullet: str = ICON_BULLET,
+    bullet_char: str = ICON_BULLET,
     indent: int = 0,
 ) -> None:
     """Display bulleted or numbered list on stderr.
@@ -167,7 +194,7 @@ def list_items(
     """
     indent_str = "  " * indent
     for i, item in enumerate(items, 1):
-        prefix = f"{i}." if numbered else bullet
+        prefix = f"{i}." if numbered else bullet_char
         line = f"{indent_str}  {prefix} {item}"
         _err_console.print(line)
 
@@ -252,12 +279,14 @@ def confirm(question: str, *, default: bool = False) -> bool:
     return typer.confirm(question, default=default, err=True)
 
 
-def prompt_password(question: str = "Password", confirm: bool = False) -> str:
+def prompt_password(
+    question: str = "Password", require_confirmation: bool = False
+) -> str:
     """Password input with optional confirmation.
 
     Prompt text goes to stderr so a prompt mid-command never corrupts
-    piped stdout. Raises PasswordMismatchError if confirm=True and
-    passwords don't match.
+    piped stdout. Raises PasswordMismatchError if require_confirmation=True
+    and passwords don't match.
     """
     import typer
 
@@ -265,7 +294,7 @@ def prompt_password(question: str = "Password", confirm: bool = False) -> str:
 
     password = typer.prompt(question, hide_input=True, err=True)
 
-    if confirm:
+    if require_confirmation:
         password2 = typer.prompt("Confirm password", hide_input=True, err=True)
         if password != password2:
             raise PasswordMismatchError("Passwords do not match")

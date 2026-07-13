@@ -4,8 +4,6 @@ Displays projects in table format by default or JSON with -o json.
 Loads host details from each project's inventory on-demand.
 """
 
-import json
-
 from slipp import output
 from slipp.constants import OutputFormat
 from slipp.services.config import load_project_hosts
@@ -18,8 +16,12 @@ def list_command() -> None:
     projects = project_registry.list_all()
 
     if not projects:
-        output.warning("No projects registered yet")
-        output.hint("Deploy a project with 'slipp deploy' to register it automatically")
+        output.empty_or_table(
+            [],
+            "No projects registered yet",
+            hint_msg="Deploy a project with 'slipp deploy' to register it automatically",
+            warn=True,
+        )
         return
 
     projects_with_hosts = [(p, load_project_hosts(p.project_path)) for p in projects]
@@ -34,7 +36,7 @@ def list_command() -> None:
             }
             for p, hosts in projects_with_hosts
         ]
-        output.stdout(json.dumps(data, indent=2))
+        output.json(data)
     else:
         output.blank()
         output.task("Registered Projects")

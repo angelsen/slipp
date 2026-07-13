@@ -55,3 +55,23 @@ def register_domain_interactive(client: GigahostClient, domain: str) -> dict[str
         )
     except ProviderError as e:
         raise DomainRegistrationError(f"Failed to register {domain}: {e}") from e
+
+
+def ensure_domain_registered(client: GigahostClient, domain: str) -> None:
+    """Register `domain` if available; no-op if it's already registered.
+
+    Raises:
+        DomainRegistrationError: If the domain is taken by someone else, or
+            registration fails.
+    """
+    available, reason = client.check_domain(domain)
+
+    if available:
+        register_domain_interactive(client, domain)
+        output.success(f"Registered {domain}")
+    elif client.find_zone(domain):
+        output.info(f"{domain} already registered")
+    else:
+        raise DomainRegistrationError(
+            f"{domain} is not available" + (f": {reason}" if reason else "")
+        )

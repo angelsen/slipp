@@ -1,13 +1,15 @@
 """Registration and summary stages."""
 
-from pathlib import Path
-
 from slipp import output
 from slipp.constants import get_inventory_filename
 from slipp.models.service import Runtime
 from slipp.services.launch.context import FullContext
 from slipp.services.launch.registration import register_project
-from slipp.services.launch.stages.common import require
+from slipp.services.launch.stages.common import (
+    relative_or_absolute,
+    require,
+    skip_if_dry_run,
+)
 from slipp.utils.network import format_app_url
 
 
@@ -26,7 +28,7 @@ class RegistrationStage:
         Raises:
             LaunchError: If config creation or registration fails.
         """
-        if context.dry_run:
+        if skip_if_dry_run(context, "register project"):
             return
 
         inventory_config = require(context.inventory_config, "inventory config")
@@ -38,8 +40,9 @@ class RegistrationStage:
             inventory_path=inventory_filename,
             playbook_path="playbook.yml",
             runtime=first_host.runtime.value,
+            roles_path=["roles"],
             project_dirs=[
-                self._relative_or_absolute(d, context.output_dir)
+                relative_or_absolute(d, context.output_dir)
                 for d in context.project_dirs
             ],
             # Persists the resolved routing so it's visible/editable config
@@ -48,20 +51,6 @@ class RegistrationStage:
             # None for IP-only deploys, where no expose block is resolved.
             expose=context.expose,
         )
-
-    @staticmethod
-    def _relative_or_absolute(path: Path, root: Path) -> str:
-        """Path relative to root when nested inside it, else absolute.
-
-        --dir can point anywhere on disk, not just inside the project
-        root -- relative_to() raises for a sibling/unrelated directory, so
-        this falls back to storing the absolute path rather than failing
-        registration over a cosmetic preference.
-        """
-        try:
-            return str(path.relative_to(root))
-        except ValueError:
-            return str(path)
 
 
 class SummaryStage:

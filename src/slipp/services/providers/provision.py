@@ -226,6 +226,9 @@ def provision_server(client: GigahostClient, name: str) -> tuple[str, int]:
     pubkey_path = find_ssh_public_key()
     key_id = ensure_ssh_key(client, f"slipp-{name}", pubkey_path)
 
+    state = ProvisionState(name=name)
+    ProvisionStateService.save(state)
+
     output.info("Ordering server...")
     order_ids = client.deploy_server(
         product_id=product_id,
@@ -236,7 +239,7 @@ def provision_server(client: GigahostClient, name: str) -> tuple[str, int]:
         ssh_keys=[key_id] if key_id else None,
     )
 
-    state = ProvisionState(name=name, order_ids=order_ids)
+    state = state.model_copy(update={"order_ids": order_ids})
     ProvisionStateService.save(state)
 
     return _poll_and_wait(client, state)
@@ -266,13 +269,18 @@ def _poll_and_wait(client: GigahostClient, state: ProvisionState) -> tuple[str, 
     return ip, srv_id
 
 
-def _resume_provision(client: GigahostClient, state: ProvisionState) -> tuple[str, int]:
-    """Resume a previously started provision from its saved phase."""
-    age = datetime.now() - state.created_at
+def _warn_if_stale(created_at: datetime) -> None:
+    """Warn when resuming a saved provision/install state that's grown old."""
+    age = datetime.now() - created_at
     if age.total_seconds() > STALE_THRESHOLD_HOURS * 3600:
         output.warning(
             f"This provision was started {age.days}d {age.seconds // 3600}h ago"
         )
+
+
+def _resume_provision(client: GigahostClient, state: ProvisionState) -> tuple[str, int]:
+    """Resume a previously started provision from its saved phase."""
+    _warn_if_stale(state.created_at)
 
     if state.phase == ProvisionPhase.ORDERED:
         output.info(f"Polling for server readiness (order {state.order_ids})...")
@@ -286,6 +294,12 @@ def _resume_provision(client: GigahostClient, state: ProvisionState) -> tuple[st
         output.info(f"Server {state.ip} already provisioned, checking SSH...")
         wait_for_ssh(state.ip, started_at=state.created_at)
         return state.ip, state.srv_id
+
+    if state.phase == ProvisionPhase.INSTALLING:
+        raise ProvisionError(
+            f"Server '{state.name}' is mid-install — "
+            f"resume with 'slipp server install {state.name}'"
+        )
 
     raise ProvisionError(f"Unexpected provision phase: {state.phase}")
 
@@ -310,18 +324,18 @@ def provision_and_bootstrap(client: GigahostClient, name: str) -> tuple[str, int
         ip, srv_id = provision_server(client, name)
 
     # _resume_provision/provision_server already waited for SSH above.
-    return _finish_bootstrap(ip, srv_id, name)
+    return _bootstrap_user(ip, srv_id, name)
 
 
-def _bootstrap_and_finish(
+def _wait_and_bootstrap(
     ip: str, srv_id: int, name: str, *, started_at: datetime | None = None
 ) -> tuple[str, int]:
     """Wait for SSH, bootstrap slipp user, clean up state file."""
     wait_for_ssh(ip, started_at=started_at)
-    return _finish_bootstrap(ip, srv_id, name)
+    return _bootstrap_user(ip, srv_id, name)
 
 
-def _finish_bootstrap(ip: str, srv_id: int, name: str) -> tuple[str, int]:
+def _bootstrap_user(ip: str, srv_id: int, name: str) -> tuple[str, int]:
     """Bootstrap the slipp user and clean up state file (SSH already confirmed ready)."""
     output.success(f"Server ready: {ip}")
     output.info("Bootstrapping SSH user...")
@@ -342,7 +356,8 @@ def install_server(
             f"Resuming install for '{display}' "
             f"(started: {state.created_at:%Y-%m-%d %H:%M})"
         )
-        return _bootstrap_and_finish(ip, srv_id, display, started_at=state.created_at)
+        _warn_if_stale(state.created_at)
+        return _wait_and_bootstrap(ip, srv_id, display, started_at=state.created_at)
 
     if not force:
         if not output.confirm(f"Wipe and reinstall '{display}' ({ip})?", default=False):
@@ -352,9 +367,6 @@ def install_server(
     os_id = select_os(client)
     pubkey_path = find_ssh_public_key()
     key_id = ensure_ssh_key(client, f"slipp-{display}", pubkey_path)
-
-    output.info("Reinstalling server...")
-    client.reinstall_server(srv_id, os_id, hostname=display, key_id=key_id)
 
     now = datetime.now()
     ProvisionStateService.save(
@@ -367,4 +379,7 @@ def install_server(
         )
     )
 
-    return _bootstrap_and_finish(ip, srv_id, display, started_at=now)
+    output.info("Reinstalling server...")
+    client.reinstall_server(srv_id, os_id, hostname=display, key_id=key_id)
+
+    return _wait_and_bootstrap(ip, srv_id, display, started_at=now)

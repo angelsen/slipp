@@ -1,23 +1,25 @@
 """Variable extractors for template rendering.
 
-Strategy pattern for extracting template variables from DetectedService.
-Mirrors the scanner's architecture with one extractor per language family.
+One extraction function per language family, mirroring the scanner's
+plain-function registry architecture (slipp.scanner.scanner).
 """
 
+from collections.abc import Callable
 from typing import Any
 
-from slipp.generator.extractors.base import VariableExtractor
-from slipp.generator.extractors.nodejs_extractor import NodeJSVariableExtractor
-from slipp.generator.extractors.python_extractor import PythonVariableExtractor
+from slipp.generator.extractors.nodejs_extractor import extract_nodejs
+from slipp.generator.extractors.python_extractor import extract_python
 from slipp.models.deployment import DetectedService
 from slipp.scanner.models import NODE_FRAMEWORKS, PYTHON_FRAMEWORKS
 
-# Registry: Maps framework name → extractor instance. Mirrors scanner's
-# SCANNERS list architecture; built from the shared framework-family sets in
-# slipp.scanner.models so it can't drift from what the scanner actually emits.
+VariableExtractor = Callable[[DetectedService], dict[str, Any]]
+
+# Registry: Maps framework name → extractor function. Built from the shared
+# framework-family sets in slipp.scanner.models so it can't drift from what
+# the scanner actually emits.
 EXTRACTORS: dict[str, VariableExtractor] = {
-    **{name: PythonVariableExtractor() for name in PYTHON_FRAMEWORKS},
-    **{name: NodeJSVariableExtractor() for name in NODE_FRAMEWORKS},
+    **{name: extract_python for name in PYTHON_FRAMEWORKS},
+    **{name: extract_nodejs for name in NODE_FRAMEWORKS},
 }
 
 
@@ -33,34 +35,21 @@ def extract_template_variables(service: DetectedService) -> dict[str, Any]:
     Returns:
         Dictionary of template variables ready for rendering
 
-    Example:
-        >>> from slipp.scanner import scan
-        >>> from slipp.generator.extractors import extract_template_variables
-        >>> service = scan(Path("examples/PoC/packages/backend"))
-        >>> variables = extract_template_variables(service)
-        >>> variables["flask"]
-        True
-
     Raises:
-        None - Falls back to minimal variables if no extractor registered
+        ValueError: If no extractor is registered for the service's framework
     """
-    # Look up extractor in registry
     extractor = EXTRACTORS.get(service.framework)
 
-    if extractor:
-        return extractor.extract(service)
+    if extractor is None:
+        raise ValueError(f"No extractor for framework {service.framework!r}")
 
-    # Fallback: minimal variables for unknown frameworks
-    return {
-        "appName": service.name,
-        "port": service.port,
-    }
+    return extractor(service)
 
 
 __all__ = [
     "VariableExtractor",
-    "PythonVariableExtractor",
-    "NodeJSVariableExtractor",
+    "extract_python",
+    "extract_nodejs",
     "EXTRACTORS",
     "extract_template_variables",
 ]

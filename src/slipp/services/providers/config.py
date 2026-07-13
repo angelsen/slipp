@@ -63,7 +63,6 @@ class ProviderConfigService:
             return GigahostConfig(
                 api_key=env_key,
                 account_name=cached.account_name if cached else None,
-                account_id=cached.account_id if cached else None,
             )
 
         return ProviderConfigService.load().gigahost

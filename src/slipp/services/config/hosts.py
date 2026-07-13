@@ -8,13 +8,15 @@ This module provides a single source of truth for resolving hosts from:
 Hosts are parsed on-demand from inventory files, not stored in the registry.
 """
 
+from pathlib import Path
+
 from slipp import output
 from slipp.models.host import AnsibleHost
 from slipp.services.config.inventory import load_project_ansible_hosts
 from slipp.services.config.local import LocalConfigService
 from slipp.services.discovery import lookup_host_by_service
 from slipp.services.registry import ProjectRegistry
-from slipp.utils.errors import HostNotFoundError
+from slipp.utils.errors import ConfigError, HostNotFoundError
 from slipp.utils.identifiers import parse_service_identifier
 
 
@@ -52,7 +54,7 @@ class HostResolver:
                 hosts = load_project_ansible_hosts(project.project_path)
                 for host in hosts:
                     results.append((project.name, host))
-            except HostNotFoundError:
+            except (ConfigError, HostNotFoundError):
                 continue
 
         return results
@@ -125,6 +127,14 @@ class HostResolver:
         hosts = load_project_ansible_hosts(project_obj.project_path)
         return self._first_host(hosts, f"Project '{project}'")
 
+    def _try_load_from(self, path: Path) -> AnsibleHost | None:
+        """Load the first host from `path`'s inventory, or None if not found."""
+        try:
+            hosts = load_project_ansible_hosts(path)
+            return self._first_host(hosts, "Current project")
+        except (ConfigError, HostNotFoundError):
+            return None
+
     def current(self) -> AnsibleHost:
         """Resolve host from current working directory.
 
@@ -142,20 +152,16 @@ class HostResolver:
         local_config = LocalConfigService.load(project_root) if project_root else None
         if local_config:
             assert project_root is not None
-            try:
-                hosts = load_project_ansible_hosts(project_root)
-                return self._first_host(hosts, "Current project")
-            except HostNotFoundError:
-                pass
+            host = self._try_load_from(project_root)
+            if host:
+                return host
 
             if local_config.name:
                 project_obj = self._registry.get(local_config.name)
                 if project_obj:
-                    try:
-                        hosts = load_project_ansible_hosts(project_obj.project_path)
-                        return self._first_host(hosts, "Current project")
-                    except HostNotFoundError:
-                        pass
+                    host = self._try_load_from(project_obj.project_path)
+                    if host:
+                        return host
 
         raise HostNotFoundError(
             "No host context found.\n"

@@ -13,7 +13,7 @@ from slipp.models.service import Runtime
 from slipp.services.launch.context import FullContext
 from slipp.services.launch.stages.common import FileGenerationStage, require
 from slipp.utils.errors import LaunchError
-from slipp.utils.prompts import get_inventory_config
+from slipp.services.launch.prompts import get_inventory_config
 
 
 class InventoryLoadStage:
@@ -43,15 +43,16 @@ class InventoryLoadStage:
                 output.success(
                     f"Using existing {get_inventory_filename(context.environment)}"
                 )
-                with open(inventory_path) as f:
-                    inventory_data = yaml.safe_load(f)
-                context.inventory_config = InventoryConfig.from_ansible_format(
-                    inventory_data
-                )
+                try:
+                    with open(inventory_path) as f:
+                        inventory_data = yaml.safe_load(f)
+                    context.inventory_config = InventoryConfig.from_ansible_format(
+                        inventory_data
+                    )
+                except Exception as e:
+                    raise LaunchError(f"Failed to load {inventory_path}: {e}") from e
             else:
-                context.inventory_config = get_inventory_config(
-                    context.environment, context.reconfigure
-                )
+                context.inventory_config = get_inventory_config(context.environment)
         else:
             context.inventory_config = InventoryConfig(
                 hosts={
@@ -67,6 +68,24 @@ class InventoryLoadStage:
                 }
             )
             output.info(f"Dry run: Using dummy {context.environment} inventory config")
+
+        # first_host.app_port is the user-confirmed deploy port and may
+        # differ from the scanner's port guess (e.g. a hand-edited/
+        # pre-existing inventory.yml). Reconcile context.services[0] here,
+        # before any downstream stage (Caddy, wg-manage, compose, app
+        # roles) reads the port, so they all see the authoritative value.
+        # Only the primary service (index 0, the one app_port maps to) is
+        # eligible - applying it to every service would clobber a
+        # secondary service's own distinct port.
+        first_host = context.inventory_config.first_host
+        if (
+            context.services
+            and first_host.app_port
+            and first_host.app_port != context.services[0].port
+        ):
+            context.services[0] = context.services[0].model_copy(
+                update={"port": first_host.app_port}
+            )
 
 
 class InventoryValidationStage:

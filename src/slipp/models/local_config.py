@@ -6,7 +6,7 @@ stored in slipp.yaml at the project root. This file is git-tracked.
 
 from pydantic import BaseModel, Field, field_validator
 
-from slipp.models.service import Runtime
+from slipp.models.service import LenientRuntime
 from slipp.utils.identifiers import validate_config_name
 
 
@@ -46,7 +46,7 @@ class LocalConfig(BaseModel):
         name: Project identifier (required, appears first in YAML)
         inventory: Path to inventory file (relative to project root)
         playbook: Path to playbook file (default: playbook.yml)
-        roles_path: Role directories for ansible --roles-path
+        roles_path: Role directories (sets ANSIBLE_ROLES_PATH)
         galaxy_path: Install destination for ansible-galaxy (from requirements.yml)
         vault: Optional path to vault file
         runtime: How the app runs (systemd/docker/podman); docker/podman are
@@ -67,14 +67,14 @@ class LocalConfig(BaseModel):
     inventory: str | None = Field(default=None, description="Inventory file path")
     playbook: str = Field(default="playbook.yml", description="Playbook file path")
     roles_path: list[str] = Field(
-        default_factory=list, description="Role directories for ansible --roles-path"
+        default_factory=list, description="Role directories (sets ANSIBLE_ROLES_PATH)"
     )
     galaxy_path: str | None = Field(
         default=None,
         description="Install path for ansible-galaxy (from requirements.yml)",
     )
     vault: str | None = Field(default=None, description="Vault file path")
-    runtime: Runtime | None = Field(
+    runtime: LenientRuntime | None = Field(
         default=None, description="How the app runs (systemd/docker/podman)"
     )
     managed_roles: list[str] = Field(
@@ -101,9 +101,3 @@ class LocalConfig(BaseModel):
     def _validate_name(cls, value: str) -> str:
         """Project names become systemd units/paths/YAML -- see validator."""
         return validate_config_name(value, "project name")
-
-    @field_validator("runtime", mode="before")
-    @classmethod
-    def _lowercase_runtime(cls, value: object) -> object:
-        """Tolerate hand-edited slipp.yaml with mixed-case runtime values."""
-        return value.lower() if isinstance(value, str) else value

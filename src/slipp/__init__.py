@@ -19,7 +19,7 @@ def main() -> None:
     except SlippError as e:
         output.error(str(e))
         # Safety net for commands that let a SlippError (e.g.
-        # SudoPasswordRequired) propagate uncaught rather than checking the
+        # SudoPasswordError) propagate uncaught rather than checking the
         # SSH result inline.
         hint_ssh_log()
         raise SystemExit(1)

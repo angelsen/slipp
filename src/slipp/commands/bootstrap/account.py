@@ -7,6 +7,7 @@ import typer
 
 from slipp import output
 from slipp.commands.common import DryRunOption
+from slipp.constants import DEFAULT_SSH_PORT, DEFAULT_SSH_USER
 from slipp.services.bootstrap import provision_account
 from slipp.services.ssh import hint_ssh_log
 from slipp.utils.errors import BootstrapError, SSHConnectionError
@@ -50,7 +51,7 @@ def account_command(
         typer.Option(
             "--root-user", help="Root user for initial connection (default: root)"
         ),
-    ] = "root",
+    ] = DEFAULT_SSH_USER,
     ssh_key: Annotated[
         Path | None,
         typer.Option(
@@ -60,7 +61,7 @@ def account_command(
     ] = None,
     ssh_port: Annotated[
         int, typer.Option("--port", "-p", help="SSH port (default: 22)")
-    ] = 22,
+    ] = DEFAULT_SSH_PORT,
     slipp_user: Annotated[
         str,
         typer.Option(

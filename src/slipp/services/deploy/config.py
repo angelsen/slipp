@@ -21,6 +21,7 @@ def ensure_local_config(
     vault: str | None,
     project_root: Path,
     runtime: str | None = None,
+    galaxy_path: str | None = None,
 ) -> None:
     """Create or update slipp.yaml when --name and --inventory are both given.
 
@@ -37,6 +38,7 @@ def ensure_local_config(
             this, external projects have no runtime in slipp.yaml and every
             operational command (ssh/exec/logs/ps/status) falls back to
             RuntimeDetector's docker/podman-only playbook grep.
+        galaxy_path: Install path for external roles from requirements.yml.
 
     Raises:
         ConfigError: If the inventory file doesn't exist or config creation fails.
@@ -57,23 +59,43 @@ def ensure_local_config(
         )
 
     try:
-        if LocalConfigService.exists(project_root):
-            changes: dict[str, str | Runtime] = {"name": name, "inventory": inventory}
-            if runtime:
-                changes["runtime"] = Runtime(runtime.lower())
-            LocalConfigService.update(changes, project_root=project_root)
-            output.info(f"Updated slipp.yaml with name '{name}'")
-        else:
-            LocalConfigService.create(
+        # On the update path (config already exists), only fields the caller
+        # actually passed a flag for are touched -- playbook_path may be
+        # auto-detected rather than explicit, so it's only persisted when
+        # `playbook` itself was given, matching roles/vault/galaxy_path/runtime.
+        changes: dict[str, str | Runtime | list[str]] = {
+            "name": name,
+            "inventory": inventory,
+        }
+        if playbook:
+            changes["playbook"] = playbook
+        if roles:
+            changes["roles_path"] = roles
+        if galaxy_path:
+            changes["galaxy_path"] = galaxy_path
+        if vault:
+            changes["vault"] = vault
+        if runtime:
+            changes["runtime"] = Runtime(runtime.lower())
+
+        _, created = LocalConfigService.create_or_update_with(
+            lambda: LocalConfigService.build(
                 name=name,
                 inventory_path=inventory,
                 playbook_path=playbook_path,
                 roles_path=roles if roles else None,
+                galaxy_path=galaxy_path,
                 vault_path=vault,
                 runtime=runtime,
                 project_root=project_root,
-            )
+            ),
+            lambda c: changes,
+            project_root=project_root,
+        )
+        if created:
             output.info(f"Created slipp.yaml with name '{name}'")
+        else:
+            output.info(f"Updated slipp.yaml with name '{name}'")
     except Exception as e:
         raise ConfigError(f"Failed to create config: {e}") from e
 
@@ -102,6 +124,16 @@ def _to_root_relative(flag_value: str, project_root: Path) -> str | None:
     return relative
 
 
+def _resolve_or_warn(value: str, description: str, project_root: Path) -> str | None:
+    """Resolve a CLI flag path to project-root-relative, warning if outside root."""
+    relative = _to_root_relative(value, project_root)
+    if relative is None:
+        output.warning(
+            f"Not persisting {description}: path is outside project root {project_root}"
+        )
+    return relative
+
+
 def persist_config_updates(
     inventory: str | None,
     playbook: str | None,
@@ -127,33 +159,25 @@ def persist_config_updates(
     changes: dict[str, Any] = {}
 
     def _set(key: str, flag_value: str) -> None:
-        relative = _to_root_relative(flag_value, project_root)
-        if relative is None:
-            output.warning(
-                f"Not persisting {key}={flag_value}: path is outside "
-                f"project root {project_root}"
-            )
-            return
-        changes[key] = relative
+        relative = _resolve_or_warn(flag_value, f"{key}={flag_value}", project_root)
+        if relative is not None:
+            changes[key] = relative
 
     if inventory:
         _set("inventory", inventory)
     if playbook:
         _set("playbook", playbook)
     if roles_list:
-        merged_roles = list(roles_list)
-        if galaxy_path_flag and galaxy_path_flag not in merged_roles:
-            merged_roles.append(galaxy_path_flag)
-        resolved_roles = []
-        for role in merged_roles:
-            relative = _to_root_relative(role, project_root)
-            if relative is None:
-                output.warning(
-                    f"Not persisting roles_path entry {role}: path is outside "
-                    f"project root {project_root}"
+        resolved_roles = [
+            relative
+            for role in roles_list
+            if (
+                relative := _resolve_or_warn(
+                    role, f"roles_path entry {role}", project_root
                 )
-                continue
-            resolved_roles.append(relative)
+            )
+            is not None
+        ]
         if resolved_roles:
             changes["roles_path"] = resolved_roles
     if galaxy_path_flag:

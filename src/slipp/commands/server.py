@@ -5,6 +5,7 @@ from typing import Annotated
 import typer
 
 from slipp import output
+from slipp.commands.common import ForceOption, confirm_or_exit
 from slipp.services.providers import get_gigahost_client
 from slipp.services.providers.provision import install_server, resolve_server
 
@@ -25,18 +26,13 @@ def status_command(
 @server_app.command(name="reboot")
 def reboot_command(
     name_or_ip: Annotated[str, typer.Argument(help="Server name or IP address")],
-    force: Annotated[
-        bool,
-        typer.Option("--force", "-f", help="Skip confirmation prompt"),
-    ] = False,
+    force: ForceOption = False,
 ) -> None:
     """Reboot a server."""
     client = get_gigahost_client()
     srv_id, display, _ip = resolve_server(client, name_or_ip)
 
-    if not force and not output.confirm(f"Reboot '{display}'?", default=False):
-        output.info("Cancelled")
-        return
+    confirm_or_exit(f"Reboot '{display}'?", force=force)
 
     client.reboot(srv_id)
     output.success(f"Reboot requested for '{display}'")
@@ -45,14 +41,8 @@ def reboot_command(
 @server_app.command(name="install")
 def install_command(
     name_or_ip: Annotated[str, typer.Argument(help="Server name or IP address")],
-    force: Annotated[
-        bool,
-        typer.Option("--force", "-f", help="Skip confirmation prompts"),
-    ] = False,
+    force: ForceOption = False,
 ) -> None:
     """Reinstall server OS."""
     client = get_gigahost_client()
     install_server(client, name_or_ip, force=force)
-
-
-__all__ = ["server_app"]

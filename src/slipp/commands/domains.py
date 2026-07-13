@@ -57,8 +57,7 @@ def list_domains() -> None:
     client = get_gigahost_client()
     zones = client.list_zones()
 
-    if not zones:
-        output.info("No domains found")
-        return
-
-    output.table([{"domain": z.name, "records": z.record_count} for z in zones])
+    output.empty_or_table(
+        [{"domain": z.name, "records": z.record_count} for z in zones],
+        "No domains found",
+    )

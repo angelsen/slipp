@@ -1,5 +1,6 @@
 """Logo rendering and HTML export."""
 
+import re
 import sys
 from pathlib import Path
 from typing import TextIO, cast
@@ -10,7 +11,6 @@ from rich_pyfiglet.fonts_list import ALL_FONTS
 
 from slipp import output
 
-DEFAULT_COLORS = ["#00d4ff", "#006688"]
 DEFAULT_FONT: ALL_FONTS = "ansi_shadow"
 DEFAULT_TEXT = "SLIPP"
 
@@ -24,21 +24,11 @@ THEMES: dict[str, list[str]] = {
         "var(--logo-color-5)",
         "var(--logo-color-6)",
     ],
-    "template": [
-        "${color_0}",
-        "${color_1}",
-        "${color_2}",
-        "${color_3}",
-        "${color_4}",
-        "${color_5}",
-    ],
 }
 
 
 def apply_theme(html: str, theme: str) -> str:
     """Replace colors in HTML with themed values by position."""
-    import re
-
     if theme not in THEMES:
         return html
 
@@ -69,6 +59,8 @@ COLOR_PALETTES = {
     "gold": ["#f7971e", "#ffd200"],
 }
 
+DEFAULT_COLORS = COLOR_PALETTES["cyan"]
+
 RECOMMENDED_FONTS = [
     "slant",
     "ansi_shadow",
@@ -85,7 +77,7 @@ def show_logo(
     file: TextIO = sys.stderr,
     save_path: Path | None = None,
     font: str = DEFAULT_FONT,
-    colors: list[str] | None = None,
+    colors: str | None = None,
     animate: bool = False,
     text: str = DEFAULT_TEXT,
     theme: str | None = None,
@@ -96,14 +88,26 @@ def show_logo(
         file: Output file handle. Defaults to stderr.
         save_path: Optional path to export as HTML file.
         font: Figlet font name. Defaults to "ansi_shadow".
-        colors: List of hex colors for gradient. Defaults to cyan palette.
+        colors: Palette name (see COLOR_PALETTES) or comma-separated hex
+            values. Defaults to the cyan palette.
         animate: If True, animate the gradient effect.
         text: Text to render. Defaults to "SLIPP".
-        theme: Optional color theme name for HTML export.
+        theme: Color theme name for HTML export. Defaults to "starlight"
+            when save_path is set; pass "none" to force no theme.
     """
     from pyfiglet import Figlet
 
-    color_list = colors or DEFAULT_COLORS
+    if save_path and theme is None:
+        theme = "starlight"
+    elif theme == "none":
+        theme = None
+
+    if colors:
+        color_list = COLOR_PALETTES.get(colors) or [
+            c.strip() for c in colors.split(",")
+        ]
+    else:
+        color_list = DEFAULT_COLORS
 
     figlet = Figlet(font=font)
     rendered = figlet.renderText(text)

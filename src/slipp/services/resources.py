@@ -11,6 +11,7 @@ from pathlib import Path
 
 from slipp import output
 from slipp.services.config import load_first_host_strict
+from slipp.services.config.detection import has_caddy_role
 from slipp.services.providers.pangolin import (
     PangolinClient,
     resolve_domain,
@@ -31,8 +32,7 @@ def resolve_public_target(project_root: Path) -> tuple[str, str, int, str]:
     """
     app_domain, host = load_first_host_strict(project_root)
 
-    has_caddy = (project_root / "roles" / "caddy").exists()
-    if has_caddy:
+    if has_caddy_role(project_root):
         port, method = 443, "https"
     else:
         if not host.app_port:

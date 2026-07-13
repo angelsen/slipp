@@ -14,8 +14,13 @@ import time
 
 from slipp.models.host import AnsibleHost
 from slipp.services.ssh.client import SSHService
-from slipp.services.ssh.command import build_ssh_command
-from slipp.utils.errors import TunnelError
+from slipp.services.ssh.command import build_ssh_command, build_vps_command
+from slipp.utils.errors import (
+    SSHAuthenticationError,
+    SSHCommandError,
+    SSHConnectionError,
+    TunnelError,
+)
 
 # Pattern for container tunnel specs: docker://container:port:local@host
 CONTAINER_TUNNEL_PATTERN = re.compile(r"^(docker|podman)://([^:]+):(\d+):(\d+)@(.+)$")
@@ -127,7 +132,7 @@ def _spawn_ssh_tunnel(
 
     proc = subprocess.Popen(
         cmd,
-        stdout=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
         stderr=subprocess.PIPE,
     )
 
@@ -146,6 +151,11 @@ def _spawn_ssh_tunnel(
             break
         time.sleep(0.1)
 
+    # Tunnel is confirmed up -- stop reserving the stderr pipe for the rest
+    # of its (potentially hours-long) life so it can't fill and block ssh.
+    if proc.stderr:
+        proc.stderr.close()
+
     return proc
 
 
@@ -158,14 +168,13 @@ class TunnelManager:
     def __init__(self) -> None:
         self.processes: list[subprocess.Popen[bytes]] = []
 
-    def start_tunnel_out(self, local_port: int, domain: str, host: AnsibleHost) -> None:
+    def start_tunnel_out(self, local_port: int, host: AnsibleHost) -> None:
         """Start reverse tunnel: expose local port to remote.
 
         Creates: ssh -R remote_port:localhost:local_port user@host -N
 
         Args:
             local_port: Local port to expose
-            domain: Domain name (for logging, Caddy will use this later)
             host: Remote host to tunnel to
 
         Raises:
@@ -234,17 +243,19 @@ class TunnelManager:
                 f"Hint: Stop the local service or use a different port"
             )
 
-        # Resolve container IP via SSH (use root for docker access)
-        # Add space separator to handle containers on multiple networks
-        root_host = host.model_copy(update={"ansible_user": "root"})
-        inspect_cmd = (
+        # Resolve container IP via SSH, escalating to root for docker/podman
+        # socket access. Add space separator to handle containers on
+        # multiple networks.
+        inspect_cmd = build_vps_command(
+            "root",
             f"{runtime} inspect -f "
             f'"{{{{range.NetworkSettings.Networks}}}}{{{{.IPAddress}}}} {{{{end}}}}" '
-            f"{shlex.quote(container)}"
+            f"{shlex.quote(container)}",
+            host.ansible_user,
         )
 
         try:
-            with SSHService(root_host) as ssh:
+            with SSHService(host) as ssh:
                 result = (
                     ssh.execute(inspect_cmd)
                     .check(f"Failed to inspect container '{container}'")
@@ -253,7 +264,7 @@ class TunnelManager:
                 )
                 # Take first IP if container is on multiple networks
                 container_ip = result.split()[0] if result.split() else ""
-        except Exception as e:
+        except (SSHConnectionError, SSHAuthenticationError, SSHCommandError) as e:
             raise TunnelError(
                 f"Failed to get IP for container '{container}' on {host.ansible_host}\n"
                 f"{e}"

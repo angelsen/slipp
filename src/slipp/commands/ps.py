@@ -5,8 +5,7 @@ from typing import Annotated
 import typer
 
 from slipp import output
-from slipp.commands.common import resolve_host_or_exit
-from slipp.constants import OutputFormat
+from slipp.commands.common import ProjectOption, resolve_host_or_exit
 from slipp.models.service import Service
 from slipp.services.config import HostResolver, collect_managed_roles
 from slipp.services.discovery import filter_services
@@ -14,14 +13,8 @@ from slipp.services.discovery.pipeline import discover_across_hosts, discover_an
 from slipp.services.ssh import hint_ssh_log
 
 
-def display_services_table(services: list[Service]) -> None:
+def _display_services_table(services: list[Service]) -> None:
     """Render services as a table (or JSON), one row schema for both formats."""
-    if not services:
-        if output.get_output_format() == OutputFormat.json:
-            output.stdout("[]")
-        output.info("No services found")
-        return
-
     rows = [
         {
             "project": ", ".join(s.projects) if s.projects else "-",
@@ -34,13 +27,11 @@ def display_services_table(services: list[Service]) -> None:
         }
         for s in services
     ]
-    output.table(rows)
+    output.empty_or_table(rows, "No services found")
 
 
 def ps_command(
-    project: Annotated[
-        str | None, typer.Option("--project", "-p", help="Filter by project name")
-    ] = None,
+    project: ProjectOption = None,
     refresh: Annotated[
         bool, typer.Option("--refresh", help="Force re-discovery (bypass cache)")
     ] = False,
@@ -52,7 +43,7 @@ def ps_command(
     resolver = HostResolver()
 
     if project:
-        ssh_config = resolve_host_or_exit(project=project)
+        ssh_config = resolve_host_or_exit(project=project, command="ps")
         managed_roles = collect_managed_roles(project)
 
         if refresh:
@@ -97,7 +88,7 @@ def ps_command(
             services, show_all=all_services, managed_roles=managed_roles
         )
 
-    display_services_table(services)
+    _display_services_table(services)
 
     cache_status = "(from cache)" if not refresh else "(fresh discovery)"
 

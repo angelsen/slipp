@@ -10,6 +10,7 @@ from typing import Any
 
 import bcrypt
 import yaml
+from pydantic import ValidationError
 
 from slipp import output
 from slipp.models.local_config import LocalConfig
@@ -100,15 +101,15 @@ class RunProfileService:
 
     def save_profile(self, name: str, profile: RunProfile) -> None:
         """Save or update a run profile in slipp.yaml."""
-        config = LocalConfigService.load(self.project_root) or LocalConfig(
-            name=self.project_root.name
-        )
-        runs = dict(config.runs)
-        runs[name] = profile.model_dump(
+        profile_data = profile.model_dump(
             by_alias=True, exclude_none=True, exclude_defaults=True
         )
-        updated = config.model_copy(update={"runs": runs})
-        LocalConfigService.save(updated, self.project_root)
+
+        LocalConfigService.create_or_update_with(
+            lambda: LocalConfig(name=self.project_root.name, runs={name: profile_data}),
+            lambda c: {"runs": {**c.runs, name: profile_data}},
+            self.project_root,
+        )
         self._raw_cache = None
 
     def get_profile(self, name: str) -> RunProfile:
@@ -121,13 +122,13 @@ class RunProfileService:
         return self._resolve(name, self._raw_profiles())
 
     def list_profiles(self) -> dict[str, RunProfile]:
-        """Return all resolved run profiles, skipping ones with a broken chain."""
+        """Return all resolved run profiles, skipping invalid ones."""
         raw = self._raw_profiles()
         resolved: dict[str, RunProfile] = {}
         for name in raw:
             try:
                 resolved[name] = self._resolve(name, raw)
-            except ConfigError as e:
+            except (ConfigError, ValidationError) as e:
                 output.warning(f"Skipping profile '{name}': {e}")
         return resolved
 
@@ -139,20 +140,21 @@ class RunProfileService:
                 still exist in a local override file).
         """
         config = LocalConfigService.load(self.project_root)
-        if config and name in config.runs:
-            runs = dict(config.runs)
-            del runs[name]
-            updated = config.model_copy(update={"runs": runs})
-            LocalConfigService.save(updated, self.project_root)
-            self._raw_cache = None
-            return
+        if not config or name not in config.runs:
+            if name in _load_raw_yaml(self._local_path()):
+                raise ProfileNotFoundError(
+                    f"Profile '{name}' is defined in {LOCAL_RUNS_FILENAME} — "
+                    "edit that file directly to remove it"
+                )
+            raise ProfileNotFoundError(f"Profile '{name}' not found")
 
-        if name in _load_raw_yaml(self._local_path()):
-            raise ProfileNotFoundError(
-                f"Profile '{name}' is defined in {LOCAL_RUNS_FILENAME} — "
-                "edit that file directly to remove it"
-            )
-        raise ProfileNotFoundError(f"Profile '{name}' not found")
+        def mutate(c: LocalConfig) -> dict[str, Any]:
+            if name not in c.runs:
+                raise ProfileNotFoundError(f"Profile '{name}' not found")
+            return {"runs": {k: v for k, v in c.runs.items() if k != name}}
+
+        LocalConfigService.update_with(mutate, self.project_root)
+        self._raw_cache = None
 
     def profile_exists(self, name: str) -> bool:
         """Check whether a profile exists in any layer."""
@@ -256,13 +258,20 @@ def merge_runtime_options(
 
         merged_tunnels = TunnelConfig.model_validate(
             {
-                "out": list(existing_out) + list(tunnel_out),
-                "in": list(existing_in) + list(tunnel_in),
+                "out": list(existing_out) + [t for t in tunnel_out if t not in existing_out],
+                "in": list(existing_in) + [t for t in tunnel_in if t not in existing_in],
                 "auth": hash_tunnel_auth(tunnel_auth) if tunnel_auth else existing_auth,
             }
         )
 
-    merged_proxy = list(profile.proxy) + parse_proxy_routes(proxy)
+    new_proxy = parse_proxy_routes(proxy)
+    merged_proxy = list(profile.proxy) + [
+        r
+        for r in new_proxy
+        if not any(
+            e.from_ == r.from_ and e.to == r.to and e.host == r.host for e in profile.proxy
+        )
+    ]
 
     return RunProfile(
         cmd=profile.cmd,

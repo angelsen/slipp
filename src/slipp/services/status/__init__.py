@@ -6,6 +6,22 @@ handles service *discovery* (systemctl list-units/show), not status display.
 """
 
 import re
+import shlex
+
+
+def build_status_command(unit_name: str) -> str:
+    """Build systemctl status command for a unit.
+
+    LC_ALL=C forces English month names so extract_status_log_lines() can
+    find the log section regardless of the host's locale.
+
+    Args:
+        unit_name: Systemd unit name to query
+
+    Returns:
+        Full command string
+    """
+    return f"sudo env LC_ALL=C systemctl status {shlex.quote(unit_name)}"
 
 
 def parse_systemctl_status(output_text: str) -> dict:
@@ -78,6 +94,7 @@ def extract_status_log_lines(output_text: str) -> list[str]:
 
 
 __all__ = [
+    "build_status_command",
     "extract_status_log_lines",
     "parse_systemctl_status",
 ]

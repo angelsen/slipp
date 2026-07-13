@@ -14,7 +14,11 @@ from slipp.commands.common import (
     resolve_host_or_exit,
 )
 from slipp.services.ssh import SSHService
-from slipp.services.status import extract_status_log_lines, parse_systemctl_status
+from slipp.services.status import (
+    build_status_command,
+    extract_status_log_lines,
+    parse_systemctl_status,
+)
 
 
 def status_command(
@@ -33,7 +37,7 @@ def status_command(
         ssh.ensure_sudo("Fetching service status")
         # systemctl status legitimately exits non-zero for inactive/failed
         # units with usable stdout - only sudo failures are worth raising on
-        result = ssh.execute(f"sudo systemctl status {target_service.unit_name}")
+        result = ssh.execute(build_status_command(target_service.unit_name))
         ssh.check_sudo(result, "Fetching service status")
         cmd_output = result.stdout
         details = parse_systemctl_status(cmd_output)

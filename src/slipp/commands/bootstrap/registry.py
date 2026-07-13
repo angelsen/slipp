@@ -1,14 +1,14 @@
 """Registry authentication bootstrap commands."""
 
-import os
-import shlex
 from typing import Annotated
 
 import typer
 
 from slipp import output
-from slipp.commands.common import resolve_host_or_exit
-from slipp.services.ssh import SSHService, hint_ssh_log
+from slipp.commands.common import ProjectOption, resolve_host_or_exit
+from slipp.services.bootstrap import bootstrap_registry_auth
+from slipp.services.ssh import hint_ssh_log
+from slipp.utils.errors import BootstrapError
 
 registry_app = typer.Typer(name="registry", help="Setup container registry auth on VPS")
 
@@ -22,46 +22,29 @@ def _bootstrap_registry(
     token_env_var: str,
 ) -> None:
     """Common registry bootstrap logic."""
-    ssh_config = resolve_host_or_exit(project=project)
+    ssh_config = resolve_host_or_exit(project=project, command="bootstrap registry")
 
-    if not user:
-        user = output.prompt(f"{registry_name} username")
-
-    if not token:
-        token = os.environ.get(token_env_var)
-        if not token:
-            token = output.prompt_password(f"{registry_name} token")
-
-    if not user or not token:
-        output.error("Username and token required")
+    try:
+        bootstrap_registry_auth(
+            ssh_config,
+            registry_url=registry_url,
+            registry_name=registry_name,
+            user=user,
+            token=token,
+            token_env_var=token_env_var,
+        )
+    except BootstrapError as e:
+        output.error(f"{registry_name} authentication failed")
+        output.hint(str(e))
+        hint_ssh_log()
         raise typer.Exit(1)
 
-    target = f"{ssh_config.ansible_user}@{ssh_config.ansible_host}"
-    output.info(f"Setting up {registry_name} auth on {target}")
-
-    with SSHService(ssh_config) as ssh:
-        # Token is piped over the SSH channel's stdin, never appearing in the
-        # remote command line (where it would be visible via `ps`/process lists)
-        cmd = (
-            f"docker login {shlex.quote(registry_url)} "
-            f"-u {shlex.quote(user)} --password-stdin"
-        )
-        result = ssh.execute(cmd, stdin_data=token)
-
-        if result.ok:
-            output.success(f"{registry_name} authentication configured")
-        else:
-            output.error("Authentication failed")
-            output.hint(result.text.strip())
-            hint_ssh_log()
-            raise typer.Exit(1)
+    output.success(f"{registry_name} authentication configured")
 
 
 @registry_app.command(name="ghcr")
 def ghcr_command(
-    project: Annotated[
-        str | None, typer.Option("--project", "-p", help="Project name")
-    ] = None,
+    project: ProjectOption = None,
     user: Annotated[
         str | None, typer.Option("--user", "-u", help="GitHub username")
     ] = None,
@@ -82,9 +65,7 @@ def ghcr_command(
 
 @registry_app.command(name="dockerhub")
 def dockerhub_command(
-    project: Annotated[
-        str | None, typer.Option("--project", "-p", help="Project name")
-    ] = None,
+    project: ProjectOption = None,
     user: Annotated[
         str | None, typer.Option("--user", "-u", help="Docker Hub username")
     ] = None,

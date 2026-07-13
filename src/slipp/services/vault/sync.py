@@ -8,10 +8,10 @@ from pathlib import Path
 
 from slipp.constants import SecretEncoding
 from slipp.services.vault.crypto import (
-    encrypt_string,
+    encrypt_secrets,
     extract_vault_refs,
-    vault_password_file,
-    write_vault,
+    list_keys,
+    write_missing_secrets,
 )
 from slipp.services.vault.generate import generate_secret
 from slipp.utils.errors import (
@@ -67,12 +67,16 @@ class SecretSynchronizer:
         refs: set[str],
         force: bool = False,
     ) -> list[str]:
-        """Generate and write missing secrets for the given references.
+        """Generate secrets for missing references and add them to the vault.
+
+        Existing vault content is preserved: only refs not already present
+        as keys in the vault are generated, and they are appended rather
+        than replacing the file.
 
         Args:
             vault_path: Path to vault file to write.
             refs: Vault variable names to generate secrets for (e.g. from scan()).
-            force: Overwrite existing vault file if True
+            force: Add to an existing vault file if True
 
         Returns:
             List of generated secret names
@@ -81,25 +85,32 @@ class SecretSynchronizer:
             VaultSyncError: If the vault file already exists (without force),
                 or on encryption errors
         """
-        if vault_path.exists() and not force:
+        vault_exists = vault_path.is_file()
+        if vault_exists and not force:
             raise VaultSyncError(
                 f"Vault file already exists: {vault_path}. Use force=True to overwrite."
             )
 
-        if not refs:
+        existing_keys = set(list_keys(vault_path)) if vault_exists else set()
+        missing = refs - existing_keys
+
+        if not missing:
             return []
 
-        secrets = self._generate_secrets(sorted(refs))
+        secrets = self._generate_secrets(
+            sorted(missing), confirm_password=not vault_exists
+        )
 
-        write_vault(vault_path, secrets)
+        return write_missing_secrets(vault_path, secrets)
 
-        return list(secrets.keys())
-
-    def _generate_secrets(self, names: list[str]) -> dict[str, str]:
+    def _generate_secrets(
+        self, names: list[str], confirm_password: bool = True
+    ) -> dict[str, str]:
         """Generate and encrypt secrets for the given names.
 
         Args:
             names: List of secret names to generate
+            confirm_password: Prompt twice and verify match (for a brand-new vault)
 
         Returns:
             Dict mapping secret names to encrypted values
@@ -107,19 +118,15 @@ class SecretSynchronizer:
         Raises:
             VaultSyncError: On password mismatch or encryption errors
         """
-        secrets: dict[str, str] = {}
+        plaintext = {
+            name: generate_secret(self.num_bytes, self.encoding) for name in names
+        }
 
         try:
-            with vault_password_file() as pw_file:
-                for name in names:
-                    secret = generate_secret(self.num_bytes, self.encoding)
-                    encrypted = encrypt_string(secret, name, password_file=pw_file)
-                    secrets[name] = encrypted
-        except PasswordMismatchError:
-            raise VaultSyncError("Passwords do not match")
+            return encrypt_secrets(plaintext, confirm_password=confirm_password)
+        except PasswordMismatchError as e:
+            raise VaultSyncError("Passwords do not match") from e
         except AnsibleVaultNotInstalledError as e:
-            raise VaultSyncError(str(e))
+            raise VaultSyncError(str(e)) from e
         except VaultError as e:
-            raise VaultSyncError(f"Encryption failed: {e}")
-
-        return secrets
+            raise VaultSyncError(f"Encryption failed: {e}") from e

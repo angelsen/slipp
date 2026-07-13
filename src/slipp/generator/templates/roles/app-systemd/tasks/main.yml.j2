@@ -53,15 +53,17 @@
 
 - name: Install dependencies
   become: false
-  ansible.builtin.command: npm ci
+  ansible.builtin.command: "{{ install_command }}"
   args:
     chdir: "/opt/{{ project_name }}-{{ service.name }}"
 
+{% if build %}
 - name: Build application
   become: false
-  ansible.builtin.command: npm run build
+  ansible.builtin.command: "{{ build_command }}"
   args:
     chdir: "/opt/{{ project_name }}-{{ service.name }}"
+{% endif %}
 
 - name: Ensure environment file exists
   become: false

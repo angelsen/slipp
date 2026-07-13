@@ -5,17 +5,18 @@ resolving which configured provider manages a given domain's DNS zone.
 """
 
 from slipp.services.providers.config import ProviderConfigService
-from slipp.services.providers.dns import DNSProvider, DNSRecord, DNSZone, sync_dns
-from slipp.services.providers.domains import register_domain_interactive
+from slipp.services.providers.dns import DNSProvider, sync_dns
+from slipp.services.providers.domains import (
+    ensure_domain_registered,
+    register_domain_interactive,
+)
 from slipp.services.providers.gigahost import GigahostClient
 from slipp.services.providers.pangolin import PangolinClient
 from slipp.services.providers.provision import (
     install_server,
     provision_and_bootstrap,
-    provision_server,
     resolve_server,
 )
-from slipp.services.providers.state import ProvisionStateService
 from slipp.utils.errors import ProviderNotConfiguredError
 
 
@@ -49,34 +50,30 @@ def get_pangolin_client() -> PangolinClient:
     )
 
 
-def resolve_dns_provider(domain: str) -> DNSProvider:
-    """The provider that should manage this domain's DNS.
+def resolve_dns_provider() -> DNSProvider:
+    """The provider that should manage DNS.
 
     With Gigahost as the only DNS-capable provider this is trivially the
-    Gigahost client. When a second provider lands, prefer the one that
-    already has a zone for `domain`, falling back to a configured default.
+    Gigahost client. When a second provider lands, this should take the
+    domain and prefer whichever provider already has a zone for it.
 
     Raises:
         ProviderNotConfiguredError: If no provider is configured.
     """
-    del domain  # reserved for multi-provider resolution
     return get_gigahost_client()
 
 
 __all__ = [
     "DNSProvider",
-    "DNSRecord",
-    "DNSZone",
     "GigahostClient",
     "PangolinClient",
     "ProviderConfigService",
     "get_gigahost_client",
     "get_pangolin_client",
     "provision_and_bootstrap",
-    "provision_server",
     "install_server",
     "resolve_server",
-    "ProvisionStateService",
+    "ensure_domain_registered",
     "register_domain_interactive",
     "resolve_dns_provider",
     "sync_dns",

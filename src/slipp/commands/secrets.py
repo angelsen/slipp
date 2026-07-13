@@ -1,25 +1,31 @@
 """Vault secret management commands."""
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 import typer
 
 from slipp import output
+from slipp.commands.common import (
+    BitsOption,
+    EncodingOption,
+    JwkOption,
+    NumBytesOption,
+    describe_secret,
+    validate_num_bytes_encoding,
+)
 from slipp.constants import OutputFormat, SecretEncoding
 from slipp.output import format_path
 from slipp.services.config import ConfigResolver, resolve_vault_target
 from slipp.services.vault import (
     SecretSynchronizer,
-    append_to_vault,
-    encrypt_string,
+    encrypt_secrets,
     generate_jwk,
     generate_secret,
     list_keys,
     list_project_vaults,
-    vault_password_file,
+    write_missing_secrets,
 )
 from slipp.utils.errors import (
     AnsibleVaultNotInstalledError,
@@ -66,7 +72,7 @@ class _VaultLookup:
     resolver: ConfigResolver
     vault_path: Path | None
     keys: list[str] | None
-    error: str | None  # "no vault configured" | "vault file not found" | None
+    error: Literal["no vault configured", "vault file not found"] | None
 
 
 def _lookup_vault_keys(target: str) -> _VaultLookup:
@@ -107,20 +113,17 @@ def _list_available_vaults() -> None:
     sources = list_sources()
 
     if output.get_output_format() == OutputFormat.json:
-        output.stdout(
-            json.dumps(
-                {
-                    "vaults": vaults_found,
-                    "sources": [
-                        {
-                            "name": name,
-                            "description": get_source(name).get_description(),
-                        }
-                        for name in sources
-                    ],
-                },
-                indent=2,
-            )
+        output.json(
+            {
+                "vaults": vaults_found,
+                "sources": [
+                    {
+                        "name": name,
+                        "description": get_source(name).get_description(),
+                    }
+                    for name in sources
+                ],
+            }
         )
         return
 
@@ -179,7 +182,7 @@ def list_secrets(
                 entry["keys"] = lookup.keys
             results.append(entry)
 
-        output.stdout(json.dumps(results, indent=2))
+        output.json(results)
         return
 
     for i, lookup in enumerate(lookups):
@@ -226,24 +229,10 @@ def add_secret(
             help="Project name or vault file path (uses local config if omitted)"
         ),
     ] = None,
-    num_bytes: Annotated[
-        int,
-        typer.Option("--bytes", "-b", help="Bytes of entropy (default: 32 = 256-bit)"),
-    ] = 32,
-    encoding: Annotated[
-        SecretEncoding,
-        typer.Option(
-            "--encoding",
-            "-e",
-            help="Output encoding: hex (default), base64, or ulid",
-        ),
-    ] = SecretEncoding.hex,
-    jwk: Annotated[
-        bool, typer.Option("--jwk", help="Generate RSA JWK keypair")
-    ] = False,
-    bits: Annotated[
-        int, typer.Option("--bits", help="RSA key size for --jwk (default: 2048)")
-    ] = 2048,
+    num_bytes: NumBytesOption = 32,
+    encoding: EncodingOption = SecretEncoding.hex,
+    jwk: JwkOption = False,
+    bits: BitsOption = 2048,
 ) -> None:
     """Generate and add a secret to a vault."""
     resolver, vault_path = _resolve_vault_or_exit(target)
@@ -260,11 +249,18 @@ def add_secret(
         )
         raise typer.Exit(1)
 
+    if name in list_keys(vault_path):
+        output.error(
+            f"'{name}' already exists in {format_path(vault_path, resolver.project_root)}"
+        )
+        raise typer.Exit(1)
+
+    if not jwk:
+        validate_num_bytes_encoding(num_bytes, encoding)
     secret = generate_jwk(bits) if jwk else generate_secret(num_bytes, encoding)
 
     try:
-        with vault_password_file(confirm=False) as pw_file:
-            encrypted = encrypt_string(secret, name, password_file=pw_file)
+        encrypted = encrypt_secrets({name: secret}, confirm_password=False)[name]
     except AnsibleVaultNotInstalledError as e:
         # Carve-out from the VaultError arm below: without it, "ansible-vault
         # is not installed" would get a misleading "Encryption failed:" prefix.
@@ -274,40 +270,30 @@ def add_secret(
         output.error(f"Encryption failed: {e}")
         raise typer.Exit(1)
 
-    append_to_vault(vault_path, encrypted)
+    if not write_missing_secrets(vault_path, {name: encrypted}):
+        output.error(
+            f"'{name}' already exists in {format_path(vault_path, resolver.project_root)}"
+        )
+        raise typer.Exit(1)
 
     output.success(
         f"Added '{name}' to {format_path(vault_path, resolver.project_root)}"
     )
-    if jwk:
-        output.hint(f"RSA-{bits} JWK keypair")
-    elif encoding == "ulid":
-        output.hint("ULID identifier (26 chars)")
-    elif encoding == "base64":
-        output.hint(f"Base64 encoded ({num_bytes} bytes)")
+    output.hint(describe_secret(secret, encoding, num_bytes, jwk=jwk, bits=bits))
     output.hint(f"Use {{{{ {name} }}}} in templates")
 
 
 @secrets_app.command(name="sync")
 def sync_secrets(
     path: Annotated[Path, typer.Argument(help="Path to vars.yml file")],
-    num_bytes: Annotated[
-        int,
-        typer.Option("--bytes", "-b", help="Bytes of entropy (default: 32 = 256-bit)"),
-    ] = 32,
-    encoding: Annotated[
-        SecretEncoding,
-        typer.Option(
-            "--encoding",
-            "-e",
-            help="Output encoding: hex (default), base64, or ulid",
-        ),
-    ] = SecretEncoding.hex,
+    num_bytes: NumBytesOption = 32,
+    encoding: EncodingOption = SecretEncoding.hex,
     force: Annotated[
         bool, typer.Option("--force", "-f", help="Overwrite existing vault.yml")
     ] = False,
 ) -> None:
     """Scan YAML for vault references and auto-generate secrets."""
+    validate_num_bytes_encoding(num_bytes, encoding)
     project_root = Path.cwd()
     vault_path = path.parent / "vault.yml"
 
@@ -358,7 +344,7 @@ def pull_secrets(
     """Pull credentials from external source to vault."""
     import asyncio
 
-    from slipp.services.secrets import get_source
+    from slipp.services.secrets import get_source, pull
 
     try:
         secret_source = get_source(source)
@@ -366,8 +352,6 @@ def pull_secrets(
         output.error(str(e))
         output.hint("Use 'slipp secrets list' to see available sources")
         raise typer.Exit(1)
-
-    from slipp.services.secrets import pull
 
     try:
         credentials = asyncio.run(

@@ -7,6 +7,7 @@ helpers.go patterns. All checks are composable and return bool.
 import functools
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Literal
 
@@ -19,9 +20,13 @@ PythonDepManager = Literal["uv", "poetry", "pep621", "pipenv", "pip"]
 PYTHON_DOCKER_TEMPLATE = "https://raw.githubusercontent.com/superfly/flyctl/master/scanner/templates/python-docker/Dockerfile"
 NODE_DOCKER_TEMPLATE = "https://raw.githubusercontent.com/superfly/flyctl/master/scanner/templates/node/Dockerfile"
 
+# Default ports, shared the same way so the two families can't drift apart.
+DEFAULT_PYTHON_PORT = 8080
+DEFAULT_NODE_PORT = 3000
+
 
 @functools.lru_cache
-def _load_pyproject(source_dir: Path) -> dict | None:
+def load_pyproject(source_dir: Path) -> dict | None:
     """Parse pyproject.toml once per source_dir, memoized across detectors.
 
     Returns:
@@ -58,7 +63,7 @@ def has_uv_project(source_dir: Path) -> bool:
     if (source_dir / "uv.lock").exists():
         return True
 
-    data = _load_pyproject(source_dir)
+    data = load_pyproject(source_dir)
     if data is not None:
         if "uv" in data.get("tool", {}):
             return True
@@ -97,7 +102,7 @@ def detect_python_dep_manager(source_dir: Path) -> PythonDepManager | None:
     ).exists():
         return "poetry"
 
-    data = _load_pyproject(source_dir)
+    data = load_pyproject(source_dir)
     if data is not None and "project" in data:
         return "pep621"
 
@@ -136,8 +141,6 @@ def parse_dependency(dep: str) -> str:
     - Extras: "requests[security]>=2.0"
     - Version constraints: "pytest==7.0.0", "numpy>=1.20", "pandas~=1.3"
 
-    Ported from .bak/detector.py.
-
     Args:
         dep: Dependency string from requirements file or pyproject.toml
 
@@ -150,7 +153,7 @@ def parse_dependency(dep: str) -> str:
     """
     dep = dep.split(";")[0]
     dep = dep.split("[")[0]
-    dep = dep.split(">=")[0].split("==")[0].split("~=")[0].split("<")[0].split(">")[0]
+    dep = re.split(r"[<>=!~]", dep, maxsplit=1)[0]
     return dep.strip().lower()
 
 
@@ -173,7 +176,7 @@ def parse_pyproject_dependencies(source_dir: Path) -> list[str]:
         >>> "flask" in deps
         True
     """
-    data = _load_pyproject(source_dir)
+    data = load_pyproject(source_dir)
     if data is None:
         return []
 
@@ -191,12 +194,80 @@ def parse_pyproject_dependencies(source_dir: Path) -> list[str]:
     return dependencies
 
 
+def parse_pipfile_dependencies(source_dir: Path) -> list[str]:
+    """Parse dependencies from Pipfile's [packages] table.
+
+    Args:
+        source_dir: Directory containing Pipfile
+
+    Returns:
+        List of normalized package names (lowercase)
+        Empty list if Pipfile doesn't exist or can't be parsed
+    """
+    pipfile = source_dir / "Pipfile"
+    if not pipfile.exists():
+        return []
+
+    try:
+        import tomllib
+
+        with open(pipfile, "rb") as f:
+            data = tomllib.load(f)
+    except Exception:
+        logger.debug("Failed to parse %s", pipfile, exc_info=True)
+        return []
+
+    return [name.lower() for name in data.get("packages", {}).keys()]
+
+
+def parse_setup_cfg_dependencies(source_dir: Path) -> list[str]:
+    """Parse dependencies from setup.cfg's [options] install_requires.
+
+    Args:
+        source_dir: Directory containing setup.cfg
+
+    Returns:
+        List of normalized package names (lowercase)
+        Empty list if setup.cfg doesn't exist, has no install_requires, or
+        can't be parsed
+    """
+    setup_cfg = source_dir / "setup.cfg"
+    if not setup_cfg.exists():
+        return []
+
+    import configparser
+
+    parser = configparser.ConfigParser()
+    try:
+        parser.read(setup_cfg)
+    except configparser.Error:
+        logger.debug("Failed to parse %s", setup_cfg, exc_info=True)
+        return []
+
+    install_requires = parser.get("options", "install_requires", fallback="")
+    dependencies = []
+    for line in install_requires.splitlines():
+        line = line.strip()
+        if line and not line.startswith("#"):
+            package = parse_dependency(line)
+            if package:
+                dependencies.append(package)
+
+    return dependencies
+
+
 def extract_python_dependencies(source_dir: Path) -> list[str]:
     """Extract all Python dependencies from multiple formats (centralized).
 
     Checks Python dependency formats in priority order:
     1. pyproject.toml (PEP 621 and Poetry formats)
     2. requirements.txt
+    3. Pipfile ([packages] table)
+    4. setup.cfg ([options] install_requires)
+
+    setup.py is intentionally not parsed: its dependency list is defined by
+    executing arbitrary Python (the `install_requires=` kwarg to `setup()`),
+    which can't be statically extracted without running it.
 
     This function provides centralized extraction that framework detectors
     can call when needed, eliminating duplicate parsing logic.
@@ -217,8 +288,7 @@ def extract_python_dependencies(source_dir: Path) -> list[str]:
     """
     dependencies = set()
 
-    pyproject_deps = parse_pyproject_dependencies(source_dir)
-    dependencies.update(pyproject_deps)
+    dependencies.update(parse_pyproject_dependencies(source_dir))
 
     requirements_file = source_dir / "requirements.txt"
     if requirements_file.exists():
@@ -232,6 +302,9 @@ def extract_python_dependencies(source_dir: Path) -> list[str]:
                         dependencies.add(package)
         except (IOError, UnicodeDecodeError):
             pass
+
+    dependencies.update(parse_pipfile_dependencies(source_dir))
+    dependencies.update(parse_setup_cfg_dependencies(source_dir))
 
     return sorted(dependencies)
 

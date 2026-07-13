@@ -4,7 +4,6 @@ import json
 import os
 import re
 import subprocess
-import tempfile
 from collections.abc import Iterator
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
@@ -14,7 +13,7 @@ from typing import IO, Any, Callable
 from slipp import output
 from slipp.utils.cli_tools import check_tool_installed, run_checked
 from slipp.utils.errors import AnsibleError, AnsibleNotFoundError
-from slipp.utils.files import open_log
+from slipp.utils.files import open_log, temp_secret_file
 
 ProgressCallback = Callable[[str], None]
 
@@ -38,6 +37,17 @@ def parse_playbook_progress(line: str) -> str | None:
     if kind == "PLAY":
         return f"PLAY {name}"
     return name
+
+
+def spinner_progress_callback(update: Callable[[str], None]) -> ProgressCallback:
+    """Build an on_progress callback that feeds playbook progress labels to a spinner's update fn."""
+
+    def on_progress(line: str) -> None:
+        label = parse_playbook_progress(line)
+        if label:
+            update(label[:60])
+
+    return on_progress
 
 
 @dataclass
@@ -76,17 +86,38 @@ def run_inventory(inventory_path: Path) -> dict[str, Any]:
     return json.loads(result.stdout)
 
 
-def run_list_tasks(playbook: Path, inventory: Path | None = None) -> str:
-    """Run ansible-playbook --list-tasks, return stdout."""
+def run_list_tasks(
+    playbook: Path,
+    inventory: Path | None = None,
+    roles_path: list[str] | None = None,
+) -> str:
+    """Run ansible-playbook --list-tasks, return stdout.
+
+    Args:
+        playbook: Path to playbook file
+        inventory: Optional inventory path
+        roles_path: Optional list of role directories (sets ANSIBLE_ROLES_PATH)
+    """
     check_tool_installed("ansible-playbook", AnsibleNotFoundError)
 
     cmd = ["ansible-playbook", str(playbook), "--list-tasks"]
     if inventory and inventory.exists():
         cmd.extend(["-i", str(inventory)])
 
-    result = run_checked(cmd, AnsibleError, cwd=playbook.parent)
+    env = _subprocess_env(roles_path)
+
+    result = run_checked(cmd, AnsibleError, cwd=playbook.parent, env=env)
 
     return result.stdout
+
+
+def _run_uncertain(
+    cmd: list[str], cwd: Path, env: dict[str, str]
+) -> subprocess.CompletedProcess[str]:
+    """Run a subprocess without raising, for callers that inspect the raw exit code."""
+    return subprocess.run(
+        cmd, capture_output=True, text=True, check=False, cwd=cwd, env=env
+    )
 
 
 def syntax_check(playbook: Path, roles_path: list[str] | None = None) -> bool:
@@ -102,13 +133,8 @@ def syntax_check(playbook: Path, roles_path: list[str] | None = None) -> bool:
 
     env = _subprocess_env(roles_path)
 
-    result = subprocess.run(
-        ["ansible-playbook", str(playbook), "--syntax-check"],
-        capture_output=True,
-        text=True,
-        check=False,
-        cwd=playbook.parent,
-        env=env,
+    result = _run_uncertain(
+        ["ansible-playbook", str(playbook), "--syntax-check"], playbook.parent, env
     )
     return result.returncode == 0
 
@@ -127,13 +153,10 @@ def get_host_group(playbook_path: Path, roles_path: list[str] | None = None) -> 
 
     env = _subprocess_env(roles_path)
 
-    result = subprocess.run(
+    result = _run_uncertain(
         ["ansible-playbook", "--list-hosts", str(playbook_path)],
-        capture_output=True,
-        text=True,
-        check=False,
-        cwd=playbook_path.parent,
-        env=env,
+        playbook_path.parent,
+        env,
     )
 
     for line in result.stdout.splitlines():
@@ -145,17 +168,55 @@ def get_host_group(playbook_path: Path, roles_path: list[str] | None = None) -> 
     return "servers"
 
 
-def check_roles_installed(roles_path: str) -> bool:
+def check_roles_installed(install_dir: str) -> bool:
     """Check if roles are already installed.
 
     Args:
-        roles_path: Directory where roles are installed
+        install_dir: Directory where roles are installed
 
     Returns:
         True if roles directory exists and has content
     """
-    roles_dir = Path(roles_path)
+    roles_dir = Path(install_dir)
     return roles_dir.exists() and any(roles_dir.iterdir())
+
+
+def _stream_subprocess(
+    cmd: list[str],
+    env: dict[str, str],
+    log_handle: IO[str] | None,
+    on_line: Callable[[str], None] | None = None,
+    cwd: Path | None = None,
+) -> int:
+    """Run a subprocess, streaming each stdout line to log_handle/on_line.
+
+    Shared by _run_galaxy_command and run_playbook, which both need to
+    launch a subprocess, tee its combined stdout/stderr to a log file and a
+    line callback, and make sure the process is terminated if the caller
+    bails out (e.g. Ctrl-C) before it exits on its own.
+    """
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        cwd=cwd,
+        env=env,
+    )
+
+    try:
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            if log_handle:
+                log_handle.write(line)
+            if on_line:
+                on_line(line)
+
+        return proc.wait()
+    finally:
+        if proc.poll() is None:
+            proc.terminate()
+            proc.wait()
 
 
 def _run_galaxy_command(
@@ -165,49 +226,37 @@ def _run_galaxy_command(
     on_progress: ProgressCallback | None,
 ) -> int:
     """Run one ansible-galaxy subprocess, streaming output to log/progress."""
-    proc = subprocess.Popen(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        env=env,
-    )
 
-    assert proc.stdout is not None
-    for line in proc.stdout:
-        if log_handle:
-            log_handle.write(line)
+    def on_line(line: str) -> None:
         if on_progress:
             on_progress(line.strip().removeprefix("- ")[:60])
 
-    return proc.wait()
+    return _stream_subprocess(cmd, env, log_handle, on_line)
 
 
-def install_requirements(
+def _install_requirements(
     requirements_file: str,
-    roles_path: str = "roles",
+    install_dir: str = "roles",
     log_dir: Path | None = None,
     force: bool = False,
     on_progress: ProgressCallback | None = None,
 ) -> AnsibleResult:
     """Install roles and collections from requirements.yml via ansible-galaxy.
 
-    Runs two steps: `ansible-galaxy role install` (installed to roles_path)
+    Runs two steps: `ansible-galaxy role install` (installed to install_dir)
     and `ansible-galaxy collection install` (installed to the default
     collections path). The collection step is a no-op if requirements_file
     has no `collections:` block.
 
     Args:
         requirements_file: Path to requirements.yml file
-        roles_path: Directory to install roles (default: roles/)
+        install_dir: Directory to install roles (default: roles/)
         log_dir: Directory for log file (optional)
         force: Force reinstall even if roles/collections exist
         on_progress: Optional callback for progress updates
 
     Returns:
         AnsibleResult with exit code (first non-zero step wins) and log path
-
-    Note: Caller should check check_roles_installed() first if skip logic needed.
     """
     check_tool_installed("ansible-galaxy", AnsibleNotFoundError)
 
@@ -222,9 +271,10 @@ def install_requirements(
             "-r",
             requirements_file,
             "-p",
-            roles_path,
-            "--force",
+            install_dir,
         ]
+        if force:
+            roles_cmd.append("--force")
         exit_code = _run_galaxy_command(roles_cmd, env, log_handle, on_progress)
 
         if exit_code == 0:
@@ -250,7 +300,7 @@ def install_requirements(
 
 def ensure_requirements_installed(
     requirements_file: str,
-    roles_path: str,
+    install_dir: str,
     *,
     log_dir: Path,
     force: bool = False,
@@ -264,21 +314,21 @@ def ensure_requirements_installed(
 
     Args:
         requirements_file: Path to requirements.yml
-        roles_path: Directory to install roles into
+        install_dir: Directory to install roles into
         log_dir: Directory for install logs
         force: Force reinstall even if roles are already present
 
     Raises:
         AnsibleError: If installation fails
     """
-    if not force and check_roles_installed(roles_path):
-        output.info(f"Roles already installed in {roles_path}")
+    if not force and check_roles_installed(install_dir):
+        output.info(f"Roles already installed in {install_dir}")
         return
 
     with output.spinner("Installing requirements") as update:
-        result = install_requirements(
+        result = _install_requirements(
             requirements_file,
-            roles_path,
+            install_dir,
             log_dir=log_dir,
             force=force,
             on_progress=update,
@@ -297,25 +347,18 @@ def ensure_requirements_installed(
 @contextmanager
 def become_password_file() -> Iterator[Path]:
     """Context manager that prompts for the become (sudo) password on the
-    deploy target and writes a temp extra-vars file, deleted on exit.
+    deploy target and writes a temp password file, deleted on exit.
 
-    Ansible has no dedicated --become-password-file flag (unlike
-    --vault-password-file) - ansible_become_pass is a normal extra-var, so
-    it's passed via -e @<file> rather than -e ansible_become_pass=<value>
-    to keep it out of argv/`ps`.
+    Passed via --become-password-file, same as vault_password_file is
+    passed via --vault-password-file, to keep it out of argv/`ps`.
 
     Yields:
-        Path to a temporary YAML extra-vars file (deleted on exit)
+        Path to a temporary password file (deleted on exit)
     """
     password = output.prompt_password("BECOME (sudo) password")
 
-    fd, path = tempfile.mkstemp(prefix="become_pass_", suffix=".yml", text=True)
-    try:
-        with os.fdopen(fd, "w") as f:
-            f.write(f"ansible_become_pass: {json.dumps(password)}\n")
-        yield Path(path)
-    finally:
-        Path(path).unlink(missing_ok=True)
+    with temp_secret_file(password, prefix="become_pass_") as path:
+        yield path
 
 
 def maybe_become_password_file(stack: ExitStack, ask_become_pass: bool) -> Path | None:
@@ -349,11 +392,11 @@ def run_playbook(
         check: Run in dry-run mode
         vault_file: Optional path to vault file (adds -e @path)
         vault_password_file: Optional path to vault password file
-        become_pw_file: Optional path to a become-password extra-vars file
+        become_pw_file: Optional path to a become-password file
             (see become_password_file() above)
         tags: Optional comma-separated tags to run
         skip_tags: Optional comma-separated tags to skip
-        roles_path: Optional list of role directories (--roles-path)
+        roles_path: Optional list of role directories (sets ANSIBLE_ROLES_PATH)
         log_dir: Directory for log file (optional)
         extra_vars: Optional dict of extra variables to pass (-e key=value)
         on_progress: Optional callback for progress updates
@@ -371,7 +414,7 @@ def run_playbook(
     if vault_password_file:
         cmd.extend(["--vault-password-file", str(vault_password_file)])
     if become_pw_file:
-        cmd.extend(["-e", f"@{become_pw_file}"])
+        cmd.extend(["--become-password-file", str(become_pw_file)])
     if tags:
         cmd.extend(["--tags", tags])
     if skip_tags:
@@ -383,32 +426,23 @@ def run_playbook(
     log_path, log_handle = open_log(log_dir, "ansible-playbook")
     env = _subprocess_env(roles_path, unbuffered=True)
 
-    proc = subprocess.Popen(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        cwd=Path(playbook).parent,
-        env=env,
-    )
-
     saw_no_hosts_skip = False
     saw_recap_host_row = False
 
-    try:
-        assert proc.stdout is not None
-        for line in proc.stdout:
-            if log_handle:
-                log_handle.write(line)
-            stripped = line.strip()
-            if on_progress:
-                on_progress(stripped)
-            if _NO_HOSTS_SKIP_RE.search(stripped):
-                saw_no_hosts_skip = True
-            elif _RECAP_HOST_ROW_RE.match(stripped):
-                saw_recap_host_row = True
+    def on_line(line: str) -> None:
+        nonlocal saw_no_hosts_skip, saw_recap_host_row
+        stripped = line.strip()
+        if on_progress:
+            on_progress(stripped)
+        if _NO_HOSTS_SKIP_RE.search(stripped):
+            saw_no_hosts_skip = True
+        elif _RECAP_HOST_ROW_RE.match(stripped):
+            saw_recap_host_row = True
 
-        exit_code = proc.wait()
+    try:
+        exit_code = _stream_subprocess(
+            cmd, env, log_handle, on_line, cwd=Path(playbook).parent
+        )
         return AnsibleResult(
             exit_code=exit_code,
             log_path=log_path,

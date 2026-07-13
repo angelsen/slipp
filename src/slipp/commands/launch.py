@@ -67,7 +67,9 @@ def launch_command(
     dirs, output_dir = resolve_project_dirs(project_dirs)
 
     if health_check and not health_check.startswith("/"):
-        health_check = f"/{health_check}"
+        raise typer.BadParameter(
+            f"--health-check must start with '/', got '{health_check}'"
+        )
 
     context = FullContext(
         output_dir=output_dir,
@@ -84,6 +86,3 @@ def launch_command(
     )
 
     run_full_pipeline(context)
-
-
-__all__ = ["launch_command"]

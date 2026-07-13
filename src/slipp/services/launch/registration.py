@@ -1,9 +1,11 @@
 """Shared project-registration logic for launch and scaffold pipelines."""
 
 from pathlib import Path
+from typing import Any
 
 from slipp import output
-from slipp.models.local_config import ExposeEntry
+from slipp.models.local_config import ExposeEntry, LocalConfig
+from slipp.models.service import Runtime
 from slipp.services.config import LocalConfigService
 from slipp.services.registry import ProjectRegistry
 from slipp.utils.errors import LaunchError
@@ -44,8 +46,11 @@ def register_project(
     Raises:
         LaunchError: If config creation or registration fails
     """
-    try:
-        LocalConfigService.create(
+    config_path = LocalConfigService.get_config_path(project_root)
+    config_preexisted = config_path.is_file()
+
+    def build_new() -> LocalConfig:
+        return LocalConfigService.build(
             name=name,
             inventory_path=inventory_path,
             playbook_path=playbook_path,
@@ -57,7 +62,39 @@ def register_project(
             project_dirs=project_dirs,
             expose=expose,
         )
-        output.success(f"Created slipp.yaml with name '{name}'")
+
+    def mutate(_config: LocalConfig) -> dict[str, Any]:
+        # Only set fields this call was given explicit values for, so
+        # re-registering an existing project (e.g. re-running `slipp
+        # projects add`) doesn't clobber tag_presets/runs/expose that
+        # a full-config rebuild would silently drop.
+        changes: dict[str, Any] = {
+            "name": name,
+            "inventory": inventory_path,
+            "playbook": playbook_path,
+        }
+        if runtime is not None:
+            changes["runtime"] = Runtime(runtime.lower())
+        if roles_path is not None:
+            changes["roles_path"] = roles_path
+        if galaxy_path is not None:
+            changes["galaxy_path"] = galaxy_path
+        if vault_path is not None:
+            changes["vault"] = vault_path
+        if project_dirs is not None:
+            changes["project_dirs"] = project_dirs
+        if expose is not None:
+            changes["expose"] = expose
+        return changes
+
+    try:
+        _config, created = LocalConfigService.create_or_update_with(
+            build_new, mutate, project_root=project_root
+        )
+        if created:
+            output.success(f"Created slipp.yaml with name '{name}'")
+        else:
+            output.success(f"Updated slipp.yaml with name '{name}'")
     except Exception as e:
         raise LaunchError(f"Failed to create local config: {e}") from e
 
@@ -73,4 +110,10 @@ def register_project(
         registry.register(name=name, project_path=project_root)
         output.info(f"Registered '{name}' in global registry")
     except Exception as e:
+        # Only clean up slipp.yaml if this call created it fresh -- if one
+        # already existed, it was merge-updated in place and we have no
+        # snapshot of the prior content to restore, so leave it as-is
+        # rather than deleting a file we didn't create.
+        if not config_preexisted:
+            config_path.unlink(missing_ok=True)
         raise LaunchError(f"Failed to register project: {e}") from e

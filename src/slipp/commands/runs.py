@@ -4,7 +4,6 @@ Follows the design principle: plural commands = manage resources.
 Provides CRUD operations for run profiles.
 """
 
-import json
 from typing import Annotated
 
 import typer
@@ -27,8 +26,11 @@ def list_profiles() -> None:
     profiles = RunProfileService().list_profiles()
 
     if not profiles:
-        output.info("No profiles saved")
-        output.hint('Create one with: slipp run <name> --cmd "..."')
+        output.empty_or_table(
+            [],
+            "No profiles saved",
+            hint_msg='Create one with: slipp run <name> --cmd "..."',
+        )
         return
 
     if output.get_output_format() == OutputFormat.json:
@@ -36,7 +38,7 @@ def list_profiles() -> None:
             {"name": name, **profile.model_dump(by_alias=True, exclude_none=True)}
             for name, profile in profiles.items()
         ]
-        output.stdout(json.dumps(data, indent=2))
+        output.json(data)
         return
 
     output.blank()

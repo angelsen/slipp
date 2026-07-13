@@ -10,7 +10,6 @@ import typer
 
 from slipp import output
 from slipp.commands.common import find_service_or_exit, resolve_host_or_exit
-from slipp.models.service import Runtime
 from slipp.services.ssh import SSHService, UserResolver, container_shell, ssh_as_user
 
 
@@ -41,7 +40,7 @@ def ssh_command(
         if resolution.warning:
             output.warning(resolution.warning)
 
-        if Runtime(svc.runtime).is_container():
+        if svc.runtime.is_container():
             output.info(
                 f"Shelling into container {svc.name} on {ssh_config.ansible_host}..."
             )

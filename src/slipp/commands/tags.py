@@ -34,8 +34,11 @@ def list_presets() -> None:
     presets = PresetResolver(config).list_presets()
 
     if not presets:
-        output.info("No tag presets configured")
-        output.hint("Add preset: slipp tags add <name> --tags <tag>")
+        output.empty_or_table(
+            [],
+            "No tag presets configured",
+            hint_msg="Add preset: slipp tags add <name> --tags <tag>",
+        )
         return
 
     rows = [{"name": name, "args": args} for name, args in presets.items()]
@@ -81,8 +84,9 @@ def add_preset(
     else:
         output.success(f"Added preset '{name}'")
 
-    config.tag_presets[name] = args
-    LocalConfigService.save(config, root)
+    LocalConfigService.update_with(
+        lambda c: {"tag_presets": {**c.tag_presets, name: args}}, root
+    )
 
     output.hint(f"Use: slipp deploy {name}")
 
@@ -100,7 +104,11 @@ def remove_preset(
             output.hint(f"Available presets: {', '.join(config.tag_presets.keys())}")
         raise typer.Exit(1)
 
-    del config.tag_presets[name]
-    LocalConfigService.save(config, root)
+    LocalConfigService.update_with(
+        lambda c: {
+            "tag_presets": {k: v for k, v in c.tag_presets.items() if k != name}
+        },
+        root,
+    )
 
     output.success(f"Removed preset '{name}'")

@@ -11,6 +11,7 @@ from typing import Annotated
 import typer
 
 from slipp import output
+from slipp.models.service import Runtime
 from slipp.output import format_path
 from slipp.services.config import LocalConfigService
 from slipp.services.config.detection import (
@@ -104,7 +105,7 @@ def add_command(
         typer.Option("--vault", help="Path to vault.yml for secret management"),
     ] = None,
     runtime: Annotated[
-        str | None,
+        Runtime | None,
         typer.Option("--runtime", help="How the app runs: systemd, docker, podman"),
     ] = None,
 ) -> None:

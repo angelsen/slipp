@@ -6,7 +6,7 @@ from typing import Annotated
 import typer
 
 from slipp import output
-from slipp.constants import DEFAULT_ENV, get_inventory_filename
+from slipp.constants import DEFAULT_ENV, PLAYBOOK_FILENAME, get_inventory_filename
 from slipp.services.config import write_minimal_inventory
 from slipp.services.launch.registration import register_project
 from slipp.services.providers import get_gigahost_client, provision_and_bootstrap
@@ -58,11 +58,11 @@ def provision_command(
         name=name,
         project_root=Path.cwd(),
         inventory_path=inventory_filename,
-        playbook_path="playbook.yml",
+        playbook_path=PLAYBOOK_FILENAME,
     )
 
     output.success("Provisioning complete")
-    if (Path.cwd() / "playbook.yml").exists():
+    if (Path.cwd() / PLAYBOOK_FILENAME).exists():
         output.hint("slipp deploy is ready to run")
     else:
-        output.hint("No playbook.yml found -- add one, or run: slipp launch")
+        output.hint(f"No {PLAYBOOK_FILENAME} found -- add one, or run: slipp launch")

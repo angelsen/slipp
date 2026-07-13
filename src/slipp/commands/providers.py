@@ -20,6 +20,14 @@ providers_app = typer.Typer(
 SUPPORTED_PROVIDERS = ["gigahost", "pangolin", "wg-deploy"]
 
 
+def _validate_provider_name(name: str) -> None:
+    """Exit with an error + hint if `name` isn't a supported provider."""
+    if name not in SUPPORTED_PROVIDERS:
+        output.error(f"Unknown provider '{name}'")
+        output.hint(f"Supported providers: {', '.join(SUPPORTED_PROVIDERS)}")
+        raise typer.Exit(1)
+
+
 @providers_app.command(name="add")
 def add_provider(
     name: Annotated[
@@ -27,10 +35,7 @@ def add_provider(
     ],
 ) -> None:
     """Configure and verify an infrastructure provider."""
-    if name not in SUPPORTED_PROVIDERS:
-        output.error(f"Unknown provider '{name}'")
-        output.hint(f"Supported providers: {', '.join(SUPPORTED_PROVIDERS)}")
-        raise typer.Exit(1)
+    _validate_provider_name(name)
 
     if name == "pangolin":
         _add_pangolin()
@@ -50,12 +55,9 @@ def add_provider(
         raise typer.Exit(1)
 
     account_name = account.get("cust_name")
-    account_id = account.get("cust_id")
 
     ProviderConfigService.set_gigahost(
-        GigahostConfig(
-            api_key=api_key, account_name=account_name, account_id=account_id
-        )
+        GigahostConfig(api_key=api_key, account_name=account_name)
     )
 
     output.success(f"Gigahost configured for account: {account_name}")
@@ -136,12 +138,11 @@ def list_providers() -> None:
             {"provider": "wg-deploy", "account": str(config.wg_deploy.repo_path)}
         )
 
-    if not rows:
-        output.info("No providers configured")
-        output.hint("Add one with: slipp providers add gigahost")
-        return
-
-    output.table(rows)
+    output.empty_or_table(
+        rows,
+        "No providers configured",
+        hint_msg="Add one with: slipp providers add gigahost",
+    )
 
 
 @providers_app.command(name="remove")
@@ -149,9 +150,7 @@ def remove_provider(
     name: Annotated[str, typer.Argument(help="Provider name to remove")],
 ) -> None:
     """Remove a configured provider."""
-    if name not in SUPPORTED_PROVIDERS:
-        output.error(f"Unknown provider '{name}'")
-        raise typer.Exit(1)
+    _validate_provider_name(name)
 
     config = ProviderConfigService.load()
 

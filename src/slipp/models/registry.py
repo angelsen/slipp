@@ -8,9 +8,10 @@ All project configuration is stored in the local slipp.yaml.
 """
 
 from datetime import datetime
-from pathlib import Path
 
 from pydantic import BaseModel, Field
+
+from slipp.models.types import PathStr
 
 
 class RegisteredProject(BaseModel):
@@ -26,7 +27,7 @@ class RegisteredProject(BaseModel):
     """
 
     name: str = Field(..., min_length=1)
-    project_path: Path
+    project_path: PathStr
     registered_at: datetime = Field(default_factory=datetime.now)
 
 

@@ -24,10 +24,6 @@ class ProjectRegistry:
     - List all projects
     """
 
-    def __init__(self, io: RegistryIO | None = None):
-        """Initialize with optional RegistryIO for persistence."""
-        self.io = io or RegistryIO()
-
     def register(self, name: str, project_path: Path) -> RegisteredProject:
         """Register a project in the global registry.
 
@@ -41,17 +37,18 @@ class ProjectRegistry:
         Returns:
             RegisteredProject
         """
-        registry = self.io.load()
-        existing = registry.projects.get(name)
+        with RegistryIO.lock():
+            registry = RegistryIO.load()
+            existing = registry.projects.get(name)
 
-        project = RegisteredProject(
-            name=name,
-            project_path=project_path.resolve(),
-            registered_at=existing.registered_at if existing else datetime.now(),
-        )
+            project = RegisteredProject(
+                name=name,
+                project_path=project_path.resolve(),
+                registered_at=existing.registered_at if existing else datetime.now(),
+            )
 
-        registry.projects[name] = project
-        self.io.save(registry)
+            registry.projects[name] = project
+            RegistryIO.save(registry)
         return project
 
     def unregister(self, name: str) -> bool:
@@ -63,14 +60,15 @@ class ProjectRegistry:
         Returns:
             True if project was removed, False if not found
         """
-        registry = self.io.load()
+        with RegistryIO.lock():
+            registry = RegistryIO.load()
 
-        if name in registry.projects:
-            del registry.projects[name]
-            self.io.save(registry)
-            return True
+            if name in registry.projects:
+                del registry.projects[name]
+                RegistryIO.save(registry)
+                return True
 
-        return False
+            return False
 
     def get(self, name: str) -> RegisteredProject | None:
         """Lookup a project by name.
@@ -81,7 +79,7 @@ class ProjectRegistry:
         Returns:
             RegisteredProject if found, None otherwise
         """
-        registry = self.io.load()
+        registry = RegistryIO.load()
         return registry.projects.get(name)
 
     def list_all(self) -> list[RegisteredProject]:
@@ -90,5 +88,5 @@ class ProjectRegistry:
         Returns:
             Sorted list of all registered projects
         """
-        registry = self.io.load()
+        registry = RegistryIO.load()
         return sorted(registry.projects.values(), key=lambda p: p.name)

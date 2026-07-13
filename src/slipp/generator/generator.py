@@ -15,6 +15,7 @@ from slipp.generator.extractors import extract_template_variables
 from slipp.generator.fetcher import TemplateFetcher
 from slipp.generator.renderer import render_go_template
 from slipp.models.deployment import DetectedService
+from slipp.models.service import Runtime
 
 
 class GeneratedFile(BaseModel):
@@ -30,21 +31,17 @@ class TemplateGenerator:
     Orchestrates template fetching, variable extraction, and rendering.
     """
 
-    def __init__(self, cache_dir: Path | None = None):
-        """Initialize generator with optional cache directory.
-
-        Args:
-            cache_dir: Directory to cache templates (default: ~/.cache/slipp/templates)
-        """
-        self.fetcher = TemplateFetcher(cache_dir)
+    def __init__(self):
+        """Initialize generator."""
+        self.fetcher = TemplateFetcher()
 
     def generate(
         self,
         service: DetectedService,
         output_dir: Path,
-        container_runtime: str = "docker",
-    ) -> list[GeneratedFile]:
-        """Generate deployment files for detected service.
+        container_runtime: Runtime = Runtime.DOCKER,
+    ) -> GeneratedFile:
+        """Generate the Dockerfile for a detected service.
 
         Args:
             service: Detected service from scanner
@@ -52,16 +49,7 @@ class TemplateGenerator:
             container_runtime: Container runtime (docker or podman)
 
         Returns:
-            List of generated files (Dockerfile, .dockerignore, etc.)
-
-        Example:
-            >>> from slipp.scanner import scan
-            >>> from slipp.generator import TemplateGenerator
-            >>> service = scan(Path("examples/PoC"))
-            >>> generator = TemplateGenerator()
-            >>> files = generator.generate(service, service.path)
-            >>> [f.path.name for f in files]
-            ['Dockerfile']
+            The generated Dockerfile
         """
         template_path = self._extract_template_path(service.template_url)
         template = self.fetcher.fetch_template(template_path)
@@ -70,19 +58,17 @@ class TemplateGenerator:
             template.content, variables, label=template_path
         )
 
-        if container_runtime == "podman":
+        if container_runtime == Runtime.PODMAN:
             rendered_content = self._apply_podman_fixes(rendered_content)
 
         preamble = self._generate_preamble(template_path)
         final_content = preamble + rendered_content
         output_file = output_dir / template.path
 
-        return [
-            GeneratedFile(
-                path=output_file,
-                content=final_content,
-            )
-        ]
+        return GeneratedFile(
+            path=output_file,
+            content=final_content,
+        )
 
     def _extract_template_path(self, template_url: str) -> str:
         """Extract template path from GitHub raw URL.
