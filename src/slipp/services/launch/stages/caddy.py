@@ -11,56 +11,54 @@ from slipp.models.deployment import (
     DetectedService,
     ProvisionConfig,
 )
-from slipp.scanner.routing import classify_services
+from slipp.models.local_config import ExposeEntry
+from slipp.scanner.routing import default_expose, validate_expose
 from slipp.services.launch.context import FullContext
-from slipp.services.launch.stages.common import FileGenerationStage, require
+from slipp.services.launch.stages.common import (
+    FileGenerationStage,
+    require,
+    resolve_expose,
+)
+from slipp.utils.errors import LaunchError
 
 
-def build_caddy_sites(services: list[DetectedService], domain: str) -> list[CaddySite]:
-    """Build Caddy site configs based on detected services.
-
-    Strategy:
-    - Single service: domain → service
-    - Multiple services: domain/api → backend, domain → frontend
+def build_caddy_sites(
+    services: list[DetectedService],
+    domain: str,
+    expose: dict[str, ExposeEntry] | None = None,
+) -> list[CaddySite]:
+    """Build Caddy site configs from the expose: routing block.
 
     Args:
-        services: List of detected services
-        domain: Application domain
+        services: Detected services (supply the ports).
+        domain: Application domain, used to seed the default routing when
+            no expose block is given.
+        expose: Explicit routing (service name -> domain/path). Defaults
+            to the frontend/backend convention via default_expose().
 
     Returns:
         List of CaddySite configurations
+
+    Raises:
+        LaunchError: If the expose block is invalid (see validate_expose).
     """
-    if len(services) == 1:
-        return [
-            CaddySite(domain=domain, upstream_port=services[0].port, path_prefix="/")
-        ]
+    if expose is None:
+        expose = default_expose(services, domain)
 
-    roles = classify_services(services)
+    try:
+        validate_expose(expose, services)
+    except ValueError as e:
+        raise LaunchError(str(e)) from e
 
-    sites = []
-    if roles.backend:
-        sites.append(
-            CaddySite(
-                domain=domain, upstream_port=roles.backend.port, path_prefix="/api"
-            )
+    ports = {s.name: s.port for s in services}
+    return [
+        CaddySite(
+            domain=entry.domain,
+            upstream_port=ports[name],
+            path_prefix=entry.path,
         )
-
-    if roles.frontend:
-        sites.append(
-            CaddySite(domain=domain, upstream_port=roles.frontend.port, path_prefix="/")
-        )
-
-    # Add any remaining services as subdomains
-    for service in roles.others:
-        sites.append(
-            CaddySite(
-                domain=f"{service.name}.{domain}",
-                upstream_port=service.port,
-                path_prefix="/",
-            )
-        )
-
-    return sites
+        for name, entry in expose.items()
+    ]
 
 
 class CaddyConfigStage:
@@ -91,7 +89,10 @@ class CaddyConfigStage:
             is_ip = is_ip_address(app_domain)
             caddy_domain = ":80" if is_ip else app_domain
 
-            caddy_sites = build_caddy_sites(context.services, caddy_domain)
+            # IP-only deploys route everything to :80 -- don't resolve (or
+            # later persist) an expose block full of ":80" pseudo-domains.
+            expose = None if is_ip else resolve_expose(context, caddy_domain)
+            caddy_sites = build_caddy_sites(context.services, caddy_domain, expose)
             caddy_config = CaddyConfig(
                 sites=caddy_sites,
                 auto_https=not is_ip,

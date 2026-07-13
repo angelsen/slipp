@@ -138,8 +138,15 @@ def sync_resource(
         dirs, _ = resolve_project_dirs(
             resolve_declared_dirs(project_root), root=project_root
         )
+        local_config = LocalConfigService.load(project_root)
         try:
-            wg_manage.sync(dirs, project_name, wg_host, dry_run=dry_run)
+            wg_manage.sync(
+                dirs,
+                project_name,
+                wg_host,
+                expose=local_config.expose if local_config else None,
+                dry_run=dry_run,
+            )
         except WgManageError as e:
             output.error(str(e))
             raise typer.Exit(1)

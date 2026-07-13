@@ -8,10 +8,11 @@ All models use Pydantic v2 for validation and serialization.
 
 from pathlib import Path
 
-from pydantic import BaseModel, Field, field_serializer
+from pydantic import BaseModel, Field, field_serializer, field_validator
 
 from slipp.models.host import AnsibleHost
 from slipp.models.service import Runtime
+from slipp.utils.identifiers import validate_config_name
 
 
 class DetectedService(BaseModel):
@@ -35,6 +36,12 @@ class DetectedService(BaseModel):
     port: int
     template_url: str
     dependencies: list[str] = Field(default_factory=list)
+
+    @field_validator("name")
+    @classmethod
+    def _validate_name(cls, value: str) -> str:
+        """Directory names become systemd units/paths/YAML -- see validator."""
+        return validate_config_name(value, "service name")
 
     @field_serializer("path")
     def serialize_path(self, path: Path) -> str:

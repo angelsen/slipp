@@ -1,5 +1,6 @@
 """Container image transfer to remote hosts via SSH."""
 
+import shlex
 import subprocess
 
 from slipp.models.host import AnsibleHost
@@ -54,7 +55,8 @@ def list_images(
     fmt = "{{.Repository}}:{{.Tag}}\t{{.Size}}\t{{.CreatedSince}}"
     if filter_pattern:
         base_cmd = (
-            f"{remote_runtime} images --filter 'reference={filter_pattern}' "
+            f"{remote_runtime} images "
+            f"--filter {shlex.quote(f'reference={filter_pattern}')} "
             f"--format '{fmt}'"
         )
     else:

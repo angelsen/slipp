@@ -16,8 +16,9 @@ from typing import Any
 
 from slipp import output
 from slipp.models.deployment import DeploymentHostConfig, DetectedService
+from slipp.models.local_config import ExposeEntry
 from slipp.scanner import scan
-from slipp.scanner.routing import classify_services
+from slipp.scanner.routing import default_expose, validate_expose
 from slipp.services.ssh import SSHResult, SSHService
 from slipp.utils.errors import WgManageError
 
@@ -34,72 +35,64 @@ def service_label(project_name: str) -> str:
     return f"slipp:{project_name}"
 
 
-def build_wg_services(services: list[DetectedService], domain: str) -> list[dict]:
-    """Build wg-manage service exposure entries.
+def build_wg_services(
+    services: list[DetectedService],
+    domain: str,
+    expose: dict[str, ExposeEntry] | None = None,
+) -> list[dict]:
+    """Build wg-manage service exposure entries from the expose: block.
 
-    Mirrors build_caddy_sites()'s frontend/backend convention
-    (launch/stages/caddy.py), collapsed onto wg-manage's --route path
-    multiplexing since wg-manage is one-FQDN-to-one-entry (no separate
-    domain/api "site" the way Caddy has):
-
-    - Single service: bare domain.
-    - Multi-service: the frontend (Node framework, or the first non-backend
-      service if no frontend is detected) sits on the bare domain; the
-      backend (Python framework), if any, is folded into that same entry
-      as a `/api/*` route instead of getting its own site. Any other
-      detected services keep their own `{name}.{domain}` subdomain entry.
+    Translates the shared routing block (same one build_caddy_sites
+    consumes) onto wg-manage's one-FQDN-to-one-entry model: per domain,
+    the service on path "/" owns the entry, and every other path on that
+    domain is folded in as a `--route 'PATH/*=localhost:PORT'` flag.
 
     Args:
-        services: Detected services to expose.
-        domain: Application domain.
+        services: Detected services (supply the ports).
+        domain: Application domain, used to seed the default routing when
+            no expose block is given.
+        expose: Explicit routing (service name -> domain/path). Defaults
+            to the frontend/backend convention via default_expose().
 
     Returns:
         List of {name, fqdn, port, route_flags} dicts. route_flags is a
-        pre-joined string of `--route 'PATH=localhost:PORT'` flags (empty
-        when there are none), joined here rather than left as structured
-        data -- wg-manage only ever produces at most one route (the
-        backend's) today, and the two consumers (sync(), which only reads
-        fqdn, and the Ansible role template, which needs the flag string
-        verbatim) have no use for anything more structured.
+        pre-joined string of `--route` flags (empty when there are none) --
+        the two consumers (sync(), which only reads fqdn, and the Ansible
+        role template, which needs the flag string verbatim) have no use
+        for anything more structured.
+
+    Raises:
+        WgManageError: If the expose block is invalid (see validate_expose).
     """
-    if len(services) == 1:
-        service = services[0]
-        return [
-            {
-                "name": service.name,
-                "fqdn": domain,
-                "port": service.port,
-                "route_flags": "",
-            }
-        ]
+    if expose is None:
+        expose = default_expose(services, domain)
 
-    roles = classify_services(services)
-    # frontend is never `backend` (disjoint framework sets), and with >=2
-    # services there's always at least one entry that isn't `backend` --
-    # so primary is guaranteed non-None here, unlike build_caddy_sites()'s
-    # frontend/backend which can each independently be absent. When no
-    # frontend exists, primary consumes the head of `others`.
-    primary = roles.frontend or roles.others[0]
-    subdomain_services = roles.others if roles.frontend else roles.others[1:]
+    try:
+        validate_expose(expose, services)
+    except ValueError as e:
+        raise WgManageError(str(e)) from e
 
-    backend = roles.backend
-    route_flags = f"--route '/api/*=localhost:{backend.port}'" if backend else ""
-    entries = [
-        {
-            "name": primary.name,
-            "fqdn": domain,
-            "port": primary.port,
-            "route_flags": route_flags,
-        }
-    ]
+    ports = {s.name: s.port for s in services}
+    by_domain: dict[str, list[tuple[str, ExposeEntry]]] = {}
+    for name, entry in expose.items():
+        by_domain.setdefault(entry.domain, []).append((name, entry))
 
-    for service in subdomain_services:
+    entries = []
+    for fqdn, items in by_domain.items():
+        # validate_expose guarantees exactly one "/" entry per domain.
+        root = next(n for n, e in items if e.path == "/")
+        # ExposeEntry's validator normalizes paths (leading /, no trailing).
+        route_flags = " ".join(
+            f"--route {shlex.quote(f'{e.path}/*=localhost:{ports[n]}')}"
+            for n, e in items
+            if e.path != "/"
+        )
         entries.append(
             {
-                "name": service.name,
-                "fqdn": f"{service.name}.{domain}",
-                "port": service.port,
-                "route_flags": "",
+                "name": root,
+                "fqdn": fqdn,
+                "port": ports[root],
+                "route_flags": route_flags,
             }
         )
 
@@ -113,12 +106,17 @@ def make_hub(name: str, ip: str, repo_path: Path) -> None:
     stdout/stderr capture, so the prompt reaches the terminal).
 
     Raises:
-        WgManageError: If new-host.sh exits non-zero.
+        WgManageError: If new-host.sh exits non-zero, or the configured
+            repo path has gone stale (moved/deleted since `providers add
+            wg-deploy` validated it) and can't be used as a cwd.
     """
-    result = subprocess.run(
-        ["bash", "scripts/new-host.sh", name, ip],
-        cwd=repo_path,
-    )
+    try:
+        result = subprocess.run(
+            ["bash", "scripts/new-host.sh", name, ip],
+            cwd=repo_path,
+        )
+    except OSError as e:
+        raise WgManageError(f"Cannot run new-host.sh in {repo_path}: {e}") from e
     if result.returncode != 0:
         raise WgManageError(f"new-host.sh failed (exit {result.returncode})")
 
@@ -195,6 +193,7 @@ def sync(
     project_name: str,
     host: DeploymentHostConfig,
     *,
+    expose: dict[str, ExposeEntry] | None = None,
     dry_run: bool = False,
     quiet: bool = False,
 ) -> None:
@@ -212,6 +211,10 @@ def sync(
             (caller has already resolved --dir / workspace auto-detection
             -- this function only does scanning + converge, not CLI-arg
             interpretation).
+        expose: The project's slipp.yaml expose: block, if any -- the
+            declared FQDN set is derived from it so hand-edited routing
+            isn't pruned as stray. None falls back to the default
+            convention over the scanned services.
         quiet: Skip the routine "declared/kept" report -- the post-deploy
             hook passes this so a normal deploy with nothing to prune
             doesn't add noise. Strays (found or removed) are always
@@ -237,7 +240,7 @@ def sync(
     if not services:
         raise WgManageError("No services detected -- nothing to converge")
 
-    declared = build_wg_services(services, app_domain)
+    declared = build_wg_services(services, app_domain, expose)
     declared_fqdns = {svc["fqdn"] for svc in declared}
 
     label = service_label(project_name)

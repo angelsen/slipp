@@ -19,10 +19,14 @@
 		fail_duration 30s
 	}
 {%- else %}
-	{# Multiple services on same domain - use handle blocks with path routing #}
+	{# Multiple services on same domain - use handle blocks with path routing.
+	   `{path}/*` (not `{path}*`) so /api doesn't swallow /apiary, matching
+	   wg-manage's route semantics exactly; /api with no trailing segment
+	   falls through to the root service's /* block, same as wg-manage's
+	   matcherless fallback. #}
 	{%- for site in sites|sort(attribute='path_prefix', reverse=true) %}
 
-	handle {{ site.path_prefix }}* {
+	handle {{ '/*' if site.path_prefix == '/' else site.path_prefix ~ '/*' }} {
 		reverse_proxy localhost:{{ site.upstream_port }} {
 			health_uri /health
 			health_interval 30s

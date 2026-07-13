@@ -7,6 +7,32 @@ stored in slipp.yaml at the project root. This file is git-tracked.
 from pydantic import BaseModel, Field, field_validator
 
 from slipp.models.service import Runtime
+from slipp.utils.identifiers import validate_config_name
+
+
+class ExposeEntry(BaseModel):
+    """One exposed service route in slipp.yaml's expose: block.
+
+    Maps a detected service (the block's key) to the domain and path
+    prefix it should be served on. Seeded by `slipp launch` from the
+    default frontend/backend routing convention; edit and redeploy to
+    change routing.
+    """
+
+    domain: str = Field(..., min_length=1, description="FQDN serving this service")
+    path: str = Field(default="/", description="Path prefix on the domain")
+
+    @field_validator("path")
+    @classmethod
+    def _normalize_path(cls, value: str) -> str:
+        """Require a leading slash (hand-edited YAML), drop trailing ones.
+
+        A bare "api" or "" would render a malformed Caddy `handle api*`
+        block or a wg-manage route colliding with the domain's root entry.
+        """
+        if not value.startswith("/"):
+            raise ValueError(f"expose path must start with '/', got '{value}'")
+        return value.rstrip("/") or "/"
 
 
 class LocalConfig(BaseModel):
@@ -57,6 +83,10 @@ class LocalConfig(BaseModel):
     project_dirs: list[str] | None = Field(
         default=None, description="--dir values slipp launch scanned"
     )
+    expose: dict[str, ExposeEntry] | None = Field(
+        default=None,
+        description="Service routing (service name -> domain/path), seeded by launch",
+    )
     tag_presets: dict[str, str] = Field(
         default_factory=dict, description="Named tag presets (name -> ansible args)"
     )
@@ -65,6 +95,12 @@ class LocalConfig(BaseModel):
     )
 
     model_config = {"extra": "ignore"}
+
+    @field_validator("name")
+    @classmethod
+    def _validate_name(cls, value: str) -> str:
+        """Project names become systemd units/paths/YAML -- see validator."""
+        return validate_config_name(value, "project name")
 
     @field_validator("runtime", mode="before")
     @classmethod

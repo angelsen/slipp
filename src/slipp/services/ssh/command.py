@@ -4,6 +4,8 @@ Extracts command building logic from exec.py into a shared service.
 Provides static methods for building properly formatted shell commands.
 """
 
+import shlex
+
 from slipp.models.host import AnsibleHost
 
 
@@ -116,9 +118,12 @@ class CommandBuilder:
             parts.append("-it")
 
         if user and user != "root":
-            parts.extend(["-u", user])
+            parts.extend(["-u", shlex.quote(user)])
 
-        parts.append(container)
+        # cmd stays raw on purpose: `slipp exec` commands are the user's own
+        # shell input and should be interpreted remotely, same as an ssh
+        # prompt. Only the identifiers around it get quoted.
+        parts.append(shlex.quote(container))
         parts.append(cmd)
 
         return " ".join(parts)

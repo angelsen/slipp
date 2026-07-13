@@ -9,10 +9,13 @@ from typing import Generic, TypeVar
 
 from slipp import output
 from slipp.constants import VALID_PROXIES
+from slipp.models.local_config import ExposeEntry
 from slipp.models.service import Runtime
+from slipp.scanner.routing import default_expose
 from slipp.services.launch.context import (
     BaseContext,
     DockerfileContext,
+    FullContext,
     ScanContext,
 )
 from slipp.utils.errors import LaunchError
@@ -44,6 +47,51 @@ def require(value: T | None, what: str) -> T:
     if value is None:
         raise LaunchError(f"Internal pipeline error: {what} not set by a prior stage")
     return value
+
+
+def resolve_expose(context: FullContext, domain: str) -> dict[str, ExposeEntry]:
+    """Resolve the routing block once per launch, memoized on the context.
+
+    An existing expose: block in slipp.yaml wins (the user's explicit
+    routing); otherwise the default convention is seeded from the scanned
+    services. Both proxy stages (Caddy, wg-manage) resolve through here so
+    they can never route differently, and RegistrationStage persists the
+    result back to slipp.yaml.
+    """
+    if context.expose is None:
+        # Lazy: services.config.local imports other launch-adjacent modules.
+        from slipp.services.config import LocalConfigService
+
+        existing = LocalConfigService.load(context.output_dir)
+        if existing and existing.expose:
+            # A seeded block is indistinguishable from a hand-edited one,
+            # so a changed app_domain silently keeps the old routing --
+            # surface that instead of guessing which the user meant.
+            domains = {e.domain for e in existing.expose.values()}
+            if not any(d == domain or d.endswith(f".{domain}") for d in domains):
+                output.warning(
+                    f"slipp.yaml expose: block doesn't reference {domain} "
+                    f"(routes: {', '.join(sorted(domains))})"
+                )
+                output.hint(
+                    "Edit expose: to the new domain, or delete the block to re-seed"
+                )
+            # Coverage drift: a service added after the block was persisted
+            # gets no route anywhere. A hint (not a warning) because
+            # deleting an entry is also the legitimate way to unexpose a
+            # service -- "forgot" and "opted out" look identical from here.
+            unexposed = [
+                s.name for s in context.services if s.name not in existing.expose
+            ]
+            if unexposed:
+                output.hint(
+                    f"Detected but not in the expose: block (unrouted): "
+                    f"{', '.join(unexposed)} -- add entries to expose them"
+                )
+            context.expose = existing.expose
+        else:
+            context.expose = default_expose(context.services, domain)
+    return context.expose
 
 
 def is_customized(path: Path) -> bool:

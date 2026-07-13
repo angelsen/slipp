@@ -10,7 +10,7 @@ from typing import Any
 import yaml
 
 from slipp import output
-from slipp.models.local_config import LocalConfig
+from slipp.models.local_config import ExposeEntry, LocalConfig
 from slipp.models.service import Runtime
 from slipp.services.config.inventory import InventoryService
 from slipp.services.registry import ProjectRegistry
@@ -136,6 +136,7 @@ class LocalConfigService:
         runtime: str | None = None,
         project_root: Path | None = None,
         project_dirs: list[str] | None = None,
+        expose: dict[str, ExposeEntry] | None = None,
     ) -> LocalConfig:
         """Create a new local config.
 
@@ -154,6 +155,7 @@ class LocalConfigService:
             project_root: Project root (defaults to cwd)
             project_dirs: --dir values slipp launch scanned, see
                 LocalConfig.project_dirs
+            expose: Service routing block, see LocalConfig.expose
 
         Returns:
             Created LocalConfig
@@ -177,6 +179,7 @@ class LocalConfigService:
             runtime=Runtime(runtime.lower()) if runtime else None,
             managed_roles=managed_roles,
             project_dirs=project_dirs,
+            expose=expose,
         )
 
         LocalConfigService.save(config, root)
@@ -239,6 +242,7 @@ class LocalConfigService:
             "tag_presets",
             "runtime",
             "runs",
+            "expose",
         ):
             if not data.get(key):
                 data.pop(key, None)
@@ -254,6 +258,7 @@ class LocalConfigService:
             "vault",
             "runtime",
             "managed_roles",
+            "expose",
             "tag_presets",
             "runs",
         ]

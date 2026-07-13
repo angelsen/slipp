@@ -59,8 +59,15 @@ def _sync_wg_manage_after_deploy(project_root: Path, project_name: str) -> None:
     dirs, _ = resolve_project_dirs(
         resolve_declared_dirs(project_root), root=project_root, quiet=True
     )
+    local_config = LocalConfigService.load(project_root)
     try:
-        wg_manage.sync(dirs, project_name, host, quiet=True)
+        wg_manage.sync(
+            dirs,
+            project_name,
+            host,
+            expose=local_config.expose if local_config else None,
+            quiet=True,
+        )
     except WgManageError as e:
         output.warning(f"wg-manage exposure sync failed after deploy: {e}")
 

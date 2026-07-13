@@ -1,5 +1,6 @@
 """VPS service-account provisioning for slipp bootstrap."""
 
+import re
 from pathlib import Path
 
 from slipp import output
@@ -213,8 +214,16 @@ def provision_account(
 
     Raises:
         SSHConnectionError: If the initial root SSH connection fails.
-        BootstrapError: If a provisioning step fails.
+        BootstrapError: If a provisioning step fails, or slipp_user isn't a
+            valid Unix username (it's interpolated unquoted into useradd/
+            chown/sudoers commands and a sudoers file path).
     """
+    if not re.match(r"^[a-z_][a-z0-9_-]*$", slipp_user):
+        raise BootstrapError(
+            f"Invalid service account name '{slipp_user}' -- must be a "
+            "plain Unix username (lowercase letters, digits, '_', '-')"
+        )
+
     root_config = AnsibleHost(
         inventory_hostname="bootstrap-root",  # Temporary host for bootstrap
         ansible_host=host,

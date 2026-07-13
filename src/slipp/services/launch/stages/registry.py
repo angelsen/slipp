@@ -42,6 +42,11 @@ class RegistrationStage:
                 self._relative_or_absolute(d, context.output_dir)
                 for d in context.project_dirs
             ],
+            # Persists the resolved routing so it's visible/editable config
+            # rather than an implicit convention (and so resources sync
+            # prunes against the user's routing, not a re-derived default).
+            # None for IP-only deploys, where no expose block is resolved.
+            expose=context.expose,
         )
 
     @staticmethod

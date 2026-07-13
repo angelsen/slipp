@@ -6,12 +6,17 @@ Caddy (see roles/wg-manage-exposure) -- generates a role that shells out to
 Caddyfile directly.
 """
 
+import shlex
 from pathlib import Path
 
 from slipp.generator.env import render_template
 from slipp.services import wg_manage
 from slipp.services.launch.context import FullContext
-from slipp.services.launch.stages.common import FileGenerationStage, require
+from slipp.services.launch.stages.common import (
+    FileGenerationStage,
+    require,
+    resolve_expose,
+)
 
 
 class WgManageRoleStage(FileGenerationStage[FullContext]):
@@ -36,15 +41,23 @@ class WgManageRoleStage(FileGenerationStage[FullContext]):
         inventory_config = require(context.inventory_config, "inventory config")
         app_domain = require(inventory_config.first_host.app_domain, "app_domain")
 
-        wg_services = wg_manage.build_wg_services(context.services, app_domain)
+        expose = resolve_expose(context, app_domain)
+        wg_services = wg_manage.build_wg_services(context.services, app_domain, expose)
+        # fqdn/label are shell-quoted only for the generated command line --
+        # build_wg_services()'s raw fqdn is also used by sync() for exact-string
+        # comparison against wg-manage's stored service names, so it must not
+        # be mutated here.
+        services_ctx = [
+            {**svc, "fqdn_quoted": shlex.quote(svc["fqdn"])} for svc in wg_services
+        ]
 
         content = render_template(
             "roles/wg-manage-exposure/tasks/main.yml.j2",
             {
                 "project_name": context.project_name,
-                "wg_services": wg_services,
+                "wg_services": services_ctx,
                 "public": context.public,
-                "label": wg_manage.service_label(context.project_name),
+                "label": shlex.quote(wg_manage.service_label(context.project_name)),
             },
             label="wg-manage-exposure role",
         )

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from slipp.constants import DEFAULT_ENV
 from slipp.models.deployment import ProvisionConfig
+from slipp.models.local_config import ExposeEntry
 from slipp.services.launch.context.scan import ScanContext
 
 
@@ -22,11 +23,15 @@ class FullContext(ScanContext):
             previous deployment on failure (systemd deploys only).
         public: Expose via Let's Encrypt instead of internal CA
             (--proxy wg-manage only).
+        expose: Resolved service routing (existing slipp.yaml block, or
+            the seeded default) -- set lazily by resolve_expose(), then
+            persisted by RegistrationStage.
     """
 
     environment: str = DEFAULT_ENV
     reconfigure: bool = False
     provision_config: ProvisionConfig | None = None
+    expose: dict[str, ExposeEntry] | None = None
     python_extra: str | None = None
     exec_args: str | None = None
     health_check: str | None = None

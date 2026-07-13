@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from slipp import output
+from slipp.models.local_config import ExposeEntry
 from slipp.services.config import LocalConfigService
 from slipp.services.registry import ProjectRegistry
 from slipp.utils.errors import LaunchError
@@ -19,6 +20,7 @@ def register_project(
     galaxy_path: str | None = None,
     vault_path: str | None = None,
     project_dirs: list[str] | None = None,
+    expose: dict[str, ExposeEntry] | None = None,
 ) -> None:
     """Create slipp.yaml and register the project in the global registry.
 
@@ -37,6 +39,7 @@ def register_project(
         vault_path: Relative path to vault file, if any
         project_dirs: --dir values slipp launch scanned, see
             LocalConfig.project_dirs
+        expose: Service routing block, see LocalConfig.expose
 
     Raises:
         LaunchError: If config creation or registration fails
@@ -52,6 +55,7 @@ def register_project(
             vault_path=vault_path,
             project_root=project_root,
             project_dirs=project_dirs,
+            expose=expose,
         )
         output.success(f"Created slipp.yaml with name '{name}'")
     except Exception as e:
