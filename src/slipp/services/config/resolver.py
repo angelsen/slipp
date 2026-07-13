@@ -92,7 +92,6 @@ class ResolvedConfig:
         roles_path: Role directories for ansible --roles-path
         galaxy_path: Install path for ansible-galaxy (may be None)
         vault: Resolved vault path (may be None)
-        managed_roles: Role names for service filtering
         inventory_source: Where inventory was resolved from
         playbook_source: Where playbook was resolved from
     """
@@ -102,7 +101,6 @@ class ResolvedConfig:
     roles_path: list[Path]
     galaxy_path: Path | None
     vault: Path | None
-    managed_roles: list[str]
     inventory_source: str  # "cli", "local", "default"
     playbook_source: str
 
@@ -234,15 +232,12 @@ class ConfigResolver:
 
         vault = self.resolve_vault(cli_vault)
 
-        managed_roles = self._local_config.managed_roles if self._local_config else []
-
         return ResolvedConfig(
             inventory=inventory,
             playbook=playbook,
             roles_path=roles_path,
             galaxy_path=galaxy_path,
             vault=vault,
-            managed_roles=managed_roles,
             inventory_source=inv_source,
             playbook_source=pb_source,
         )

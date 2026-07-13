@@ -6,8 +6,12 @@ import typer
 
 from slipp import output
 from slipp.services.config import LocalConfigService, load_first_host_strict
-from slipp.services.providers import resolve_dns_provider, sync_dns
-from slipp.utils.errors import ConfigError, ProviderError
+from slipp.services.providers import (
+    DNSProvider,
+    resolve_dns_provider,
+    sync_dns,
+)
+from slipp.utils.errors import ProviderError
 
 dns_app = typer.Typer(
     name="dns",
@@ -15,25 +19,16 @@ dns_app = typer.Typer(
 )
 
 
-@dns_app.command(name="sync")
-def dns_sync_command() -> None:
-    """Converge DNS A record from inventory to the configured provider."""
-    project_root = LocalConfigService.resolve_root()
+def sync_and_report(provider: DNSProvider, domain: str, ip: str) -> None:
+    """Converge DNS for domain -> ip and print the resulting changes.
 
+    Shared by `slipp dns sync` and `slipp up` so the converge behavior
+    (including zone creation) and its reporting can't drift.
+    """
     try:
-        domain, host = load_first_host_strict(project_root)
-        ip = host.ansible_host
-    except ConfigError as e:
-        output.error(str(e))
-        raise typer.Exit(1)
-
-    output.info(f"Syncing DNS for {domain} -> {ip}")
-
-    try:
-        provider = resolve_dns_provider(domain)
         changes = sync_dns(provider, domain, ip)
     except ProviderError as e:
-        output.error(str(e))
+        output.error(f"DNS sync failed: {e}")
         raise typer.Exit(1)
 
     if changes:
@@ -43,21 +38,29 @@ def dns_sync_command() -> None:
         output.info("DNS already up to date")
 
 
+@dns_app.command(name="sync")
+def dns_sync_command() -> None:
+    """Converge DNS zone + A record from inventory to the configured provider."""
+    project_root = LocalConfigService.resolve_root()
+
+    domain, host = load_first_host_strict(project_root)
+    ip = host.ansible_host
+
+    output.info(f"Syncing DNS for {domain} -> {ip}")
+    sync_and_report(resolve_dns_provider(domain), domain, ip)
+
+
 @dns_app.command(name="list")
 def dns_list_command(
     domain: Annotated[str, typer.Argument(help="Domain to list records for")],
 ) -> None:
     """List current DNS records for a domain."""
-    try:
-        provider = resolve_dns_provider(domain)
-        zone = provider.find_zone(domain)
-        if zone is None:
-            output.error(f"No zone found for {domain}")
-            raise typer.Exit(1)
-        records = provider.list_records(zone.zone_id)
-    except ProviderError as e:
-        output.error(str(e))
+    provider = resolve_dns_provider(domain)
+    zone = provider.find_zone(domain)
+    if zone is None:
+        output.error(f"No zone found for {domain}")
         raise typer.Exit(1)
+    records = provider.list_records(zone.zone_id)
 
     if not records:
         output.info("No records found")

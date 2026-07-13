@@ -1,7 +1,4 @@
-"""Python variable extractor for template rendering.
-
-Extracts template variables for all Python frameworks (Flask, FastAPI, Django, etc.).
-"""
+"""Python variable extractor for template rendering."""
 
 from pathlib import Path
 from typing import Any
@@ -11,11 +8,7 @@ from slipp.models.deployment import DetectedService
 
 
 class PythonVariableExtractor(VariableExtractor):
-    """Extract template variables for Python frameworks.
-
-    Handles all Python-based frameworks: Flask, FastAPI, Django, Streamlit, etc.
-    Reusable across different Python frameworks since they share the same template variables.
-    """
+    """Extract template variables for Python services (Flask or plain Python)."""
 
     def extract(self, service: DetectedService) -> dict[str, Any]:
         """Extract Python template variables from DetectedService.
@@ -58,18 +51,11 @@ class PythonVariableExtractor(VariableExtractor):
 
         # Framework detection (boolean flags)
         variables["flask"] = "flask" in service.dependencies
-        variables["fastapi"] = "fastapi" in service.dependencies
-        variables["django"] = "django" in service.dependencies
-        variables["streamlit"] = "streamlit" in service.dependencies
 
         # Database detection
         variables["hasPostgres"] = any(
             "psycopg" in dep or "postgres" in dep for dep in service.dependencies
         )
-
-        # Entrypoint detection (for streamlit)
-        if variables["streamlit"]:
-            variables["entrypoint"] = self._find_streamlit_entrypoint(service.path)
 
         # Systemd ExecStart resolution (native, non-container deploys)
         variables.update(self._find_exec_entrypoint(service.path))
@@ -137,25 +123,6 @@ class PythonVariableExtractor(VariableExtractor):
 
         return managers
 
-    def _find_streamlit_entrypoint(self, service_path: Path) -> str:
-        """Find Streamlit entrypoint file.
-
-        Args:
-            service_path: Path to service directory
-
-        Returns:
-            Entrypoint filename (default: "app.py")
-        """
-        # Common Streamlit entrypoint names
-        candidates = ["app.py", "main.py", "streamlit_app.py"]
-
-        for candidate in candidates:
-            if (service_path / candidate).exists():
-                return candidate
-
-        # Default fallback
-        return "app.py"
-
     def _find_exec_entrypoint(self, service_path: Path) -> dict[str, Any]:
         """Resolve how a systemd ExecStart should invoke this app.
 
@@ -163,8 +130,7 @@ class PythonVariableExtractor(VariableExtractor):
         `.venv/bin/` by `uv sync`) over a bare script file - it's the
         packaging-native way to invoke a Python app, and avoids having to
         guess which file is the real entrypoint. Falls back to a
-        candidate-file search (same idea as `_find_streamlit_entrypoint`)
-        for projects with no `[project.scripts]` table.
+        candidate-file search for projects with no `[project.scripts]` table.
 
         Args:
             service_path: Path to service directory

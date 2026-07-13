@@ -7,7 +7,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import typer
 
 from slipp import output
 from slipp.models.provision import ProvisionPhase, ProvisionState
@@ -66,10 +65,8 @@ def find_ssh_public_key() -> Path:
         output.info(f"SSH key: {candidates[0].name}")
         return candidates[0]
 
-    output.task("Available SSH keys")
-    output.table([{"#": i, "key": c.name} for i, c in enumerate(candidates, 1)])
-    choice = typer.prompt("Pick an SSH key", type=int, default=1)
-    return candidates[max(1, min(choice, len(candidates))) - 1]
+    rows = [{"#": i, "key": c.name} for i, c in enumerate(candidates, 1)]
+    return output.pick(candidates, rows, "Available SSH keys")
 
 
 def ensure_ssh_key(client: GigahostClient, name: str, pubkey_path: Path) -> int | None:
@@ -103,29 +100,23 @@ def select_product(client: GigahostClient) -> tuple[int, int, int]:
     if not regions:
         raise ProvisionError("No regions available")
 
-    output.task("Available products")
-    output.table(
-        [
-            {
-                "#": i,
-                "name": p.get("product_name"),
-                "cores": p.get("vm_cores"),
-                "ram_mb": p.get("vm_memory"),
-                "disk_gb": p.get("vm_storage"),
-                "monthly": p.get("rate_monthly"),
-            }
-            for i, p in enumerate(products, 1)
-        ]
-    )
-    choice = typer.prompt("Pick a product", type=int, default=1)
-    product = products[max(1, min(choice, len(products))) - 1]
+    product_rows = [
+        {
+            "#": i,
+            "name": p.get("product_name"),
+            "cores": p.get("vm_cores"),
+            "ram_mb": p.get("vm_memory"),
+            "disk_gb": p.get("vm_storage"),
+            "monthly": p.get("rate_monthly"),
+        }
+        for i, p in enumerate(products, 1)
+    ]
+    product = output.pick(products, product_rows, "Available products")
 
-    output.task("Available regions")
-    output.table(
-        [{"#": i, "region": r.get("region_name")} for i, r in enumerate(regions, 1)]
-    )
-    region_choice = typer.prompt("Pick a region", type=int, default=1)
-    region = regions[max(1, min(region_choice, len(regions))) - 1]
+    region_rows = [
+        {"#": i, "region": r.get("region_name")} for i, r in enumerate(regions, 1)
+    ]
+    region = output.pick(regions, region_rows, "Available regions")
 
     return product["product_id"], product["price_id"], region["region_id"]
 
@@ -145,12 +136,12 @@ def select_os(client: GigahostClient) -> int:
         0,
     )
 
-    output.task("Available distributions")
-    output.table(
-        [{"#": i, "name": d.get("dist_name")} for i, d in enumerate(distros, 1)]
+    distro_rows = [
+        {"#": i, "name": d.get("dist_name")} for i, d in enumerate(distros, 1)
+    ]
+    chosen_distro = output.pick(
+        distros, distro_rows, "Available distributions", default=debian_idx + 1
     )
-    choice = typer.prompt("Pick a distribution", type=int, default=debian_idx + 1)
-    chosen_distro = distros[max(1, min(choice, len(distros))) - 1]
 
     versions = client.list_os_versions(chosen_distro["dist_id"])
     if not versions:
@@ -158,15 +149,13 @@ def select_os(client: GigahostClient) -> int:
             f"No OS versions available for {chosen_distro.get('dist_name')}"
         )
 
-    output.task("Available OS versions")
-    output.table(
-        [
-            {"#": i, "name": v.get("os_name"), "arch": v.get("os_arch")}
-            for i, v in enumerate(versions, 1)
-        ]
+    version_rows = [
+        {"#": i, "name": v.get("os_name"), "arch": v.get("os_arch")}
+        for i, v in enumerate(versions, 1)
+    ]
+    chosen_version = output.pick(
+        versions, version_rows, "Available OS versions", default=len(versions)
     )
-    ver_choice = typer.prompt("Pick a version", type=int, default=len(versions))
-    chosen_version = versions[max(1, min(ver_choice, len(versions))) - 1]
 
     return chosen_version["os_id"]
 
@@ -320,7 +309,8 @@ def provision_and_bootstrap(client: GigahostClient, name: str) -> tuple[str, int
     else:
         ip, srv_id = provision_server(client, name)
 
-    return _bootstrap_and_finish(ip, srv_id, name)
+    # _resume_provision/provision_server already waited for SSH above.
+    return _finish_bootstrap(ip, srv_id, name)
 
 
 def _bootstrap_and_finish(
@@ -328,6 +318,11 @@ def _bootstrap_and_finish(
 ) -> tuple[str, int]:
     """Wait for SSH, bootstrap slipp user, clean up state file."""
     wait_for_ssh(ip, started_at=started_at)
+    return _finish_bootstrap(ip, srv_id, name)
+
+
+def _finish_bootstrap(ip: str, srv_id: int, name: str) -> tuple[str, int]:
+    """Bootstrap the slipp user and clean up state file (SSH already confirmed ready)."""
     output.success(f"Server ready: {ip}")
     output.info("Bootstrapping SSH user...")
     provision_account(ip, "root", None, 22, "slipp", dry_run=False)
@@ -350,7 +345,7 @@ def install_server(
         return _bootstrap_and_finish(ip, srv_id, display, started_at=state.created_at)
 
     if not force:
-        if not typer.confirm(f"Wipe and reinstall '{display}' ({ip})?", default=False):
+        if not output.confirm(f"Wipe and reinstall '{display}' ({ip})?", default=False):
             output.info("Cancelled")
             return None
 

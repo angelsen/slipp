@@ -7,25 +7,19 @@ import typer
 
 from slipp import output
 from slipp.commands.deploy import deploy_command
+from slipp.commands.dns import sync_and_report
+from slipp.commands.provision import provision_or_exit
 from slipp.services import wg_manage
 from slipp.services.providers import (
     ProviderConfigService,
-    provision_and_bootstrap,
     register_domain_interactive,
 )
 from slipp.constants import DEFAULT_ENV
 from slipp.models.deployment import DeploymentHostConfig, InventoryConfig
 from slipp.models.service import Runtime
 from slipp.services.launch import FullContext, run_full_pipeline
-from slipp.services.providers import get_gigahost_client, sync_dns
-from slipp.services.ssh import hint_ssh_log
-from slipp.utils.errors import (
-    BootstrapError,
-    LaunchError,
-    ProviderError,
-    SSHConnectionError,
-    WgManageError,
-)
+from slipp.services.providers import get_gigahost_client
+from slipp.utils.errors import LaunchError, ProviderError
 
 VALID_DNS_MODES = ["auto", "manual"]
 
@@ -50,8 +44,9 @@ def _make_hub(step: _StepCounter, name: str, ip: str) -> None:
     launch's `--proxy auto` probe depends on the host actually being a hub.
 
     Raises:
-        typer.Exit: If wg-deploy isn't configured, the user declines, or
-            new-host.sh exits non-zero.
+        typer.Exit: If wg-deploy isn't configured or the user declines.
+        WgManageError: If new-host.sh exits non-zero (top-level handler
+            reports it).
     """
     wg_deploy = ProviderConfigService.get_wg_deploy()
     if not wg_deploy:
@@ -61,18 +56,14 @@ def _make_hub(step: _StepCounter, name: str, ip: str) -> None:
 
     step(f"Making {ip} a wg-manage hub via {wg_deploy.repo_path}...")
 
-    if not typer.confirm(
+    if not output.confirm(
         f"Run scripts/new-host.sh {name} {ip} in {wg_deploy.repo_path}?",
         default=False,
     ):
         output.error("Hub-ification declined -- aborting (launch needs a hub)")
         raise typer.Exit(1)
 
-    try:
-        wg_manage.make_hub(name, ip, wg_deploy.repo_path)
-    except WgManageError as e:
-        output.error(str(e))
-        raise typer.Exit(1)
+    wg_manage.make_hub(name, ip, wg_deploy.repo_path)
 
     output.success(f"{ip} is now a wg-manage hub")
 
@@ -119,18 +110,7 @@ def up_command(
         output.hint("Assuming SSH user 'root' -- edit inventory if different")
     else:
         step("Provisioning server...")
-        try:
-            ip, _srv_id = provision_and_bootstrap(client, name)
-        except ProviderError as e:
-            output.error(f"Provisioning failed: {e}")
-            raise typer.Exit(1)
-        except (SSHConnectionError, BootstrapError) as e:
-            output.error(f"Bootstrap failed: {e}")
-            output.hint(
-                "Server is provisioned -- retry with: slipp bootstrap account <ip>"
-            )
-            hint_ssh_log()
-            raise typer.Exit(1)
+        ip = provision_or_exit(client, name)
         ssh_user = "slipp"
 
     if hub:
@@ -154,7 +134,7 @@ def up_command(
             raise typer.Exit(1)
 
     if not resolved_domain:
-        resolved_domain = typer.prompt("App domain")
+        resolved_domain = output.prompt("App domain")
 
     step("Generating Ansible project...")
     context = FullContext(
@@ -188,19 +168,7 @@ def up_command(
         output.hint(f"Point {resolved_domain} A record to {ip}")
     else:
         step(f"Syncing DNS for {resolved_domain}...")
-        try:
-            if client.find_zone(resolved_domain) is None:
-                client.create_zone(resolved_domain)
-            changes = sync_dns(client, resolved_domain, ip)
-        except ProviderError as e:
-            output.error(f"DNS sync failed: {e}")
-            raise typer.Exit(1)
-
-        if changes:
-            for change in changes:
-                output.success(change)
-        else:
-            output.info("DNS already up to date")
+        sync_and_report(client, resolved_domain, ip)
 
     step("Deploying...")
     deploy_command(target=environment)

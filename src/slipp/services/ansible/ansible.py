@@ -6,7 +6,7 @@ import re
 import subprocess
 import tempfile
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Any, Callable
@@ -316,6 +316,15 @@ def become_password_file() -> Iterator[Path]:
         yield Path(path)
     finally:
         Path(path).unlink(missing_ok=True)
+
+
+def maybe_become_password_file(stack: ExitStack, ask_become_pass: bool) -> Path | None:
+    """Enter become_password_file() on `stack` if `ask_become_pass`, else None.
+
+    Shared by every playbook-running caller that supports --ask-become-pass,
+    so the prompt-or-skip decision isn't duplicated at each call site.
+    """
+    return stack.enter_context(become_password_file()) if ask_become_pass else None
 
 
 def run_playbook(

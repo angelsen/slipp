@@ -49,16 +49,20 @@ def _load_first_host_raw(project_root: Path) -> DeploymentHostConfig:
 def load_first_host(project_root: Path) -> DeploymentHostConfig | None:
     """Best-effort load of the first host from the raw inventory YAML.
 
-    Returns None if anything is missing or unparseable. Public (not just
-    this module's resolve_app_domain/resolve_app_port):
-    commands/resources.py and commands/deploy.py's post-deploy hook use it
-    directly to peek at proxy_owner and get full SSH connection details in
-    one read, without duplicating the from_ansible_format() plumbing.
+    Returns None if anything is missing or unparseable. Used by
+    commands/resources.py and commands/deploy.py to peek at proxy_owner,
+    app_domain/app_port, and full SSH connection details in one read,
+    without duplicating the from_ansible_format() plumbing.
     """
     try:
         return _load_first_host_raw(project_root)
     except Exception:
         return None
+
+
+def is_wg_manage_host(host: DeploymentHostConfig | None) -> bool:
+    """Whether `host` is a wg-manage hub (proxy_owner == "wg-manage")."""
+    return host is not None and host.proxy_owner == "wg-manage"
 
 
 def load_first_host_strict(project_root: Path) -> tuple[str, DeploymentHostConfig]:
@@ -95,23 +99,6 @@ def write_minimal_inventory(path: Path, environment: str, ip: str) -> None:
     )
     inventory = InventoryConfig(hosts={environment: host_config})
     path.write_text(yaml.dump(inventory.to_ansible_format(), default_flow_style=False))
-
-
-def resolve_app_domain(project_root: Path) -> str | None:
-    """Best-effort extraction of app_domain from the raw inventory YAML."""
-    host = load_first_host(project_root)
-    return host.app_domain if host else None
-
-
-def resolve_app_port(project_root: Path) -> int | None:
-    """Best-effort extraction of app_port from the raw inventory YAML.
-
-    Only meaningful for --proxy none deploys (see DeploymentHostConfig.app_port) -
-    a Caddy-fronted deploy's domain already implies the right port (:80/:443),
-    so callers should check for a caddy role before using this.
-    """
-    host = load_first_host(project_root)
-    return host.app_port if host else None
 
 
 def load_project_ansible_hosts(project_path: Path) -> list[AnsibleHost]:

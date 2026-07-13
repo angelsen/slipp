@@ -2,8 +2,7 @@
 
 Profiles are stored in slipp.yaml under `runs:` (git-tracked), with
 personal overrides in `.slipp/runs.local.yaml` (untracked, not created
-automatically) and read-only fallback support for the legacy
-`.slipp/runs.yaml` (deprecated).
+automatically).
 """
 
 from pathlib import Path
@@ -19,7 +18,6 @@ from slipp.services.config.local import LocalConfigService
 from slipp.services.run.proxy import parse_proxy_spec
 from slipp.utils.errors import ConfigError, ProfileNotFoundError
 
-LEGACY_RUNS_FILENAME = ".slipp/runs.yaml"
 LOCAL_RUNS_FILENAME = ".slipp/runs.local.yaml"
 
 
@@ -42,14 +40,11 @@ class RunProfileService:
         self.project_root = project_root or LocalConfigService.resolve_root()
         self._raw_cache: dict[str, dict[str, Any]] | None = None
 
-    def _legacy_path(self) -> Path:
-        return self.project_root / LEGACY_RUNS_FILENAME
-
     def _local_path(self) -> Path:
         return self.project_root / LOCAL_RUNS_FILENAME
 
     def _raw_profiles(self) -> dict[str, dict[str, Any]]:
-        """Union of all profile sources: local overrides tracked overrides legacy.
+        """Union of all profile sources: local overrides tracked.
 
         Cached per instance so a single command invocation (which typically
         checks existence then fetches) only reads disk and warns once.
@@ -58,14 +53,6 @@ class RunProfileService:
             return self._raw_cache
 
         raw: dict[str, dict[str, Any]] = {}
-
-        legacy = _load_raw_yaml(self._legacy_path())
-        if legacy:
-            output.warning(
-                f"{LEGACY_RUNS_FILENAME} is deprecated — "
-                "move profiles to slipp.yaml under 'runs:'"
-            )
-            raw.update(legacy)
 
         config = LocalConfigService.load(self.project_root)
         if config and config.runs:
@@ -149,7 +136,7 @@ class RunProfileService:
 
         Raises:
             ProfileNotFoundError: If the profile isn't in slipp.yaml (it may
-                still exist in a legacy or local override file).
+                still exist in a local override file).
         """
         config = LocalConfigService.load(self.project_root)
         if config and name in config.runs:
@@ -160,12 +147,6 @@ class RunProfileService:
             self._raw_cache = None
             return
 
-        if name in _load_raw_yaml(self._legacy_path()):
-            raise ProfileNotFoundError(
-                f"Profile '{name}' is defined in the legacy {LEGACY_RUNS_FILENAME} — "
-                "move it to slipp.yaml under 'runs:' to manage it here, "
-                "or edit the file directly"
-            )
         if name in _load_raw_yaml(self._local_path()):
             raise ProfileNotFoundError(
                 f"Profile '{name}' is defined in {LOCAL_RUNS_FILENAME} — "

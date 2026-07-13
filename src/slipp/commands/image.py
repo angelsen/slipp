@@ -7,8 +7,6 @@ import typer
 from slipp import output
 from slipp.commands.common import require_container_runtime, resolve_host_or_exit
 from slipp.services.image import detect_local_runtime, push_image
-from slipp.services.ssh import hint_ssh_log
-from slipp.utils.errors import ImageTransferError
 
 image_app = typer.Typer(name="image", help="Container image operations")
 
@@ -16,15 +14,15 @@ image_app = typer.Typer(name="image", help="Container image operations")
 @image_app.command(name="push")
 def push_command(
     image: Annotated[str, typer.Argument(help="Local image name:tag")],
-    host: Annotated[
-        str | None, typer.Option("--host", help="Target host/project")
+    project: Annotated[
+        str | None, typer.Option("--project", "-p", help="Project name")
     ] = None,
     name: Annotated[
         str | None, typer.Option("--name", "-n", help="Rename image on VPS")
     ] = None,
 ) -> None:
     """Push local container image to VPS via SSH."""
-    ssh_config = resolve_host_or_exit(project=host)
+    ssh_config = resolve_host_or_exit(project=project)
 
     local_runtime = detect_local_runtime(image)
     if not local_runtime:
@@ -32,7 +30,7 @@ def push_command(
         output.hint("Build with: podman build -t <name> .")
         raise typer.Exit(1)
 
-    remote_runtime = require_container_runtime(host, action="push to")
+    remote_runtime = require_container_runtime(project, action="push to")
 
     target_name = name or image
     target = f"{ssh_config.ansible_user}@{ssh_config.ansible_host}"
@@ -42,12 +40,7 @@ def push_command(
     if name:
         output.hint(f"Renaming to: {target_name}")
 
-    try:
-        with output.spinner("Transferring image"):
-            push_image(ssh_config, image, local_runtime, remote_runtime, rename=name)
-    except ImageTransferError as e:
-        output.error(str(e))
-        hint_ssh_log()
-        raise typer.Exit(1)
+    with output.spinner("Transferring image"):
+        push_image(ssh_config, image, local_runtime, remote_runtime, rename=name)
 
     output.success(f"Image pushed: {target_name}")

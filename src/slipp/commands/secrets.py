@@ -24,7 +24,6 @@ from slipp.services.vault import (
 from slipp.utils.errors import (
     AnsibleVaultNotInstalledError,
     ProjectNotFoundError,
-    PullError,
     PullTimeoutError,
     SourceNotFoundError,
     VaultError,
@@ -261,12 +260,14 @@ def add_secret(
         )
         raise typer.Exit(1)
 
-    secret = generate_jwk(bits) if jwk else generate_secret(num_bytes, encoding.value)
+    secret = generate_jwk(bits) if jwk else generate_secret(num_bytes, encoding)
 
     try:
         with vault_password_file(confirm=False) as pw_file:
             encrypted = encrypt_string(secret, name, password_file=pw_file)
     except AnsibleVaultNotInstalledError as e:
+        # Carve-out from the VaultError arm below: without it, "ansible-vault
+        # is not installed" would get a misleading "Encryption failed:" prefix.
         output.error(str(e))
         raise typer.Exit(1)
     except VaultError as e:
@@ -314,9 +315,6 @@ def sync_secrets(
 
     try:
         refs = synchronizer.scan(path)
-    except VaultSyncError as e:
-        output.error(str(e))
-        raise typer.Exit(1)
     except OSError as e:
         output.error(f"Cannot read {format_path(path, project_root)}: {e}")
         raise typer.Exit(1)
@@ -369,11 +367,12 @@ def pull_secrets(
         output.hint("Use 'slipp secrets list' to see available sources")
         raise typer.Exit(1)
 
-    from slipp.services.secrets.pull import PullService
+    from slipp.services.secrets import pull
 
-    service = PullService(secret_source)
     try:
-        credentials = asyncio.run(service.pull(target=target, timeout=timeout))
+        credentials = asyncio.run(
+            pull.pull_secrets(secret_source, target=target, timeout=timeout)
+        )
         output.success("Credentials stored in vault")
         output.blank()
         for var_name in credentials.keys():
@@ -381,9 +380,6 @@ def pull_secrets(
     except PullTimeoutError:
         output.error(f"Timed out waiting for approval ({timeout}s)")
         output.hint("Make sure to approve the export in your browser")
-        raise typer.Exit(1)
-    except PullError as e:
-        output.error(str(e))
         raise typer.Exit(1)
     except VaultError as e:
         output.error(f"Failed to store credentials: {e}")

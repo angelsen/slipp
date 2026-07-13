@@ -24,11 +24,16 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 from slipp.models.host import AnsibleHost
-from slipp.services.ansible import become_password_file, run_playbook
+from slipp.services.ansible import maybe_become_password_file, run_playbook
 from slipp.services.ssh import SSHService
 from slipp.utils.errors import CaddyProxyError
 
 logger = logging.getLogger(__name__)
+
+
+def _slugify(text: str) -> str:
+    """Sanitize text into a Caddy @id-safe slug."""
+    return re.sub(r"[^a-zA-Z0-9-]", "-", text.lower())
 
 
 def _domain_to_route_id(domain: str) -> str:
@@ -40,8 +45,7 @@ def _domain_to_route_id(domain: str) -> str:
     Returns:
         Route ID (e.g., "dev-app-example-com")
     """
-    safe_name = re.sub(r"[^a-zA-Z0-9-]", "-", domain.lower())
-    return f"dev-{safe_name}"
+    return f"dev-{_slugify(domain)}"
 
 
 def _push_route(host: AnsibleHost, route_config: dict, error_prefix: str) -> None:
@@ -238,11 +242,7 @@ class CaddyProxy:
                 extra_vars["acme_email"] = self.acme_email
 
             with ExitStack() as stack:
-                become_pw_file = (
-                    stack.enter_context(become_password_file())
-                    if self.ask_become_pass
-                    else None
-                )
+                become_pw_file = maybe_become_password_file(stack, self.ask_become_pass)
                 result = run_playbook(
                     str(playbook_path),
                     str(inventory_path),
@@ -286,7 +286,7 @@ class CaddyProxy:
         Raises:
             CaddyProxyError: If route addition fails
         """
-        route_id = f"proxy-{re.sub(r'[^a-zA-Z0-9-]', '-', f'{from_domain}{from_path}'.lower())}"
+        route_id = f"proxy-{_slugify(f'{from_domain}{from_path}')}"
 
         route_config = {
             "@id": route_id,

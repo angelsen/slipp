@@ -117,13 +117,6 @@ class CaddyCheckResult:
         return not self.missing_hosts and not self.unreachable_hosts
 
 
-@dataclass
-class ExecutionResult:
-    """Result of profile execution."""
-
-    exit_code: int
-
-
 def run_command(
     cmd: str, cwd: Path | None = None, env: dict[str, str] | None = None
 ) -> int:
@@ -296,14 +289,11 @@ class RunProfileExecutor:
                 f"Route: {route.from_domain}{route.from_path} → {route.to_host}"
             )
 
-    def execute(self, profile: RunProfile) -> ExecutionResult:
-        """Execute profile, return result.
+    def execute(self, profile: RunProfile) -> int:
+        """Execute profile, return the command's exit code (130 on Ctrl+C).
 
         Args:
             profile: Run profile configuration
-
-        Returns:
-            ExecutionResult with exit code and status
 
         Raises:
             ProfileExecutionError: If Caddy requirements not met
@@ -367,9 +357,7 @@ class RunProfileExecutor:
                     output.info("Adding proxy routes...")
                     self.setup_proxy_routes(profile.proxy, caddy_proxies, stack)
 
-                exit_code = run_command(profile.cmd, env=env)
-
-                return ExecutionResult(exit_code=exit_code)
+                return run_command(profile.cmd, env=env)
 
         except KeyboardInterrupt:
-            return ExecutionResult(exit_code=130)
+            return 130

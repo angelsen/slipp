@@ -10,12 +10,35 @@ from slipp.constants import DEFAULT_ENV, get_inventory_filename
 from slipp.services.config import write_minimal_inventory
 from slipp.services.launch.registration import register_project
 from slipp.services.providers import get_gigahost_client, provision_and_bootstrap
+from slipp.services.providers.gigahost import GigahostClient
 from slipp.services.ssh import hint_ssh_log
 from slipp.utils.errors import (
     BootstrapError,
     ProviderError,
     SSHConnectionError,
 )
+
+
+def provision_or_exit(client: GigahostClient, name: str) -> str:
+    """Provision + bootstrap a VPS, printing enriched errors and exiting on failure.
+
+    Shared by `slipp provision` and `slipp up` so the two-arm error handling
+    (order failure vs bootstrap-after-order failure) can't drift.
+
+    Returns:
+        The new server's IP address.
+    """
+    try:
+        ip, _srv_id = provision_and_bootstrap(client, name)
+        return ip
+    except ProviderError as e:
+        output.error(f"Provisioning failed: {e}")
+        raise typer.Exit(1)
+    except (SSHConnectionError, BootstrapError) as e:
+        output.error(f"Bootstrap failed: {e}")
+        output.hint("Server is provisioned -- retry with: slipp bootstrap account <ip>")
+        hint_ssh_log()
+        raise typer.Exit(1)
 
 
 def provision_command(
@@ -25,17 +48,8 @@ def provision_command(
     ] = DEFAULT_ENV,
 ) -> None:
     """Order a VPS via Gigahost, bootstrap it, and register it as a slipp project."""
-    try:
-        client = get_gigahost_client()
-        ip, _srv_id = provision_and_bootstrap(client, name)
-    except ProviderError as e:
-        output.error(f"Provisioning failed: {e}")
-        raise typer.Exit(1)
-    except (SSHConnectionError, BootstrapError) as e:
-        output.error(f"Bootstrap failed: {e}")
-        output.hint("Server is provisioned -- retry with: slipp bootstrap account <ip>")
-        hint_ssh_log()
-        raise typer.Exit(1)
+    client = get_gigahost_client()
+    ip = provision_or_exit(client, name)
 
     inventory_filename = get_inventory_filename(environment)
     write_minimal_inventory(Path.cwd() / inventory_filename, environment, ip)

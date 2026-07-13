@@ -131,10 +131,20 @@ def _spawn_ssh_tunnel(
         stderr=subprocess.PIPE,
     )
 
-    time.sleep(1.5)
-    if proc.poll() is not None:
-        stderr = proc.stderr.read().decode() if proc.stderr else ""
-        raise TunnelError(f"{error_context}\n{stderr}")
+    # Poll instead of a single fixed sleep: exits fast on quick failures and
+    # tolerates slow SSH handshakes, requiring 1s of continuous life before
+    # declaring the tunnel up (bounded by a 3s deadline either way).
+    deadline = time.monotonic() + 3.0
+    alive_since: float | None = None
+    while time.monotonic() < deadline:
+        if proc.poll() is not None:
+            stderr = proc.stderr.read().decode() if proc.stderr else ""
+            raise TunnelError(f"{error_context}\n{stderr}")
+        if alive_since is None:
+            alive_since = time.monotonic()
+        elif time.monotonic() - alive_since >= 1.0:
+            break
+        time.sleep(0.1)
 
     return proc
 

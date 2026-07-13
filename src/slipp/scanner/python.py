@@ -43,22 +43,16 @@ def configure_python(source_dir: Path) -> SourceInfo | None:
         >>> info.port
         8080
     """
-    if detect_python_dep_manager(source_dir) is not None:
-        dependencies = extract_python_dependencies(source_dir)
-        return SourceInfo(
-            family="Python",
-            port=8080,
-            template_url=PYTHON_DOCKER_TEMPLATE,
-            dependencies=dependencies,
-        )
+    is_python_project = detect_python_dep_manager(
+        source_dir
+    ) is not None or file_exists(source_dir, "setup.py", "setup.cfg", "environment.yml")
+    if not is_python_project:
+        return None
 
-    if file_exists(source_dir, "setup.py", "setup.cfg", "environment.yml"):
-        dependencies = extract_python_dependencies(source_dir)
-        return SourceInfo(
-            family="Python",
-            port=8080,
-            template_url=PYTHON_DOCKER_TEMPLATE,
-            dependencies=dependencies,
-        )
-
-    return None
+    dependencies = extract_python_dependencies(source_dir)
+    return SourceInfo(
+        family="Python",
+        port=8080,
+        template_url=PYTHON_DOCKER_TEMPLATE,
+        dependencies=dependencies,
+    )

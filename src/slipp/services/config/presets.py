@@ -62,19 +62,6 @@ class PresetResolver:
             return {}
         return self.config.tag_presets.copy()
 
-    def get_preset_args(self, preset_name: str) -> str | None:
-        """Get the raw args string for a preset.
-
-        Args:
-            preset_name: Name of the preset
-
-        Returns:
-            Args string (e.g., "--tags setup-all --skip-tags foo") or None
-        """
-        if not self.config:
-            return None
-        return self.config.tag_presets.get(preset_name)
-
 
 def parse_preset_args(args: str) -> tuple[str | None, str | None]:
     """Parse preset args string into tags and skip_tags.

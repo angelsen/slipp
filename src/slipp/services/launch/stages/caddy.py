@@ -12,7 +12,7 @@ from slipp.models.deployment import (
     ProvisionConfig,
 )
 from slipp.models.local_config import ExposeEntry
-from slipp.scanner.routing import default_expose, validate_expose
+from slipp.scanner.routing import ip_expose, validate_expose
 from slipp.services.launch.context import FullContext
 from slipp.services.launch.stages.common import (
     FileGenerationStage,
@@ -24,17 +24,14 @@ from slipp.utils.errors import LaunchError
 
 def build_caddy_sites(
     services: list[DetectedService],
-    domain: str,
-    expose: dict[str, ExposeEntry] | None = None,
+    expose: dict[str, ExposeEntry],
 ) -> list[CaddySite]:
     """Build Caddy site configs from the expose: routing block.
 
     Args:
         services: Detected services (supply the ports).
-        domain: Application domain, used to seed the default routing when
-            no expose block is given.
-        expose: Explicit routing (service name -> domain/path). Defaults
-            to the frontend/backend convention via default_expose().
+        expose: Routing block (service name -> domain/path), resolved by
+            the caller (resolve_expose or ip_expose).
 
     Returns:
         List of CaddySite configurations
@@ -42,9 +39,6 @@ def build_caddy_sites(
     Raises:
         LaunchError: If the expose block is invalid (see validate_expose).
     """
-    if expose is None:
-        expose = default_expose(services, domain)
-
     try:
         validate_expose(expose, services)
     except ValueError as e:
@@ -89,10 +83,24 @@ class CaddyConfigStage:
             is_ip = is_ip_address(app_domain)
             caddy_domain = ":80" if is_ip else app_domain
 
-            # IP-only deploys route everything to :80 -- don't resolve (or
-            # later persist) an expose block full of ":80" pseudo-domains.
-            expose = None if is_ip else resolve_expose(context, caddy_domain)
-            caddy_sites = build_caddy_sites(context.services, caddy_domain, expose)
+            # IP-only deploys route on :80 -- there are no subdomains to
+            # mint, so services beyond the primary/backend pair get no
+            # route (and the expose block is never persisted).
+            if is_ip:
+                expose, unroutable = ip_expose(context.services, caddy_domain)
+                for svc in unroutable:
+                    output.warning(
+                        f"'{svc.name}' gets no route on an IP-only deploy -- "
+                        f"it will be deployed but unreachable "
+                        f"(would need {svc.name}.<domain>)"
+                    )
+                if unroutable:
+                    output.hint(
+                        "Set app_domain to a real domain to route it on a subdomain"
+                    )
+            else:
+                expose = resolve_expose(context, caddy_domain)
+            caddy_sites = build_caddy_sites(context.services, expose)
             caddy_config = CaddyConfig(
                 sites=caddy_sites,
                 auto_https=not is_ip,

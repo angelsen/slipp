@@ -1,11 +1,11 @@
 """Manage tag presets for Ansible deployments."""
 
+from pathlib import Path
 from typing import Annotated
 
 import typer
 
 from slipp import output
-from slipp.constants import OutputFormat
 from slipp.models.local_config import LocalConfig
 from slipp.services.config import LocalConfigService, PresetResolver
 
@@ -16,26 +16,22 @@ tags_app = typer.Typer(
 )
 
 
-def _require_config() -> LocalConfig:
-    """Load slipp.yaml or exit with a helpful message."""
+def _require_config() -> tuple[LocalConfig, Path]:
+    """Load slipp.yaml (and its root) or exit with a helpful message."""
     root = LocalConfigService.resolve_root()
     config = LocalConfigService.load(root)
     if not config:
         output.error("No slipp.yaml found")
         output.hint("Run 'slipp projects add' or 'slipp launch' first")
         raise typer.Exit(1)
-    return config
+    return config, root
 
 
 @tags_app.command(name="list")
 def list_presets() -> None:
     """List all tag presets."""
-    resolver = PresetResolver()
-    presets = resolver.list_presets()
-
-    if not resolver.config:
-        _require_config()
-        return
+    config, _root = _require_config()
+    presets = PresetResolver(config).list_presets()
 
     if not presets:
         output.info("No tag presets configured")
@@ -43,10 +39,6 @@ def list_presets() -> None:
         return
 
     rows = [{"name": name, "args": args} for name, args in presets.items()]
-
-    if output.get_output_format() == OutputFormat.json:
-        output.table(rows)
-        return
 
     output.info("Tag presets:")
     output.table(rows)
@@ -67,8 +59,7 @@ def add_preset(
     ] = None,
 ) -> None:
     """Add or update a tag preset."""
-    config = _require_config()
-    root = LocalConfigService.resolve_root()
+    config, root = _require_config()
 
     if not tags and not skip_tags:
         output.error("Must specify --tags and/or --skip-tags")
@@ -101,8 +92,7 @@ def remove_preset(
     name: Annotated[str, typer.Argument(help="Preset name to remove")],
 ) -> None:
     """Remove a tag preset."""
-    config = _require_config()
-    root = LocalConfigService.resolve_root()
+    config, root = _require_config()
 
     if name not in config.tag_presets:
         output.error(f"Preset '{name}' not found")

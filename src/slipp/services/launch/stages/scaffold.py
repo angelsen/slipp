@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-import typer
 
 from slipp import output
 from slipp.output import format_path
@@ -84,8 +83,8 @@ class ScaffoldPromptStage:
 
         output.blank()
 
-        context.hostname = typer.prompt("Inventory hostname")
-        context.host_ip = typer.prompt("Host IP address")
+        context.hostname = output.prompt("Inventory hostname")
+        context.host_ip = output.prompt("Host IP address")
 
         if context.inventory_path:
             inv_dir = context.inventory_path

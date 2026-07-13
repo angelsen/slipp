@@ -7,31 +7,24 @@ import typer
 from slipp import output
 from slipp.commands.common import require_container_runtime, resolve_host_or_exit
 from slipp.services.image import list_images
-from slipp.services.ssh import hint_ssh_log
-from slipp.utils.errors import ImageTransferError
 
 images_app = typer.Typer(name="images", help="Manage container images on VPS")
 
 
 @images_app.command(name="list")
 def list_command(
-    host: Annotated[
-        str | None, typer.Option("--host", help="Target host/project")
+    project: Annotated[
+        str | None, typer.Option("--project", "-p", help="Project name")
     ] = None,
     filter_pattern: Annotated[
         str | None, typer.Option("--filter", "-f", help="Filter by name pattern")
     ] = None,
 ) -> None:
     """List container images on VPS."""
-    ssh_config = resolve_host_or_exit(project=host)
-    runtime = require_container_runtime(host, action="list")
+    ssh_config = resolve_host_or_exit(project=project)
+    runtime = require_container_runtime(project, action="list")
 
-    try:
-        rows = list_images(ssh_config, runtime.value, filter_pattern)
-    except ImageTransferError as e:
-        output.error(str(e))
-        hint_ssh_log()
-        raise typer.Exit(1)
+    rows = list_images(ssh_config, runtime.value, filter_pattern)
 
     if not rows:
         output.info("No images found")

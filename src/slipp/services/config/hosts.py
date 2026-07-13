@@ -8,8 +8,6 @@ This module provides a single source of truth for resolving hosts from:
 Hosts are parsed on-demand from inventory files, not stored in the registry.
 """
 
-from pathlib import Path
-
 from slipp import output
 from slipp.models.host import AnsibleHost
 from slipp.services.config.inventory import load_project_ansible_hosts
@@ -35,20 +33,6 @@ class HostResolver:
     def __init__(self) -> None:
         self._registry = ProjectRegistry()
 
-    def _load_hosts_for_project(self, project_path: Path) -> list[AnsibleHost]:
-        """Load hosts from project's local config and inventory.
-
-        Args:
-            project_path: Path to project directory
-
-        Returns:
-            List of AnsibleHost from inventory
-
-        Raises:
-            HostNotFoundError: If config or inventory invalid
-        """
-        return load_project_ansible_hosts(project_path)
-
     def all_hosts(self) -> list[tuple[str, AnsibleHost]]:
         """Get all registered hosts across all projects.
 
@@ -65,7 +49,7 @@ class HostResolver:
         results: list[tuple[str, AnsibleHost]] = []
         for project in self._registry.list_all():
             try:
-                hosts = self._load_hosts_for_project(project.project_path)
+                hosts = load_project_ansible_hosts(project.project_path)
                 for host in hosts:
                     results.append((project.name, host))
             except HostNotFoundError:
@@ -138,7 +122,7 @@ class HostResolver:
         if project_obj is None:
             raise HostNotFoundError(f"Project '{project}' not found in registry")
 
-        hosts = self._load_hosts_for_project(project_obj.project_path)
+        hosts = load_project_ansible_hosts(project_obj.project_path)
         return self._first_host(hosts, f"Project '{project}'")
 
     def current(self) -> AnsibleHost:
@@ -159,7 +143,7 @@ class HostResolver:
         if local_config:
             assert project_root is not None
             try:
-                hosts = self._load_hosts_for_project(project_root)
+                hosts = load_project_ansible_hosts(project_root)
                 return self._first_host(hosts, "Current project")
             except HostNotFoundError:
                 pass
@@ -168,7 +152,7 @@ class HostResolver:
                 project_obj = self._registry.get(local_config.name)
                 if project_obj:
                     try:
-                        hosts = self._load_hosts_for_project(project_obj.project_path)
+                        hosts = load_project_ansible_hosts(project_obj.project_path)
                         return self._first_host(hosts, "Current project")
                     except HostNotFoundError:
                         pass

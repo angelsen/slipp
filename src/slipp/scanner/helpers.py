@@ -4,9 +4,13 @@ Provides utility functions for framework detection that mirror flyctl's
 helpers.go patterns. All checks are composable and return bool.
 """
 
+import functools
 import json
+import logging
 from pathlib import Path
 from typing import Literal
+
+logger = logging.getLogger(__name__)
 
 PythonDepManager = Literal["uv", "poetry", "pep621", "pipenv", "pip"]
 
@@ -14,6 +18,26 @@ PythonDepManager = Literal["uv", "poetry", "pep621", "pipenv", "pip"]
 # the given family, so the two families can't drift apart on template updates.
 PYTHON_DOCKER_TEMPLATE = "https://raw.githubusercontent.com/superfly/flyctl/master/scanner/templates/python-docker/Dockerfile"
 NODE_DOCKER_TEMPLATE = "https://raw.githubusercontent.com/superfly/flyctl/master/scanner/templates/node/Dockerfile"
+
+
+@functools.lru_cache
+def _load_pyproject(source_dir: Path) -> dict | None:
+    """Parse pyproject.toml once per source_dir, memoized across detectors.
+
+    Returns:
+        Parsed TOML data, or None if the file doesn't exist or can't be parsed
+    """
+    pyproject = source_dir / "pyproject.toml"
+    if not pyproject.exists():
+        return None
+    try:
+        import tomllib
+
+        with open(pyproject, "rb") as f:
+            return tomllib.load(f)
+    except Exception:
+        logger.debug("Failed to parse %s", pyproject, exc_info=True)
+        return None
 
 
 def has_uv_project(source_dir: Path) -> bool:
@@ -34,29 +58,17 @@ def has_uv_project(source_dir: Path) -> bool:
     if (source_dir / "uv.lock").exists():
         return True
 
-    pyproject = source_dir / "pyproject.toml"
-    if pyproject.exists():
-        try:
-            import tomllib
+    data = _load_pyproject(source_dir)
+    if data is not None:
+        if "uv" in data.get("tool", {}):
+            return True
 
-            with open(pyproject, "rb") as f:
-                data = tomllib.load(f)
+        build_backend = data.get("build-system", {}).get("build-backend", "")
+        if build_backend == "uv_build":
+            return True
 
-            if "uv" in data.get("tool", {}):
-                return True
-
-            build_backend = data.get("build-system", {}).get("build-backend", "")
-            if build_backend == "uv_build":
-                return True
-
-            if (
-                "dependency-groups" in data
-                and (source_dir / ".python-version").exists()
-            ):
-                return True
-
-        except Exception:
-            pass
+        if "dependency-groups" in data and (source_dir / ".python-version").exists():
+            return True
 
     return False
 
@@ -85,18 +97,9 @@ def detect_python_dep_manager(source_dir: Path) -> PythonDepManager | None:
     ).exists():
         return "poetry"
 
-    pyproject = source_dir / "pyproject.toml"
-    if pyproject.exists():
-        try:
-            import tomllib
-
-            with open(pyproject, "rb") as f:
-                data = tomllib.load(f)
-
-            if "project" in data:
-                return "pep621"
-        except Exception:
-            pass
+    data = _load_pyproject(source_dir)
+    if data is not None and "project" in data:
+        return "pep621"
 
     if (source_dir / "Pipfile").exists():
         return "pipenv"
@@ -170,33 +173,22 @@ def parse_pyproject_dependencies(source_dir: Path) -> list[str]:
         >>> "flask" in deps
         True
     """
-    pyproject = source_dir / "pyproject.toml"
-    if not pyproject.exists():
+    data = _load_pyproject(source_dir)
+    if data is None:
         return []
 
-    try:
-        import tomllib
+    dependencies = []
 
-        with open(pyproject, "rb") as f:
-            data = tomllib.load(f)
+    pep621_deps = data.get("project", {}).get("dependencies", [])
+    for dep in pep621_deps:
+        dependencies.append(parse_dependency(dep))
 
-        dependencies = []
+    poetry_deps = data.get("tool", {}).get("poetry", {}).get("dependencies", {})
+    for package_name in poetry_deps.keys():
+        if package_name.lower() != "python":
+            dependencies.append(package_name.lower())
 
-        pep621_deps = data.get("project", {}).get("dependencies", [])
-        for dep in pep621_deps:
-            dependencies.append(parse_dependency(dep))
-
-        poetry_deps = data.get("tool", {}).get("poetry", {}).get("dependencies", {})
-        for package_name in poetry_deps.keys():
-            if package_name.lower() != "python":
-                dependencies.append(package_name.lower())
-
-        return dependencies
-
-    except (ImportError, IOError):
-        return []
-    except Exception:
-        return []
+    return dependencies
 
 
 def extract_python_dependencies(source_dir: Path) -> list[str]:

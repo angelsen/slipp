@@ -7,6 +7,7 @@ import typer
 
 from slipp import output
 from slipp.commands.common import (
+    AskBecomePassOption,
     DryRunOption,
     resolve_declared_dirs,
     resolve_project_dirs,
@@ -17,9 +18,8 @@ from slipp.services import wg_manage
 from slipp.services.config import (
     ConfigResolver,
     LocalConfigService,
+    is_wg_manage_host,
     load_first_host,
-    resolve_app_domain,
-    resolve_app_port,
     resolve_project_name,
 )
 from slipp.services.deploy import (
@@ -53,7 +53,7 @@ def _sync_wg_manage_after_deploy(project_root: Path, project_name: str) -> None:
     typer.Exit (a CLI-layer concept the service doesn't raise at all).
     """
     host = load_first_host(project_root)
-    if not host or host.proxy_owner != "wg-manage":
+    if host is None or not is_wg_manage_host(host):
         return
 
     dirs, _ = resolve_project_dirs(
@@ -135,13 +135,7 @@ def deploy_command(
         str | None,
         typer.Option("--skip-tags", help="Ansible tags to skip (comma-separated)"),
     ] = None,
-    ask_become_pass: Annotated[
-        bool,
-        typer.Option(
-            "--ask-become-pass",
-            help="Prompt for the sudo/become password (target host has no passwordless sudo)",
-        ),
-    ] = False,
+    ask_become_pass: AskBecomePassOption = False,
 ) -> None:
     """Execute ansible-playbook to deploy services and manage infrastructure."""
     if name and inventory:
@@ -216,11 +210,14 @@ def deploy_command(
         if not dry_run:
             _sync_wg_manage_after_deploy(project_root, project_name)
 
-        domain = resolve_app_domain(project_root)
-        if domain:
+        host = load_first_host(project_root)
+        if host and host.app_domain:
             has_caddy = (project_root / "roles" / "caddy").exists()
-            port = resolve_app_port(project_root)
-            output.hint(f"  {format_app_url(domain, has_caddy=has_caddy, port=port)}")
+            # app_port only matters for --proxy none deploys; a Caddy-fronted
+            # domain already implies :80/:443.
+            output.hint(
+                f"  {format_app_url(host.app_domain, has_caddy=has_caddy, port=host.app_port)}"
+            )
 
         if (
             any([inventory, playbook, roles_list, galaxy_path_flag, vault])

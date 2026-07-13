@@ -1,11 +1,10 @@
 """Launch command - generate Ansible deployment configurations."""
 
-from pathlib import Path
 from typing import Annotated
 
 import typer
 
-from slipp.commands.common import DryRunOption, resolve_project_dirs
+from slipp.commands.common import DryRunOption, ProjectDirsOption, resolve_project_dirs
 from slipp.constants import DEFAULT_ENV
 from slipp.services.launch import FullContext, run_full_pipeline
 
@@ -21,18 +20,7 @@ def launch_command(
             "--env", "-e", help="Environment (production, dev, staging, etc.)"
         ),
     ] = DEFAULT_ENV,
-    project_dirs: Annotated[
-        list[Path] | None,
-        typer.Option(
-            "--dir",
-            "-d",
-            help="Directories to scan (default: current directory)",
-            exists=True,
-            file_okay=False,
-            dir_okay=True,
-            resolve_path=True,
-        ),
-    ] = None,
+    project_dirs: ProjectDirsOption = None,
     dry_run: DryRunOption = False,
     reconfigure: Annotated[
         bool,

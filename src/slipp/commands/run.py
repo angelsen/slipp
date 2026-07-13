@@ -94,10 +94,10 @@ def run_command(
 
 def _execute_profile(executor: RunProfileExecutor, profile: RunProfile) -> None:
     """Execute profile and propagate the command's exit code."""
-    result = executor.execute(profile)
-    if result.exit_code != 0:
+    exit_code = executor.execute(profile)
+    if exit_code != 0:
         hint_ssh_log()
-        raise typer.Exit(result.exit_code)
+        raise typer.Exit(exit_code)
 
 
 def _save_profile(service: RunProfileService, name: str, profile: RunProfile) -> None:

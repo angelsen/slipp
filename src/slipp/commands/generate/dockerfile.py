@@ -4,30 +4,18 @@ Scans projects and generates Dockerfiles without Ansible configuration files.
 Supports dry-run mode and reverse proxy configuration.
 """
 
-from pathlib import Path
 from typing import Annotated
 
 import typer
 
 from slipp import output
-from slipp.commands.common import DryRunOption, resolve_project_dirs
+from slipp.commands.common import DryRunOption, ProjectDirsOption, resolve_project_dirs
 from slipp.models.service import Runtime
 from slipp.services.launch import DockerfileContext, run_dockerfile_pipeline
 
 
 def dockerfile_command(
-    project_dirs: Annotated[
-        list[Path] | None,
-        typer.Option(
-            "--dir",
-            "-d",
-            help="Directories to scan (default: current directory)",
-            exists=True,
-            file_okay=False,
-            dir_okay=True,
-            resolve_path=True,
-        ),
-    ] = None,
+    project_dirs: ProjectDirsOption = None,
     dry_run: DryRunOption = False,
     proxy: Annotated[
         str, typer.Option("--proxy", help="Reverse proxy: caddy, none")

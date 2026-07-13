@@ -2,7 +2,6 @@
 
 from typing import Any
 
-import typer
 
 from slipp import output
 from slipp.services.providers.gigahost import GigahostClient
@@ -15,16 +14,16 @@ def register_domain_interactive(client: GigahostClient, domain: str) -> dict[str
     Raises:
         DomainRegistrationError: If the registration API call fails.
     """
-    registrant_type = typer.prompt(
+    registrant_type = output.prompt(
         "Registrant type (organization/person)", default="organization"
     )
-    email = typer.prompt("Contact email")
-    zip_code = typer.prompt("Zip code")
-    city = typer.prompt("City")
+    email = output.prompt("Contact email")
+    zip_code = output.prompt("Zip code")
+    city = output.prompt("City")
 
     extra: dict[str, Any] = {}
     if registrant_type == "organization":
-        org_number = typer.prompt("Organization number (9 digits)")
+        org_number = output.prompt("Organization number (9 digits)")
         try:
             org = client.lookup_organization(org_number)
         except ProviderError as e:
@@ -33,14 +32,14 @@ def register_domain_interactive(client: GigahostClient, domain: str) -> dict[str
         company_name = org.get("company_name", "")
         if company_name:
             output.info(f"Found: {company_name}")
-        applicant_name = typer.prompt("Applicant name", default=company_name or "")
+        applicant_name = output.prompt("Applicant name", default=company_name or "")
         zip_code = org.get("zip_code") or zip_code
         city = org.get("city") or city
         extra = {"org_number": org_number, "company_name": company_name}
     else:
-        first_name = typer.prompt("First name")
-        last_name = typer.prompt("Last name")
-        pid = typer.prompt("Personal ID (format: N.PRI.12345678)")
+        first_name = output.prompt("First name")
+        last_name = output.prompt("Last name")
+        pid = output.prompt("Personal ID (format: N.PRI.12345678)")
         applicant_name = f"{first_name} {last_name}"
         extra = {"pid": pid, "first_name": first_name, "last_name": last_name}
 

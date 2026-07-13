@@ -9,6 +9,7 @@ from typing import Annotated
 import typer
 
 from slipp import output
+from slipp.commands.common import AskBecomePassOption
 from slipp.models.host import AnsibleHost
 from slipp.services.config import HostResolver
 from slipp.services.run import CaddyProxy
@@ -34,13 +35,7 @@ def proxy_command(
             help="Port where existing service listens for HTTPS",
         ),
     ] = 9443,
-    ask_become_pass: Annotated[
-        bool,
-        typer.Option(
-            "--ask-become-pass",
-            help="Prompt for the sudo/become password (target host has no passwordless sudo)",
-        ),
-    ] = False,
+    ask_become_pass: AskBecomePassOption = False,
 ) -> None:
     """Setup dev proxy infrastructure for slipp run --tunnel-out."""
     try:

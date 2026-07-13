@@ -4,7 +4,6 @@ import typer
 
 from slipp import output
 from slipp.services.providers import get_gigahost_client
-from slipp.utils.errors import ProviderError
 
 servers_app = typer.Typer(
     name="servers",
@@ -15,12 +14,8 @@ servers_app = typer.Typer(
 @servers_app.command(name="list")
 def list_servers() -> None:
     """List VPS servers across configured providers (no SSH needed)."""
-    try:
-        client = get_gigahost_client()
-        servers = client.list_servers()
-    except ProviderError as e:
-        output.error(str(e))
-        raise typer.Exit(1)
+    client = get_gigahost_client()
+    servers = client.list_servers()
 
     if not servers:
         output.info("No servers found")

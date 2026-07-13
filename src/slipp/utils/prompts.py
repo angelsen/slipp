@@ -97,14 +97,14 @@ def get_inventory_config(
     output.info("Configure deployment target")
     output.blank()
 
-    ansible_host = typer.prompt("Target host (IP or domain)")
-    ansible_user = typer.prompt("SSH user", default=DEFAULT_SSH_USER)
-    ansible_port = typer.prompt("SSH port", default=DEFAULT_SSH_PORT, type=int)
-    app_domain = typer.prompt("App domain")
+    ansible_host = output.prompt("Target host (IP or domain)")
+    ansible_user = output.prompt("SSH user", default=DEFAULT_SSH_USER)
+    ansible_port = output.prompt("SSH port", default=DEFAULT_SSH_PORT, type=int)
+    app_domain = output.prompt("App domain")
     if is_ip_address(app_domain):
         admin_email = None
     else:
-        admin_email = typer.prompt(
+        admin_email = output.prompt(
             "Admin email (for HTTPS certificates)",
             default=f"admin@{app_domain}" if "@" not in app_domain else "",
         )
@@ -119,7 +119,7 @@ def get_inventory_config(
 
     valid_runtimes = [r.value for r in Runtime]
     while True:
-        runtime = typer.prompt("Runtime", default=Runtime.PODMAN.value)
+        runtime = output.prompt("Runtime", default=Runtime.PODMAN.value)
         if runtime in valid_runtimes:
             break
         output.warning(
@@ -143,7 +143,7 @@ def get_inventory_config(
     output.info("Testing SSH connectivity...")
 
     if not _test_ssh_connectivity(ansible_host, ansible_user, ansible_port):
-        retry = typer.confirm("Connection failed. Continue anyway?", default=False)
+        retry = output.confirm("Connection failed. Continue anyway?", default=False)
         if not retry:
             output.error("SSH connectivity test failed - aborting")
             raise typer.Exit(1)

@@ -1,7 +1,8 @@
-"""Presentation utilities for commands.
+"""Shared CLI helpers for commands.
 
-This module contains display/formatting functions shared across commands.
-Business logic (filtering, discovery, lookups) is in services/discovery/.
+Resolve-or-exit helpers, shared Typer options, and other cross-command
+plumbing live here. Business logic (filtering, discovery, lookups) is in
+services/discovery/.
 """
 
 from pathlib import Path
@@ -15,12 +16,33 @@ from slipp.models.service import Runtime, Service
 from slipp.scanner.workspaces import detect_workspace_members
 from slipp.services.discovery import filter_services, find_service
 from slipp.services.discovery.pipeline import discover_and_enrich
-from slipp.utils.errors import AmbiguousServiceError, HostNotFoundError
+from slipp.utils.errors import AmbiguousServiceError
 from slipp.utils.identifiers import parse_service_identifier
 
 DryRunOption = Annotated[
     bool,
     typer.Option("--dry-run", help="Show what would be done without making changes"),
+]
+
+ProjectDirsOption = Annotated[
+    list[Path] | None,
+    typer.Option(
+        "--dir",
+        "-d",
+        help="Directories to scan (default: current directory)",
+        exists=True,
+        file_okay=False,
+        dir_okay=True,
+        resolve_path=True,
+    ),
+]
+
+AskBecomePassOption = Annotated[
+    bool,
+    typer.Option(
+        "--ask-become-pass",
+        help="Prompt for the sudo/become password (target host has no passwordless sudo)",
+    ),
 ]
 
 
@@ -98,7 +120,7 @@ def resolve_host_or_exit(
     *,
     command: str = "exec",
 ) -> AnsibleHost:
-    """Resolve host (service → project → cwd), printing errors and exiting on failure.
+    """Resolve host (service → project → cwd), exiting with suggestions on ambiguity.
 
     Args:
         service: Optional service identifier
@@ -109,15 +131,13 @@ def resolve_host_or_exit(
         Resolved AnsibleHost
 
     Raises:
-        typer.Exit: If resolution fails or is ambiguous
+        typer.Exit: If resolution is ambiguous
+        HostNotFoundError: If no host matches (top-level handler reports it)
     """
     from slipp.services.config import HostResolver
 
     try:
         return HostResolver().resolve(service=service, project=project)
-    except HostNotFoundError as e:
-        output.error(str(e))
-        raise typer.Exit(1)
     except AmbiguousServiceError as e:
         output.error(str(e))
         output.suggestions("Specify target:", e.get_suggestions(command=command))
@@ -218,59 +238,6 @@ def require_container_runtime(project: str | None, *, action: str) -> Runtime:
         )
         raise typer.Exit(1)
     return runtime
-
-
-def display_services_table(
-    services: list[Service],
-    *,
-    include_project: bool = True,
-    include_ip: bool = True,
-    include_host: bool = True,
-) -> None:
-    """Consistent table formatting across all commands.
-
-    Displays services in a table format with configurable columns.
-    Always includes: service, runtime, state, uptime
-    Optional columns: project, host (inventory_hostname), ip (ansible_host)
-
-    Args:
-        services: List of services to display
-        include_project: Include project column (default: True)
-        include_ip: Include IP address column (default: True)
-        include_host: Include inventory hostname column (default: True)
-
-    Example:
-        >>> # Full table with all columns
-        >>> display_services_table(services)
-        >>>
-        >>> # Minimal table (no project or IP)
-        >>> display_services_table(services, include_project=False, include_ip=False)
-    """
-    if not services:
-        output.info("No services found")
-        return
-
-    service_dicts = []
-    for s in services:
-        row = {}
-
-        if include_project:
-            row["project"] = ", ".join(s.projects) if s.projects else "-"
-
-        row["service"] = s.name
-
-        if include_host:
-            row["host"] = s.inventory_hostname
-        if include_ip:
-            row["ip"] = s.host
-
-        row["runtime"] = s.runtime.value
-        row["state"] = s.state.value
-        row["uptime"] = s.uptime or "-"
-
-        service_dicts.append(row)
-
-    output.table(service_dicts)
 
 
 def _show_service_not_found_error(

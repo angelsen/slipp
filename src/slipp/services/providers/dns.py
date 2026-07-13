@@ -9,7 +9,7 @@ from typing import Protocol
 
 from pydantic import BaseModel, Field
 
-from slipp.utils.errors import DNSSyncError
+from slipp import output
 
 
 class DNSZone(BaseModel):
@@ -69,12 +69,16 @@ class DNSProvider(Protocol):
         """Find the zone managing a domain, or None if not found."""
         ...
 
+    def create_zone(self, domain: str) -> DNSZone:
+        """Create a zone for a domain."""
+        ...
+
 
 def sync_dns(provider: DNSProvider, domain: str, target_ip: str) -> list[str]:
-    """Converge the root A record for domain -> target_ip.
+    """Converge zone + root A record for domain -> target_ip.
 
-    Additive only: creates a missing "@" A record, updates a stale one,
-    and never deletes or touches any other record.
+    Additive only: creates a missing zone, creates a missing "@" A record,
+    updates a stale one, and never deletes or touches any other record.
 
     Args:
         provider: DNS-capable provider client
@@ -83,13 +87,11 @@ def sync_dns(provider: DNSProvider, domain: str, target_ip: str) -> list[str]:
 
     Returns:
         Human-readable list of actions taken (empty if already correct)
-
-    Raises:
-        DNSSyncError: If no zone is found for domain
     """
     zone = provider.find_zone(domain)
     if zone is None:
-        raise DNSSyncError(f"No DNS zone found for domain: {domain}")
+        output.info(f"Creating zone {domain}...")
+        zone = provider.create_zone(domain)
 
     records = provider.list_records(zone.zone_id)
     existing_a = [r for r in records if r.type == "A" and r.name == "@"]

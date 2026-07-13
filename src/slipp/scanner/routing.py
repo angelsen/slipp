@@ -1,39 +1,16 @@
-"""Shared frontend/backend classification for multi-service routing.
+"""Shared frontend/backend routing convention for multi-service deploys.
 
 Single source of truth for slipp's routing convention: Node frameworks
 serve as the frontend, Python as the backend. Both routing consumers --
 build_caddy_sites() (launch/stages/caddy.py) and build_wg_services()
-(services/wg_manage) -- classify through here, so the convention can
-never drift between Caddy and wg-manage deploys.
+(services/wg_manage) -- seed and validate their expose: blocks through
+default_expose()/validate_expose() here, so the convention can never
+drift between Caddy and wg-manage deploys.
 """
-
-from dataclasses import dataclass
 
 from slipp.models.deployment import DetectedService
 from slipp.models.local_config import ExposeEntry
 from slipp.scanner.models import NODE_FRAMEWORKS, PYTHON_FRAMEWORKS
-
-
-@dataclass(frozen=True)
-class ServiceRoles:
-    """Routing roles for a set of detected services.
-
-    frontend/backend are the first Node/Python-framework match (each may
-    be None); others is everything else in original detection order.
-    The framework sets are disjoint, so frontend is never backend.
-    """
-
-    frontend: DetectedService | None
-    backend: DetectedService | None
-    others: list[DetectedService]
-
-
-def classify_services(services: list[DetectedService]) -> ServiceRoles:
-    """Split services into frontend, backend, and the rest."""
-    frontend = next((s for s in services if s.framework in NODE_FRAMEWORKS), None)
-    backend = next((s for s in services if s.framework in PYTHON_FRAMEWORKS), None)
-    others = [s for s in services if s is not frontend and s is not backend]
-    return ServiceRoles(frontend=frontend, backend=backend, others=others)
 
 
 def validate_expose(
@@ -86,10 +63,9 @@ def default_expose(
 ) -> dict[str, ExposeEntry]:
     """Seed the expose: routing block from the default convention.
 
-    The primary service (frontend if present, else the backend -- the
-    framework sets are exhaustive, so one always exists) gets the bare
-    domain at "/". The backend gets "/api" on that domain only when a
-    frontend occupies "/" -- with no frontend, the backend *is* the app
+    The primary service (frontend if present, else the backend) gets the
+    bare domain at "/". The backend gets "/api" on that domain only when
+    a frontend occupies "/" -- with no frontend, the backend *is* the app
     and stays at the root, so adding a worker service never relocates
     the app's public URL. Everything else gets a {name}.{domain}
     subdomain.
@@ -97,18 +73,32 @@ def default_expose(
     if len(services) == 1:
         return {services[0].name: ExposeEntry(domain=domain)}
 
-    roles = classify_services(services)
-    primary = roles.frontend or roles.backend
-    if primary is None:  # unreachable: every framework is Node or Python
-        primary = services[0]
+    frontend = next((s for s in services if s.framework in NODE_FRAMEWORKS), None)
+    backend = next((s for s in services if s.framework in PYTHON_FRAMEWORKS), None)
+    primary = frontend or backend
+    assert primary is not None  # framework sets are exhaustive (scanner/models.py)
 
     expose = {primary.name: ExposeEntry(domain=domain)}
-    if roles.frontend and roles.backend:
-        expose[roles.backend.name] = ExposeEntry(domain=domain, path="/api")
+    if frontend and backend:
+        expose[backend.name] = ExposeEntry(domain=domain, path="/api")
 
     for service in services:
-        if service is primary or service.name in expose:
-            continue
-        expose[service.name] = ExposeEntry(domain=f"{service.name}.{domain}")
+        if service.name not in expose:
+            expose[service.name] = ExposeEntry(domain=f"{service.name}.{domain}")
 
     return expose
+
+
+def ip_expose(
+    services: list[DetectedService], site: str
+) -> tuple[dict[str, ExposeEntry], list[DetectedService]]:
+    """Routing for a domainless (IP) deploy, e.g. site=":80".
+
+    The primary service (and a backend at "/api") route on the bare site;
+    there are no subdomains to mint, so every service that would get one
+    is returned as unroutable for the caller to warn about.
+    """
+    expose = default_expose(services, site)
+    routable = {name: e for name, e in expose.items() if e.domain == site}
+    skipped = [s for s in services if s.name not in routable]
+    return routable, skipped

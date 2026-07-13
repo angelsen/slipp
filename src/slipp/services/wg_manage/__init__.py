@@ -21,6 +21,7 @@ from slipp.scanner import scan
 from slipp.scanner.routing import default_expose, validate_expose
 from slipp.services.ssh import SSHResult, SSHService
 from slipp.utils.errors import WgManageError
+from slipp.utils.network import is_ip_address
 
 
 def service_label(project_name: str) -> str:
@@ -62,8 +63,15 @@ def build_wg_services(
         for anything more structured.
 
     Raises:
-        WgManageError: If the expose block is invalid (see validate_expose).
+        WgManageError: If the domain is an IP address or the expose block
+            is invalid (see validate_expose).
     """
+    if is_ip_address(domain):
+        raise WgManageError(
+            f"wg-manage routes by FQDN; app_domain '{domain}' is an IP address. "
+            "Set a real domain on the inventory host."
+        )
+
     if expose is None:
         expose = default_expose(services, domain)
 

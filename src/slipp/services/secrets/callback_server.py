@@ -4,9 +4,12 @@ import asyncio
 import base64
 import hashlib
 import json
+import logging
 
 from aiohttp import web
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+logger = logging.getLogger(__name__)
 
 
 class CallbackServer:
@@ -69,8 +72,9 @@ class CallbackServer:
             raise web.HTTPFound(location=raw_credentials["successUrl"])
         except web.HTTPFound:
             raise
-        except Exception as e:
-            return web.Response(text=f"Decryption failed: {e}", status=400)
+        except Exception:
+            logger.warning("Credential decryption failed", exc_info=True)
+            return web.Response(text="Decryption failed", status=400)
 
     def _decrypt(self, encrypted: str) -> dict:
         """Decrypt credentials using AES-256-GCM.

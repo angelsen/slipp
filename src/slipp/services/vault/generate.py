@@ -3,13 +3,17 @@
 import base64
 import os
 
+from slipp.constants import SecretEncoding
 
-def generate_secret(num_bytes: int = 32, encoding: str = "hex") -> str:
+
+def generate_secret(
+    num_bytes: int = 32, encoding: SecretEncoding = SecretEncoding.hex
+) -> str:
     """Generate cryptographically secure secret.
 
     Args:
         num_bytes: Number of bytes of entropy (default: 32 = 256-bit)
-        encoding: Output encoding - "hex", "base64", or "ulid"
+        encoding: Output encoding - hex, base64, or ulid
 
     Returns:
         Secret string in specified encoding
@@ -17,17 +21,17 @@ def generate_secret(num_bytes: int = 32, encoding: str = "hex") -> str:
     Examples:
         >>> generate_secret()  # 64 hex chars (256-bit)
         >>> generate_secret(16)  # 32 hex chars (128-bit)
-        >>> generate_secret(32, "base64")  # 43 base64 chars (256-bit)
-        >>> generate_secret(encoding="ulid")  # 26 char ULID
+        >>> generate_secret(32, SecretEncoding.base64)  # 43 base64 chars (256-bit)
+        >>> generate_secret(encoding=SecretEncoding.ulid)  # 26 char ULID
     """
-    if encoding == "ulid":
+    if encoding == SecretEncoding.ulid:
         from ulid import ULID
 
         return str(ULID())
 
     raw_bytes = os.urandom(num_bytes)
 
-    if encoding == "base64":
+    if encoding == SecretEncoding.base64:
         return base64.b64encode(raw_bytes).decode("ascii")
     else:
         return raw_bytes.hex()
@@ -53,6 +57,6 @@ def generate_jwk(bits: int = 2048) -> str:
         size=bits,
         alg="RS256",
         use="sig",
-        kid=f"key-{generate_secret(4, 'hex')}",
+        kid=f"key-{generate_secret(4, SecretEncoding.hex)}",
     )
     return key.export_private()

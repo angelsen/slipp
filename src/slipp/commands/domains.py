@@ -9,7 +9,6 @@ from slipp.services.providers import (
     get_gigahost_client,
     register_domain_interactive,
 )
-from slipp.utils.errors import DomainRegistrationError, ProviderError
 
 domains_app = typer.Typer(
     name="domains",
@@ -22,12 +21,8 @@ def check_domain(
     domain: Annotated[str, typer.Argument(help="Domain to check (.no only)")],
 ) -> None:
     """Check .no domain availability."""
-    try:
-        client = get_gigahost_client()
-        available, reason = client.check_domain(domain)
-    except ProviderError as e:
-        output.error(str(e))
-        raise typer.Exit(1)
+    client = get_gigahost_client()
+    available, reason = client.check_domain(domain)
 
     if available:
         output.success(f"{domain} is available")
@@ -40,12 +35,8 @@ def register_domain(
     domain: Annotated[str, typer.Argument(help="Domain to register (.no only)")],
 ) -> None:
     """Register a .no domain (prompts for registrant info)."""
-    try:
-        client = get_gigahost_client()
-        available, reason = client.check_domain(domain)
-    except ProviderError as e:
-        output.error(str(e))
-        raise typer.Exit(1)
+    client = get_gigahost_client()
+    available, reason = client.check_domain(domain)
 
     if not available:
         output.error(f"{domain} is not available" + (f": {reason}" if reason else ""))
@@ -53,11 +44,7 @@ def register_domain(
 
     output.info(f"{domain} is available")
 
-    try:
-        result = register_domain_interactive(client, domain)
-    except DomainRegistrationError as e:
-        output.error(str(e))
-        raise typer.Exit(1)
+    result = register_domain_interactive(client, domain)
 
     output.success(f"Registered {domain}")
     output.kv("zone_id", result.get("zone_id"), indent=1)
@@ -67,12 +54,8 @@ def register_domain(
 @domains_app.command(name="list")
 def list_domains() -> None:
     """List domains across configured providers."""
-    try:
-        client = get_gigahost_client()
-        zones = client.list_zones()
-    except ProviderError as e:
-        output.error(str(e))
-        raise typer.Exit(1)
+    client = get_gigahost_client()
+    zones = client.list_zones()
 
     if not zones:
         output.info("No domains found")

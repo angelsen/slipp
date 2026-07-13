@@ -8,8 +8,8 @@ from slipp.constants import DEFAULT_GALAXY_PATH
 from slipp.output import format_path
 from slipp.services.ansible import (
     AnsibleResult,
-    become_password_file,
     ensure_requirements_installed,
+    maybe_become_password_file,
     parse_playbook_progress,
     run_playbook,
 )
@@ -167,9 +167,7 @@ def execute_playbook(
             if needs_vault_password
             else None
         )
-        become_pw_file = (
-            stack.enter_context(become_password_file()) if ask_become_pass else None
-        )
+        become_pw_file = maybe_become_password_file(stack, ask_become_pass)
 
         with output.spinner("Running playbook", spinner_type="earth") as update:
 

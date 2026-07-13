@@ -8,6 +8,7 @@ from typing import Annotated
 import typer
 
 from slipp import output
+from slipp.constants import SecretEncoding
 from slipp.services.vault import generate_jwk, generate_secret
 
 
@@ -36,11 +37,15 @@ def secret_command(
         output.hint(f"RSA-{bits} JWK (private key)")
         return
 
-    encoding = "ulid" if ulid else ("base64" if base64_encode else "hex")
+    encoding = (
+        SecretEncoding.ulid
+        if ulid
+        else (SecretEncoding.base64 if base64_encode else SecretEncoding.hex)
+    )
     secret = generate_secret(num_bytes, encoding)
     output.stdout(secret)
     if ulid:
         output.hint("26 char ULID")
     else:
         bits_entropy = num_bytes * 8
-        output.hint(f"{len(secret)} {encoding} chars, {bits_entropy}-bit")
+        output.hint(f"{len(secret)} {encoding.value} chars, {bits_entropy}-bit")

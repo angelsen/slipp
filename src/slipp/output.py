@@ -6,13 +6,15 @@ All commands MUST use these primitives.
 
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Callable, Generator
+from typing import Any, Callable, Generator, TypeVar
 
 from rich import box
 from rich.console import Console
 from rich.table import Table
 
 from slipp.constants import OutputFormat
+
+T = TypeVar("T")
 
 ICON_BULLET = "•"
 ICON_CHECK = "✓"
@@ -219,11 +221,35 @@ def format_path(path: Path | str, project_root: Path | None = None) -> str:
     return str(path_obj)
 
 
-def prompt(question: str, default: str | None = None) -> str:
-    """Text input prompt via typer (prompt text on stderr, stdout stays data)."""
+def prompt(question: str, default: Any = None, *, type: type | None = None) -> Any:
+    """Input prompt via typer (prompt text on stderr, stdout stays data).
+
+    The value type is `type` if given, else inferred from `default`
+    (typer's behavior) -- so int prompts work with either.
+    """
     import typer
 
-    return typer.prompt(question, default=default, err=True)
+    return typer.prompt(question, default=default, type=type, err=True)
+
+
+def pick(
+    items: list[T], rows: list[dict[str, Any]], label: str, *, default: int = 1
+) -> T:
+    """Show a numbered table and prompt for a 1-based selection.
+
+    Out-of-range choices clamp to the nearest valid index rather than erroring.
+    """
+    task(label)
+    table(rows)
+    choice = prompt("Select", type=int, default=default)
+    return items[max(1, min(choice, len(items))) - 1]
+
+
+def confirm(question: str, *, default: bool = False) -> bool:
+    """Yes/no prompt via typer (prompt text on stderr, stdout stays data)."""
+    import typer
+
+    return typer.confirm(question, default=default, err=True)
 
 
 def prompt_password(question: str = "Password", confirm: bool = False) -> str:

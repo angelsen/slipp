@@ -1,20 +1,40 @@
 """List running services (like docker ps) across registered projects."""
 
-import json
 from typing import Annotated
 
 import typer
 
 from slipp import output
-from slipp.commands.common import (
-    display_services_table,
-    resolve_host_or_exit,
-)
+from slipp.commands.common import resolve_host_or_exit
 from slipp.constants import OutputFormat
+from slipp.models.service import Service
 from slipp.services.config import HostResolver, collect_managed_roles
 from slipp.services.discovery import filter_services
 from slipp.services.discovery.pipeline import discover_across_hosts, discover_and_enrich
 from slipp.services.ssh import hint_ssh_log
+
+
+def display_services_table(services: list[Service]) -> None:
+    """Render services as a table (or JSON), one row schema for both formats."""
+    if not services:
+        if output.get_output_format() == OutputFormat.json:
+            output.stdout("[]")
+        output.info("No services found")
+        return
+
+    rows = [
+        {
+            "project": ", ".join(s.projects) if s.projects else "-",
+            "service": s.name,
+            "host": s.inventory_hostname,
+            "ip": s.host,
+            "runtime": s.runtime.value,
+            "state": s.state.value,
+            "uptime": s.uptime or "-",
+        }
+        for s in services
+    ]
+    output.table(rows)
 
 
 def ps_command(
@@ -77,28 +97,7 @@ def ps_command(
             services, show_all=all_services, managed_roles=managed_roles
         )
 
-    if output.get_output_format() == OutputFormat.json:
-        data = [
-            {
-                "name": s.name,
-                "project": ", ".join(s.projects) if s.projects else None,
-                "host": s.inventory_hostname,
-                "ip": s.host,
-                "runtime": s.runtime.value,
-                "state": s.state.value,
-                "uptime": s.uptime,
-            }
-            for s in services
-        ]
-        output.stdout(json.dumps(data, indent=2))
-        return
-
-    display_services_table(
-        services,
-        include_project=True,
-        include_host=True,
-        include_ip=True,
-    )
+    display_services_table(services)
 
     cache_status = "(from cache)" if not refresh else "(fresh discovery)"
 

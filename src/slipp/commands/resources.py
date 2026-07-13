@@ -33,12 +33,12 @@ from slipp.models.deployment import DeploymentHostConfig
 from slipp.services import wg_manage
 from slipp.services.config import (
     LocalConfigService,
+    is_wg_manage_host,
     load_first_host,
     resolve_project_name,
 )
 from slipp.services.providers import get_pangolin_client
 from slipp.services.resources import resolve_public_target, sync_pangolin_resource
-from slipp.utils.errors import ConfigError, ProviderError, WgManageError
 
 resources_app = typer.Typer(
     name="resources",
@@ -57,8 +57,7 @@ resources_app = typer.Typer(
 #
 # The SSH orchestration and converge logic itself lives in
 # services/wg_manage.py -- these are thin args -> service -> output
-# wrappers, converting WgManageError into typer.Exit like every other
-# command in this file already does for ConfigError/ProviderError.
+# wrappers; errors propagate to the top-level SlippError handler.
 
 
 def _wg_manage_host_for_cwd(root: Path | None = None) -> DeploymentHostConfig | None:
@@ -74,16 +73,12 @@ def _wg_manage_host_for_cwd(root: Path | None = None) -> DeploymentHostConfig | 
             resolve_root() filesystem walk. Defaults to resolving from cwd.
     """
     host = load_first_host(root or LocalConfigService.resolve_root())
-    return host if host and host.proxy_owner == "wg-manage" else None
+    return host if is_wg_manage_host(host) else None
 
 
 def _list_wg_manage(host: DeploymentHostConfig) -> None:
     """List wg-manage services on `host` (all of them, not just this project's)."""
-    try:
-        services = wg_manage.fetch_services(host)
-    except WgManageError as e:
-        output.error(str(e))
-        raise typer.Exit(1)
+    services = wg_manage.fetch_services(host)
 
     if output.get_output_format() == OutputFormat.json:
         output.stdout(json.dumps(services, indent=2))
@@ -103,17 +98,6 @@ def _list_wg_manage(host: DeploymentHostConfig) -> None:
             for s in services
         ]
     )
-
-
-def _remove_wg_manage(host: DeploymentHostConfig, project_name: str, name: str) -> None:
-    """Remove a wg-manage service, refusing if it isn't labeled to this project."""
-    try:
-        wg_manage.remove_service(host, project_name, name)
-    except WgManageError as e:
-        output.error(str(e))
-        raise typer.Exit(1)
-
-    output.success(f"Removed wg-manage service: {name}")
 
 
 @resources_app.command(name="sync")
@@ -139,45 +123,33 @@ def sync_resource(
             resolve_declared_dirs(project_root), root=project_root
         )
         local_config = LocalConfigService.load(project_root)
-        try:
-            wg_manage.sync(
-                dirs,
-                project_name,
-                wg_host,
-                expose=local_config.expose if local_config else None,
-                dry_run=dry_run,
-            )
-        except WgManageError as e:
-            output.error(str(e))
-            raise typer.Exit(1)
+        wg_manage.sync(
+            dirs,
+            project_name,
+            wg_host,
+            expose=local_config.expose if local_config else None,
+            dry_run=dry_run,
+        )
         return
 
     if not site:
         output.error("--site is required for Pangolin sync")
         raise typer.Exit(1)
 
-    try:
-        app_domain, ip, port, method = resolve_public_target(project_root)
-    except ConfigError as e:
-        output.error(str(e))
-        raise typer.Exit(1)
+    app_domain, ip, port, method = resolve_public_target(project_root)
 
     output.info(f"Syncing Pangolin resource for {app_domain} -> {ip}:{port}")
 
-    try:
-        sync_pangolin_resource(
-            get_pangolin_client(),
-            project_name=project_name,
-            app_domain=app_domain,
-            ip=ip,
-            port=port,
-            method=method,
-            site=site,
-            dry_run=dry_run,
-        )
-    except ProviderError as e:
-        output.error(str(e))
-        raise typer.Exit(1)
+    sync_pangolin_resource(
+        get_pangolin_client(),
+        project_name=project_name,
+        app_domain=app_domain,
+        ip=ip,
+        port=port,
+        method=method,
+        site=site,
+        dry_run=dry_run,
+    )
 
     output.blank()
     output.kv("resource", app_domain)
@@ -193,11 +165,7 @@ def list_resources() -> None:
         _list_wg_manage(wg_host)
         return
 
-    try:
-        resources = get_pangolin_client().list_resources()
-    except ProviderError as e:
-        output.error(str(e))
-        raise typer.Exit(1)
+    resources = get_pangolin_client().list_resources()
 
     if not resources:
         output.info("No resources found")
@@ -229,20 +197,16 @@ def remove_resource(
     """Remove an exposed service: a wg-manage service labeled to this project, or a public Pangolin resource."""
     wg_host = _wg_manage_host_for_cwd()
     if wg_host:
-        _remove_wg_manage(wg_host, resolve_project_name(), name)
+        # remove_service refuses entries not labeled to this project.
+        wg_manage.remove_service(wg_host, resolve_project_name(), name)
+        output.success(f"Removed wg-manage service: {name}")
         return
 
-    try:
-        client = get_pangolin_client()
-        match = next(
-            (r for r in client.list_resources() if r.get("name") == name), None
-        )
-        if not match:
-            output.error(f"Resource '{name}' not found")
-            raise typer.Exit(1)
-
-        client.delete_resource(match["resourceId"])
-        output.success(f"Removed Pangolin resource: {match.get('fullDomain')}")
-    except ProviderError as e:
-        output.error(str(e))
+    client = get_pangolin_client()
+    match = next((r for r in client.list_resources() if r.get("name") == name), None)
+    if not match:
+        output.error(f"Resource '{name}' not found")
         raise typer.Exit(1)
+
+    client.delete_resource(match["resourceId"])
+    output.success(f"Removed Pangolin resource: {match.get('fullDomain')}")

@@ -9,7 +9,9 @@ from slipp.commands.common import resolve_host_or_exit
 
 
 def host_command(
-    project: Annotated[str | None, typer.Argument(help="Project name")] = None,
+    project: Annotated[
+        str | None, typer.Option("--project", "-p", help="Project name")
+    ] = None,
     ip_only: Annotated[bool, typer.Option("--ip", help="Output IP only")] = False,
     user_only: Annotated[bool, typer.Option("--user", help="Output user only")] = False,
     port_only: Annotated[bool, typer.Option("--port", help="Output port only")] = False,

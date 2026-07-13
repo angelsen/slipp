@@ -32,7 +32,7 @@ from slipp.commands.run import RUN_CONTEXT_SETTINGS, run_command
 from slipp.commands.runs import runs_app
 from slipp.commands.secret import secret_command
 from slipp.commands.secrets import secrets_app
-from slipp.commands.server import server_command
+from slipp.commands.server import server_app
 from slipp.commands.servers import servers_app
 from slipp.commands.ssh import ssh_command
 from slipp.commands.status import status_command
@@ -90,6 +90,7 @@ app.add_typer(providers_app, name="providers")
 app.add_typer(resources_app, name="resources")
 app.add_typer(runs_app, name="runs")
 app.add_typer(secrets_app, name="secrets")
+app.add_typer(server_app, name="server")
 app.add_typer(servers_app, name="servers")
 app.add_typer(tags_app, name="tags")
 
@@ -104,7 +105,6 @@ app.command(name="provision")(provision_command)
 app.command(name="ps")(ps_command)
 app.command(name="run", context_settings=RUN_CONTEXT_SETTINGS)(run_command)
 app.command(name="secret")(secret_command)
-app.command(name="server")(server_command)
 app.command(name="ssh")(ssh_command)
 app.command(name="status")(status_command)
 app.command(name="tag")(tag_command)

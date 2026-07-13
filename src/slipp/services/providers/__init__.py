@@ -16,7 +16,7 @@ from slipp.services.providers.provision import (
     resolve_server,
 )
 from slipp.services.providers.state import ProvisionStateService
-from slipp.utils.errors import DNSSyncError, ProviderNotConfiguredError
+from slipp.utils.errors import ProviderNotConfiguredError
 
 
 def get_gigahost_client() -> GigahostClient:
@@ -50,17 +50,17 @@ def get_pangolin_client() -> PangolinClient:
 
 
 def resolve_dns_provider(domain: str) -> DNSProvider:
-    """Find which configured provider manages this domain's zone.
+    """The provider that should manage this domain's DNS.
+
+    With Gigahost as the only DNS-capable provider this is trivially the
+    Gigahost client. When a second provider lands, prefer the one that
+    already has a zone for `domain`, falling back to a configured default.
 
     Raises:
-        ProviderNotConfiguredError: If no provider is configured at all.
-        DNSSyncError: If no configured provider manages this domain's zone.
+        ProviderNotConfiguredError: If no provider is configured.
     """
-    client = get_gigahost_client()
-    if client.find_zone(domain) is not None:
-        return client
-
-    raise DNSSyncError(f"No configured provider manages a zone for: {domain}")
+    del domain  # reserved for multi-provider resolution
+    return get_gigahost_client()
 
 
 __all__ = [

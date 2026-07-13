@@ -166,9 +166,8 @@ def write_generated_file(
 class FileGenerationStage(Generic[CtxT]):
     """Base class for stages that generate files."""
 
-    def __init__(self, description: str, *, respect_customized: bool = True):
+    def __init__(self, description: str):
         self.description = description
-        self.respect_customized = respect_customized
 
     def generate_content(self, context: CtxT) -> dict[Path, str]:
         """Generate file content for this stage.
@@ -203,7 +202,7 @@ class FileGenerationStage(Generic[CtxT]):
                     file_path,
                     content,
                     context,
-                    respect_customized=self.respect_customized,
+                    respect_customized=True,
                 )
 
         except Exception as e:

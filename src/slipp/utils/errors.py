@@ -271,12 +271,6 @@ class ProvisionError(ProviderError):
     pass
 
 
-class DNSSyncError(ProviderError):
-    """DNS sync operation failed."""
-
-    pass
-
-
 class DomainRegistrationError(ProviderError):
     """Domain registration failed."""
 

@@ -6,6 +6,7 @@ Handles scanning YAML files for vault references and generating secrets.
 
 from pathlib import Path
 
+from slipp.constants import SecretEncoding
 from slipp.services.vault.crypto import (
     encrypt_string,
     extract_vault_refs,
@@ -28,7 +29,9 @@ class SecretSynchronizer:
     and generates missing secrets in the vault file.
     """
 
-    def __init__(self, num_bytes: int = 32, encoding: str = "hex"):
+    def __init__(
+        self, num_bytes: int = 32, encoding: SecretEncoding = SecretEncoding.hex
+    ):
         """Initialize synchronizer.
 
         Args:

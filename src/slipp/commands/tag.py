@@ -30,7 +30,7 @@ def tag_command(
             output.hint(f"Available presets: {', '.join(available.keys())}")
         raise typer.Exit(1)
 
-    args = resolver.get_preset_args(preset)
+    args = resolver.list_presets()[preset]
     output.info(f"Preset '{preset}':")
     output.stdout(f"  {args}")
     output.blank()

@@ -16,13 +16,13 @@ registry_app = typer.Typer(name="registry", help="Setup container registry auth 
 def _bootstrap_registry(
     registry_url: str,
     registry_name: str,
-    host: str | None,
+    project: str | None,
     user: str | None,
     token: str | None,
     token_env_var: str,
 ) -> None:
     """Common registry bootstrap logic."""
-    ssh_config = resolve_host_or_exit(project=host)
+    ssh_config = resolve_host_or_exit(project=project)
 
     if not user:
         user = output.prompt(f"{registry_name} username")
@@ -59,8 +59,8 @@ def _bootstrap_registry(
 
 @registry_app.command(name="ghcr")
 def ghcr_command(
-    host: Annotated[
-        str | None, typer.Option("--host", help="Target host/project")
+    project: Annotated[
+        str | None, typer.Option("--project", "-p", help="Project name")
     ] = None,
     user: Annotated[
         str | None, typer.Option("--user", "-u", help="GitHub username")
@@ -73,7 +73,7 @@ def ghcr_command(
     _bootstrap_registry(
         registry_url="ghcr.io",
         registry_name="GHCR",
-        host=host,
+        project=project,
         user=user,
         token=token,
         token_env_var="GITHUB_TOKEN",
@@ -82,8 +82,8 @@ def ghcr_command(
 
 @registry_app.command(name="dockerhub")
 def dockerhub_command(
-    host: Annotated[
-        str | None, typer.Option("--host", help="Target host/project")
+    project: Annotated[
+        str | None, typer.Option("--project", "-p", help="Project name")
     ] = None,
     user: Annotated[
         str | None, typer.Option("--user", "-u", help="Docker Hub username")
@@ -96,7 +96,7 @@ def dockerhub_command(
     _bootstrap_registry(
         registry_url="docker.io",
         registry_name="Docker Hub",
-        host=host,
+        project=project,
         user=user,
         token=token,
         token_env_var="DOCKER_TOKEN",
