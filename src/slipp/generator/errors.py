@@ -21,6 +21,12 @@ class TemplateFetchError(GeneratorError):
     pass
 
 
+class TemplateParseError(GeneratorError):
+    """Template URL could not be parsed into a repo path."""
+
+    pass
+
+
 class TemplateGenerationError(GeneratorError):
     """Template generation failed (playbook/compose)."""
 

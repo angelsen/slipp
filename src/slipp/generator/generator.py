@@ -8,7 +8,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from slipp import __version__
-from slipp.generator.errors import TemplateFetchError
+from slipp.generator.errors import TemplateParseError
 from slipp.generator.extractors import extract_template_variables
 from slipp.generator.fetcher import TemplateFetcher
 from slipp.generator.renderer import render_go_template
@@ -71,7 +71,7 @@ class TemplateGenerator:
             Relative path from repo root
 
         Raises:
-            TemplateFetchError: If the URL doesn't have enough path segments
+            TemplateParseError: If the URL doesn't have enough path segments
                 to contain owner/repo/ref/path
 
         Example:
@@ -82,7 +82,7 @@ class TemplateGenerator:
         """
         segments = urlparse(template_url).path.strip("/").split("/")
         if len(segments) < 4:
-            raise TemplateFetchError(
+            raise TemplateParseError(
                 f"Cannot derive template path from URL: {template_url}"
             )
         return "/".join(segments[3:])
