@@ -119,57 +119,6 @@ class LocalConfigService:
             return None
 
     @staticmethod
-    def create(
-        name: str,
-        inventory_path: str,
-        playbook_path: str = "playbook.yml",
-        roles_path: list[str] | None = None,
-        galaxy_path: str | None = None,
-        vault_path: str | None = None,
-        runtime: str | None = None,
-        project_root: Path | None = None,
-        project_dirs: list[str] | None = None,
-        expose: dict[str, ExposeEntry] | None = None,
-    ) -> LocalConfig:
-        """Create a new local config.
-
-        Never discovers a root -- callers creating a config must pass an
-        explicit project_root (or intend cwd). Using resolve_root() here
-        could silently overwrite an enclosing project's slipp.yaml.
-
-        Args:
-            name: Project identifier (required)
-            inventory_path: Relative path to inventory
-            playbook_path: Relative path to playbook
-            roles_path: Role directories (sets ANSIBLE_ROLES_PATH)
-            galaxy_path: Install path for ansible-galaxy
-            vault_path: Optional vault file path
-            runtime: How the app runs (systemd/docker/podman), if known
-            project_root: Project root (defaults to cwd)
-            project_dirs: --dir values slipp launch scanned, see
-                LocalConfig.project_dirs
-            expose: Service routing block, see LocalConfig.expose
-
-        Returns:
-            Created LocalConfig
-        """
-        root = project_root or Path.cwd()
-        config = LocalConfigService.build(
-            name=name,
-            inventory_path=inventory_path,
-            playbook_path=playbook_path,
-            roles_path=roles_path,
-            galaxy_path=galaxy_path,
-            vault_path=vault_path,
-            runtime=runtime,
-            project_root=root,
-            project_dirs=project_dirs,
-            expose=expose,
-        )
-        LocalConfigService.save(config, root)
-        return config
-
-    @staticmethod
     def build(
         name: str,
         inventory_path: str,
