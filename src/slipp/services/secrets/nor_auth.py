@@ -7,7 +7,8 @@ import socket
 from dataclasses import dataclass
 from datetime import datetime
 
-from slipp.utils.errors import PullError, SlippError
+from slipp import output
+from slipp.utils.errors import PullError
 
 
 @dataclass
@@ -38,7 +39,7 @@ def find_available_port(start: int = 49152, end: int = 65535) -> int:
                 return port
         except OSError:
             continue
-    raise SlippError("No available ports")
+    raise PullError("No available ports")
 
 
 class NorAuthSource:
@@ -84,6 +85,8 @@ class NorAuthSource:
             elif resource_type == "key":
                 name = self._sanitize_name(resource.get("name", "api_key"))
                 result[f"vault_nor_api_key_{name}"] = self._require(resource, "apiKey")
+            else:
+                output.warning(f"Skipping unknown credential type: {resource_type!r}")
 
         return result
 

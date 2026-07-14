@@ -1,7 +1,7 @@
 """Local config service - loading and saving slipp.yaml files.
 
 This module handles all file system operations for local project configuration.
-Similar to RegistryIO but for local slipp.yaml files.
+Similar to RegistryService but for local slipp.yaml files.
 """
 
 from collections.abc import Callable
@@ -13,11 +13,10 @@ import yaml
 from slipp import output
 from slipp.models.local_config import ExposeEntry, LocalConfig
 from slipp.models.service import Runtime
-from slipp.services.config.inventory import scan_roles_from_directories
 from slipp.services.registry import ProjectRegistry
 from slipp.utils.config_store import config_store_lock
 from slipp.utils.errors import ConfigParseError
-from slipp.utils.files import atomic_write_text
+from slipp.utils.files import atomic_write_text, scan_roles_from_directories
 
 CONFIG_FILENAME = "slipp.yaml"
 

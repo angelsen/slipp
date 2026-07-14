@@ -10,10 +10,9 @@ from slipp.commands.common import (
     JwkOption,
     NumBytesOption,
     describe_secret,
-    validate_num_bytes_encoding,
+    generate_secret_value,
 )
 from slipp.constants import SecretEncoding
-from slipp.services.vault import generate_jwk, generate_secret
 
 
 def secret_command(
@@ -23,13 +22,6 @@ def secret_command(
     bits: BitsOption = 2048,
 ) -> None:
     """Generate a cryptographically secure secret."""
-    if jwk:
-        secret = generate_jwk(bits)
-        output.stdout(secret)
-        output.hint(describe_secret(secret, encoding, num_bytes, jwk=True, bits=bits))
-        return
-
-    validate_num_bytes_encoding(num_bytes, encoding)
-    secret = generate_secret(num_bytes, encoding)
+    secret = generate_secret_value(num_bytes, encoding, jwk=jwk, bits=bits)
     output.stdout(secret)
-    output.hint(describe_secret(secret, encoding, num_bytes))
+    output.hint(describe_secret(secret, encoding, num_bytes, jwk=jwk, bits=bits))

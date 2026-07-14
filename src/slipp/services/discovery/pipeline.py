@@ -155,33 +155,45 @@ def discover_across_hosts(
     for project, host in hosts:
         host_to_projects.setdefault(host.ansible_host, []).append(project)
 
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {
-            executor.submit(
-                _discover_on_host,
-                project,
-                host,
-                include_system,
-                force,
-                host_to_projects,
-            ): (
-                project,
-                host,
-            )
-            for project, host in hosts
-        }
+    executor = ThreadPoolExecutor(max_workers=max_workers)
+    futures = {
+        executor.submit(
+            _discover_on_host,
+            project,
+            host,
+            include_system,
+            force,
+            host_to_projects,
+        ): (
+            project,
+            host,
+        )
+        for project, host in hosts
+    }
 
-        for future in as_completed(futures):
+    try:
+        # as_completed() only ever yields futures that are already done, so a
+        # per-future result(timeout=...) here would never actually block --
+        # the timeout has to be on as_completed() itself to bound the total
+        # wall-clock time for the batch.
+        for future in as_completed(futures, timeout=30):
             project, host = futures[future]
             try:
-                _, services, error = future.result(timeout=30)
+                _, services, error = future.result()
                 if error:
                     errors.append(f"{project} ({host.ansible_host}): {error}")
                 else:
                     all_services.extend(services)
             except Exception as e:
-                # Thread pool surfaces arbitrary errors (e.g. timeout); one
-                # host's failure shouldn't abort discovery of the others.
+                # One host's failure shouldn't abort discovery of the others.
                 errors.append(f"{project} ({host.ansible_host}): {e}")
+    except TimeoutError:
+        for future, (project, host) in futures.items():
+            if not future.done():
+                errors.append(f"{project} ({host.ansible_host}): discovery timed out")
+    finally:
+        # wait=False so we don't block returning on threads still stuck in a
+        # blocking SSH call; cancel_futures drops any not yet started.
+        executor.shutdown(wait=False, cancel_futures=True)
 
     return all_services, errors

@@ -65,5 +65,37 @@ PLAYBOOK_FILENAME = "playbook.yml"
 
 DEFAULT_SSH_PORT = 22
 DEFAULT_SSH_USER = "root"
+DEFAULT_SERVICE_USER = "slipp"
 
-VALID_PROXIES = ["auto", "caddy", "none", "wg-manage"]
+
+class ProxyType(StrEnum):
+    """Valid proxy types for the launch pipeline.
+
+    Used by: slipp launch --proxy
+    """
+
+    auto = "auto"
+    caddy = "caddy"
+    none = "none"
+    wg_manage = "wg-manage"
+
+
+class DnsMode(StrEnum):
+    """DNS handling mode for slipp up.
+
+    Used by: slipp up --dns
+    """
+
+    auto = "auto"
+    manual = "manual"
+
+
+class Provider(StrEnum):
+    """Supported infrastructure providers.
+
+    Used by: slipp providers add/remove
+    """
+
+    gigahost = "gigahost"
+    pangolin = "pangolin"
+    wg_deploy = "wg-deploy"

@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 from slipp.models.registry import RegisteredProject
-from slipp.services.registry.io import RegistryIO
+from slipp.services.registry.io import RegistryService
 
 
 class ProjectRegistry:
@@ -37,8 +37,8 @@ class ProjectRegistry:
         Returns:
             RegisteredProject
         """
-        with RegistryIO.lock():
-            registry = RegistryIO.load()
+        with RegistryService.lock():
+            registry = RegistryService.load()
             existing = registry.projects.get(name)
 
             project = RegisteredProject(
@@ -48,7 +48,7 @@ class ProjectRegistry:
             )
 
             registry.projects[name] = project
-            RegistryIO.save(registry)
+            RegistryService.save(registry)
         return project
 
     def unregister(self, name: str) -> bool:
@@ -60,12 +60,12 @@ class ProjectRegistry:
         Returns:
             True if project was removed, False if not found
         """
-        with RegistryIO.lock():
-            registry = RegistryIO.load()
+        with RegistryService.lock():
+            registry = RegistryService.load()
 
             if name in registry.projects:
                 del registry.projects[name]
-                RegistryIO.save(registry)
+                RegistryService.save(registry)
                 return True
 
             return False
@@ -79,7 +79,7 @@ class ProjectRegistry:
         Returns:
             RegisteredProject if found, None otherwise
         """
-        registry = RegistryIO.load()
+        registry = RegistryService.load()
         return registry.projects.get(name)
 
     def list_all(self) -> list[RegisteredProject]:
@@ -88,5 +88,5 @@ class ProjectRegistry:
         Returns:
             Sorted list of all registered projects
         """
-        registry = RegistryIO.load()
+        registry = RegistryService.load()
         return sorted(registry.projects.values(), key=lambda p: p.name)

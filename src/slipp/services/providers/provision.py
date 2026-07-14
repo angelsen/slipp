@@ -9,6 +9,7 @@ from typing import Any
 
 
 from slipp import output
+from slipp.constants import DEFAULT_SERVICE_USER
 from slipp.models.provision import ProvisionPhase, ProvisionState
 from slipp.services.bootstrap import provision_account
 from slipp.services.providers.gigahost import GigahostClient
@@ -339,17 +340,25 @@ def _bootstrap_user(ip: str, srv_id: int, name: str) -> tuple[str, int]:
     """Bootstrap the slipp user and clean up state file (SSH already confirmed ready)."""
     output.success(f"Server ready: {ip}")
     output.info("Bootstrapping SSH user...")
-    provision_account(ip, "root", None, 22, "slipp", dry_run=False)
+    provision_account(ip, "root", None, 22, DEFAULT_SERVICE_USER, dry_run=False)
     ProvisionStateService.delete(name)
     return ip, srv_id
 
 
-def install_server(
-    client: GigahostClient, name_or_ip: str, *, force: bool = False
-) -> tuple[str, int] | None:
-    """Reinstall OS on an existing server and bootstrap the slipp user."""
-    srv_id, display, ip = resolve_server(client, name_or_ip)
+def is_resuming_install(display: str) -> bool:
+    """True if a prior install for this server is mid-flight and would resume rather than wipe."""
+    state = ProvisionStateService.load(display)
+    return bool(state and state.phase == ProvisionPhase.INSTALLING)
 
+
+def install_server(
+    client: GigahostClient, srv_id: int, display: str, ip: str
+) -> tuple[str, int] | None:
+    """Reinstall OS on an existing server and bootstrap the slipp user.
+
+    Caller must resolve the server and confirm the wipe first (see
+    is_resuming_install + resolve_server) -- this assumes that already happened.
+    """
     state = ProvisionStateService.load(display)
     if state and state.phase == ProvisionPhase.INSTALLING:
         output.info(
@@ -358,11 +367,6 @@ def install_server(
         )
         _warn_if_stale(state.created_at)
         return _wait_and_bootstrap(ip, srv_id, display, started_at=state.created_at)
-
-    if not force:
-        if not output.confirm(f"Wipe and reinstall '{display}' ({ip})?", default=False):
-            output.info("Cancelled")
-            return None
 
     os_id = select_os(client)
     pubkey_path = find_ssh_public_key()

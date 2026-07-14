@@ -17,7 +17,7 @@ from slipp.utils.config_store import (
 )
 
 
-class RegistryIO:
+class RegistryService:
     """Handles loading and saving the global registry file."""
 
     @staticmethod
@@ -29,14 +29,14 @@ class RegistryIO:
     @contextmanager
     def lock() -> Iterator[None]:
         """Exclusive lock guarding read-modify-write access to the registry."""
-        with config_store_lock(RegistryIO._get_config_path()):
+        with config_store_lock(RegistryService._get_config_path()):
             yield
 
     @staticmethod
     def load() -> GlobalRegistry:
         """Load registry from disk (empty if missing or corrupted)."""
         return load_model(
-            RegistryIO._get_config_path(),
+            RegistryService._get_config_path(),
             GlobalRegistry,
             default=GlobalRegistry(),
             label="Registry",
@@ -45,4 +45,4 @@ class RegistryIO:
     @staticmethod
     def save(registry: GlobalRegistry) -> None:
         """Save registry with atomic write."""
-        save_model(RegistryIO._get_config_path(), registry)
+        save_model(RegistryService._get_config_path(), registry)

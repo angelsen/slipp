@@ -10,7 +10,6 @@ from slipp.services.config.inventory import (
     load_first_host_strict,
     load_project_hosts,
     parse_inventory,
-    scan_roles_from_directories,
     write_minimal_inventory,
 )
 from slipp.services.config.local import LocalConfigService, collect_managed_roles
@@ -31,7 +30,6 @@ __all__ = [
     "load_first_host_strict",
     "load_project_hosts",
     "parse_inventory",
-    "scan_roles_from_directories",
     "write_minimal_inventory",
     "ConfigResolver",
     "ResolvedConfig",

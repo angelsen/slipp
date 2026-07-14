@@ -1,6 +1,6 @@
 """Shared XDG config-store plumbing: path resolution, corruption recovery, atomic writes.
 
-Backs the three ~/.config/slipp/ stores (RegistryIO, ProviderConfigService,
+Backs the three ~/.config/slipp/ stores (RegistryService, ProviderConfigService,
 ProvisionStateService) so their load/save/corruption-recovery mechanics
 can't drift apart.
 """

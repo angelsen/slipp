@@ -6,10 +6,16 @@ from typing import Annotated
 import typer
 
 from slipp import output
-from slipp.commands.common import sync_wg_manage_after_deploy
+from slipp.commands.common import confirm_or_fail, sync_wg_manage_after_deploy
 from slipp.commands.dns import sync_and_report
 from slipp.commands.provision import provision_or_exit
-from slipp.constants import DEFAULT_ENV, DEFAULT_SSH_PORT, DEFAULT_SSH_USER
+from slipp.constants import (
+    DEFAULT_ENV,
+    DEFAULT_SERVICE_USER,
+    DEFAULT_SSH_PORT,
+    DEFAULT_SSH_USER,
+    DnsMode,
+)
 from slipp.models.deployment import DeploymentHostConfig, InventoryConfig
 from slipp.models.service import Runtime
 from slipp.services import wg_manage
@@ -23,8 +29,6 @@ from slipp.services.providers import (
     get_gigahost_client,
 )
 from slipp.utils.errors import DeployError, LaunchError, ProviderError
-
-VALID_DNS_MODES = ["auto", "manual"]
 
 
 class _StepCounter:
@@ -59,12 +63,10 @@ def _make_hub(step: _StepCounter, name: str, ip: str) -> None:
 
     step(f"Making {ip} a wg-manage hub via {wg_deploy.repo_path}...")
 
-    if not output.confirm(
+    confirm_or_fail(
         f"Run scripts/new-host.sh {name} {ip} in {wg_deploy.repo_path}?",
-        default=False,
-    ):
-        output.error("Hub-ification declined -- aborting (launch needs a hub)")
-        raise typer.Exit(1)
+        decline_message="Hub-ification declined -- aborting (launch needs a hub)",
+    )
 
     wg_manage.make_hub(name, ip, wg_deploy.repo_path)
 
@@ -83,9 +85,7 @@ def up_command(
             "--domain", help="Domain to register (if available) and deploy to"
         ),
     ] = None,
-    dns: Annotated[
-        str, typer.Option("--dns", help="DNS handling: auto (default) or manual")
-    ] = "auto",
+    dns: Annotated[DnsMode, typer.Option("--dns", help="DNS handling")] = DnsMode.auto,
     environment: Annotated[
         str, typer.Option("--env", "-e", help="Environment name")
     ] = DEFAULT_ENV,
@@ -99,10 +99,6 @@ def up_command(
     ] = False,
 ) -> None:
     """Provision, register domain, launch, sync DNS, and deploy -- in one command."""
-    if dns not in VALID_DNS_MODES:
-        output.error(f"--dns must be one of: {', '.join(VALID_DNS_MODES)}")
-        raise typer.Exit(1)
-
     _client: GigahostClient | None = None
 
     def get_client() -> GigahostClient:
@@ -123,7 +119,7 @@ def up_command(
     else:
         step("Provisioning server...")
         ip = provision_or_exit(get_client(), name)
-        ssh_user = "slipp"
+        ssh_user = DEFAULT_SERVICE_USER
 
     if hub:
         _make_hub(step, name, ip)

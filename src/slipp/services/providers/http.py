@@ -17,16 +17,6 @@ class ApiClientMixin:
     PROVIDER_NAME: str
     _client: httpx.Client
 
-    def close(self) -> None:
-        """Close the underlying HTTP connection pool."""
-        self._client.close()
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *args: object) -> None:
-        self.close()
-
     def _request(
         self,
         method: str,

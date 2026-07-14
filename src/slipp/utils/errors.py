@@ -19,7 +19,7 @@ class SSHConnectionError(SlippError):
     pass
 
 
-class SSHAuthenticationError(SlippError):
+class SSHAuthenticationError(SSHConnectionError):
     """SSH authentication failed."""
 
     pass

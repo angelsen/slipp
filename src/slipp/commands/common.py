@@ -27,6 +27,7 @@ from slipp.services.config import (
 from slipp.services.discovery import filter_services, find_service
 from slipp.services.discovery.pipeline import discover_and_enrich
 from slipp.services.registry import ProjectRegistry
+from slipp.services.vault import generate_jwk, generate_secret
 from slipp.utils.errors import AmbiguousServiceError, WgManageError
 from slipp.utils.identifiers import parse_service_identifier
 from slipp.utils.matching import get_suggestions
@@ -102,6 +103,20 @@ def validate_num_bytes_encoding(num_bytes: int, encoding: SecretEncoding) -> Non
         raise typer.BadParameter(
             "--bytes has no effect with --encoding ulid (fixed 128-bit/26-char output)"
         )
+
+
+def generate_secret_value(
+    num_bytes: int,
+    encoding: SecretEncoding,
+    *,
+    jwk: bool = False,
+    bits: int = 2048,
+) -> str:
+    """Validate args and generate a secret or JWK keypair, whichever was asked for."""
+    if jwk:
+        return generate_jwk(bits)
+    validate_num_bytes_encoding(num_bytes, encoding)
+    return generate_secret(num_bytes, encoding)
 
 
 def describe_secret(
@@ -245,7 +260,7 @@ def resolve_host_or_exit(
     service: str | None = None,
     project: str | None = None,
     *,
-    command: str = "exec",
+    command: str,
 ) -> AnsibleHost:
     """Resolve host (service → project → cwd), exiting with suggestions on ambiguity.
 
@@ -282,6 +297,24 @@ def confirm_or_exit(message: str, *, force: bool = False) -> None:
     if not force and not output.confirm(message, default=False):
         output.info("Cancelled")
         raise typer.Exit()
+
+
+def confirm_or_fail(message: str, *, decline_message: str) -> None:
+    """Prompt to confirm a required step, hard-failing (exit 1) if declined.
+
+    Unlike confirm_or_exit, declining here isn't a benign cancellation --
+    it aborts a multi-step pipeline that can't proceed without this step.
+
+    Args:
+        message: Yes/no question to show
+        decline_message: Error shown on decline, explaining what's now blocked
+
+    Raises:
+        typer.Exit: If the user declines
+    """
+    if not output.confirm(message, default=False):
+        output.error(decline_message)
+        raise typer.Exit(1)
 
 
 def find_service_or_exit(
@@ -335,11 +368,11 @@ def _get_project_root(project_name: str) -> Path:
     return LocalConfigService.resolve_root()
 
 
-def _resolve_runtime(host: str | None) -> Runtime:
+def _resolve_runtime(project: str | None) -> Runtime:
     """Resolve project root and detect its runtime.
 
     Args:
-        host: Optional project name (defaults to cwd if not given)
+        project: Optional project name (defaults to cwd if not given)
 
     Returns:
         The detected Runtime
@@ -348,7 +381,7 @@ def _resolve_runtime(host: str | None) -> Runtime:
         RuntimeDetectionError: If runtime detection fails
     """
     project_root = (
-        _get_project_root(host) if host else LocalConfigService.resolve_root()
+        _get_project_root(project) if project else LocalConfigService.resolve_root()
     )
     return RuntimeDetector(project_root).detect()
 

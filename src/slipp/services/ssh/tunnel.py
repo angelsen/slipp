@@ -41,6 +41,8 @@ def parse_tunnel_out(spec: str) -> tuple[int, str, str]:
     try:
         port_part, rest = spec.split(":", 1)
         domain, host = rest.rsplit("@", 1)
+        if not host:
+            raise ValueError("empty host")
         return int(port_part), domain, host
     except ValueError as e:
         raise TunnelError(
@@ -64,6 +66,8 @@ def parse_tunnel_in(spec: str) -> tuple[str, int, str]:
     try:
         service, rest = spec.split(":", 1)
         port_str, host = rest.rsplit("@", 1)
+        if not host:
+            raise ValueError("empty host")
         return service, int(port_str), host
     except ValueError as e:
         raise TunnelError(

@@ -7,6 +7,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import IO, Iterator
 
+from slipp import output
+
 
 @contextmanager
 def temp_secret_file(
@@ -24,6 +26,33 @@ def temp_secret_file(
         yield Path(path)
     finally:
         Path(path).unlink(missing_ok=True)
+
+
+@contextmanager
+def prompted_secret_file(
+    label: str, *, prefix: str, confirm: bool = False
+) -> Iterator[Path]:
+    """Prompt for a password and write it to a temp file, deleted on exit.
+
+    Shared by vault_password_file (ansible-vault) and become_password_file
+    (sudo) -- both pass the result via a --*-password-file flag to keep the
+    secret out of argv/`ps`, differing only in the prompt label and whether
+    to confirm.
+
+    Args:
+        label: Prompt label shown to the user
+        prefix: Temp file prefix (for identifying the file's purpose in /tmp)
+        confirm: If True, prompt twice and verify match
+
+    Yields:
+        Path to temporary password file (deleted on exit)
+
+    Raises:
+        PasswordMismatchError: If confirm=True and passwords don't match
+    """
+    password = output.prompt_password(label, require_confirmation=confirm)
+    with temp_secret_file(password, prefix=prefix) as path:
+        yield path
 
 
 def get_log_dir(base: Path | None = None) -> Path:
@@ -45,6 +74,28 @@ def open_log(log_dir: Path | None, prefix: str) -> tuple[Path | None, IO[str] | 
     log_path = log_dir / f"{prefix}-{timestamp}.log"
     fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     return log_path, os.fdopen(fd, "w")
+
+
+def scan_roles_from_directories(
+    roles_paths: list[str], project_root: Path
+) -> list[str]:
+    """Scan role directories for role names (faster than ansible-playbook --list-tasks).
+
+    Args:
+        roles_paths: List of role directory paths (relative or absolute)
+        project_root: Project root for resolving relative paths
+
+    Returns:
+        Sorted list of unique role names
+    """
+    roles: set[str] = set()
+    for role_path_str in roles_paths:
+        role_path = Path(role_path_str)
+        if not role_path.is_absolute():
+            role_path = project_root / role_path
+        if role_path.exists():
+            roles.update(d.name for d in role_path.iterdir() if d.is_dir())
+    return sorted(roles)
 
 
 def atomic_write_text(path: Path, content: str, *, mode: int | None = None) -> None:

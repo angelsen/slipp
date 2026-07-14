@@ -1,5 +1,6 @@
 """Vault secret management commands."""
 
+import asyncio
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Literal
@@ -13,16 +14,17 @@ from slipp.commands.common import (
     JwkOption,
     NumBytesOption,
     describe_secret,
+    generate_secret_value,
     validate_num_bytes_encoding,
 )
 from slipp.constants import OutputFormat, SecretEncoding
 from slipp.output import format_path
 from slipp.services.config import ConfigResolver, resolve_vault_target
+from slipp.services.secrets import get_source, pull
+from slipp.services.secrets.nor_auth import NorAuthSource
 from slipp.services.vault import (
     SecretSynchronizer,
     encrypt_secrets,
-    generate_jwk,
-    generate_secret,
     list_keys,
     list_project_vaults,
     write_missing_secrets,
@@ -99,8 +101,6 @@ def _lookup_vault_keys(target: str) -> _VaultLookup:
 
 def _list_available_vaults() -> None:
     """Show all registered projects that have vaults configured (discovery mode)."""
-    from slipp.services.secrets import get_source, list_sources
-
     vaults_found = [
         {
             "project": v.project,
@@ -110,18 +110,15 @@ def _list_available_vaults() -> None:
         for v in list_project_vaults()
     ]
 
-    sources = list_sources()
-
     if output.get_output_format() == OutputFormat.json:
         output.json(
             {
                 "vaults": vaults_found,
                 "sources": [
                     {
-                        "name": name,
-                        "description": get_source(name).get_description(),
+                        "name": NorAuthSource.name,
+                        "description": NorAuthSource().get_description(),
                     }
-                    for name in sources
                 ],
             }
         )
@@ -133,12 +130,11 @@ def _list_available_vaults() -> None:
     else:
         output.warning("No vaults found in any registered project")
 
-    if sources:
-        output.blank()
-        output.info("Pull sources:")
-        for name in sources:
-            src = get_source(name)
-            output.bullet(f"{name} - {src.get_description()}", indent=1)
+    output.blank()
+    output.info("Pull sources:")
+    output.bullet(
+        f"{NorAuthSource.name} - {NorAuthSource().get_description()}", indent=1
+    )
 
 
 @secrets_app.command(name="list")
@@ -255,9 +251,7 @@ def add_secret(
         )
         raise typer.Exit(1)
 
-    if not jwk:
-        validate_num_bytes_encoding(num_bytes, encoding)
-    secret = generate_jwk(bits) if jwk else generate_secret(num_bytes, encoding)
+    secret = generate_secret_value(num_bytes, encoding, jwk=jwk, bits=bits)
 
     try:
         encrypted = encrypt_secrets({name: secret}, confirm_password=False)[name]
@@ -342,10 +336,6 @@ def pull_secrets(
     ] = 300,
 ) -> None:
     """Pull credentials from external source to vault."""
-    import asyncio
-
-    from slipp.services.secrets import get_source, pull
-
     try:
         secret_source = get_source(source)
     except SourceNotFoundError as e:

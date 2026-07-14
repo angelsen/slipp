@@ -10,10 +10,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Any, Callable
 
+import yaml
+
 from slipp import output
 from slipp.utils.cli_tools import check_tool_installed, run_checked
 from slipp.utils.errors import AnsibleError, AnsibleNotFoundError
-from slipp.utils.files import open_log, temp_secret_file
+from slipp.utils.files import open_log, prompted_secret_file
 
 ProgressCallback = Callable[[str], None]
 
@@ -181,6 +183,21 @@ def check_roles_installed(install_dir: str) -> bool:
     return roles_dir.exists() and any(roles_dir.iterdir())
 
 
+def _requirements_have_collections(requirements_file: str) -> bool:
+    """Check if a requirements file declares a collections block.
+
+    Collections install to a separate path from install_dir, so
+    check_roles_installed() can't see them -- this lets callers avoid
+    skipping the install step when collections still need installing.
+    """
+    try:
+        with open(requirements_file) as f:
+            data = yaml.safe_load(f)
+    except OSError:
+        return False
+    return isinstance(data, dict) and bool(data.get("collections"))
+
+
 def _stream_subprocess(
     cmd: list[str],
     env: dict[str, str],
@@ -321,7 +338,11 @@ def ensure_requirements_installed(
     Raises:
         AnsibleError: If installation fails
     """
-    if not force and check_roles_installed(install_dir):
+    if (
+        not force
+        and check_roles_installed(install_dir)
+        and not _requirements_have_collections(requirements_file)
+    ):
         output.info(f"Roles already installed in {install_dir}")
         return
 
@@ -355,9 +376,7 @@ def become_password_file() -> Iterator[Path]:
     Yields:
         Path to a temporary password file (deleted on exit)
     """
-    password = output.prompt_password("BECOME (sudo) password")
-
-    with temp_secret_file(password, prefix="become_pass_") as path:
+    with prompted_secret_file("BECOME (sudo) password", prefix="become_pass_") as path:
         yield path
 
 

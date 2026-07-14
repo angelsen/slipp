@@ -29,7 +29,6 @@ class DockerfileGenerationStage(FileGenerationStage[ScanContext]):
     def __init__(self, template_generator: TemplateGenerator):
         super().__init__("Generating Dockerfiles")
         self.generator = template_generator
-        self._runtime: Runtime | None = None
 
     def execute(self, context: ScanContext) -> None:
         """Generate and write Dockerfiles for all services.
@@ -52,7 +51,6 @@ class DockerfileGenerationStage(FileGenerationStage[ScanContext]):
             output.info("Skipping Dockerfiles (systemd runtime, no container image)")
             return
 
-        self._runtime = runtime
         super().execute(context)
 
     def generate_content(self, context: ScanContext) -> dict[Path, str]:
@@ -64,15 +62,16 @@ class DockerfileGenerationStage(FileGenerationStage[ScanContext]):
         Returns:
             Dictionary mapping each generated Dockerfile path to its content.
         """
-        runtime = require(self._runtime, "runtime")
+        runtime = require(resolve_runtime(context), "runtime")
 
         content: dict[Path, str] = {}
         for service in context.services:
-            file = self.generator.generate(
-                service=service,
-                output_dir=service.path,
-                container_runtime=runtime,
+            content.update(
+                self.generator.generate(
+                    service=service,
+                    output_dir=service.path,
+                    container_runtime=runtime,
+                )
             )
-            content[file.path] = file.content
 
         return content

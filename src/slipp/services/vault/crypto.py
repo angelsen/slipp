@@ -19,7 +19,7 @@ from slipp.utils.errors import (
     VaultError,
     VaultFileNotFoundError,
 )
-from slipp.utils.files import atomic_write_text, temp_secret_file
+from slipp.utils.files import atomic_write_text, prompted_secret_file, temp_secret_file
 
 
 class _VaultLoader(yaml.SafeLoader):
@@ -53,11 +53,9 @@ def vault_password_file(confirm: bool = True) -> Iterator[Path]:
         with vault_password_file() as pw_file:
             encrypt_string("secret", "name", password_file=pw_file)
     """
-    from slipp import output
-
-    password = output.prompt_password("Vault password", require_confirmation=confirm)
-
-    with temp_secret_file(password, prefix="vault_pass_") as path:
+    with prompted_secret_file(
+        "Vault password", prefix="vault_pass_", confirm=confirm
+    ) as path:
         yield path
 
 

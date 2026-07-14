@@ -5,7 +5,7 @@ from slipp.utils.errors import SourceNotFoundError
 
 
 def get_source(name: str) -> NorAuthSource:
-    """Get source instance by name."""
+    """Validate a user-supplied source name and return its source instance."""
     if name != NorAuthSource.name:
         raise SourceNotFoundError(
             f"Unknown source '{name}'. Available: {NorAuthSource.name}"
@@ -13,12 +13,6 @@ def get_source(name: str) -> NorAuthSource:
     return NorAuthSource()
 
 
-def list_sources() -> list[str]:
-    """List available source names."""
-    return [NorAuthSource.name]
-
-
 __all__ = [
     "get_source",
-    "list_sources",
 ]

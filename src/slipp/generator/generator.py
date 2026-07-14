@@ -7,8 +7,6 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
-from pydantic import BaseModel
-
 from slipp import __version__
 from slipp.generator.errors import TemplateFetchError
 from slipp.generator.extractors import extract_template_variables
@@ -16,13 +14,6 @@ from slipp.generator.fetcher import TemplateFetcher
 from slipp.generator.renderer import render_go_template
 from slipp.models.deployment import DetectedService
 from slipp.models.service import Runtime
-
-
-class GeneratedFile(BaseModel):
-    """Single generated file."""
-
-    path: Path
-    content: str
 
 
 class TemplateGenerator:
@@ -40,7 +31,7 @@ class TemplateGenerator:
         service: DetectedService,
         output_dir: Path,
         container_runtime: Runtime = Runtime.DOCKER,
-    ) -> GeneratedFile:
+    ) -> dict[Path, str]:
         """Generate the Dockerfile for a detected service.
 
         Args:
@@ -49,7 +40,7 @@ class TemplateGenerator:
             container_runtime: Container runtime (docker or podman)
 
         Returns:
-            The generated Dockerfile
+            Dictionary mapping the generated Dockerfile's path to its content.
         """
         template_path = self._extract_template_path(service.template_url)
         template = self.fetcher.fetch_template(template_path)
@@ -65,10 +56,7 @@ class TemplateGenerator:
         final_content = preamble + rendered_content
         output_file = output_dir / template.path
 
-        return GeneratedFile(
-            path=output_file,
-            content=final_content,
-        )
+        return {output_file: final_content}
 
     def _extract_template_path(self, template_url: str) -> str:
         """Extract template path from GitHub raw URL.

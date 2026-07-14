@@ -8,7 +8,7 @@ from slipp import output
 from slipp.services.config import LocalConfigService, load_first_host_strict
 from slipp.services.providers import (
     DNSProvider,
-    resolve_dns_provider,
+    get_gigahost_client,
     sync_dns,
 )
 from slipp.utils.errors import ProviderError
@@ -47,7 +47,7 @@ def dns_sync_command() -> None:
     ip = host.ansible_host
 
     output.info(f"Syncing DNS for {domain} -> {ip}")
-    sync_and_report(resolve_dns_provider(), domain, ip)
+    sync_and_report(get_gigahost_client(), domain, ip)
 
 
 @dns_app.command(name="list")
@@ -55,7 +55,7 @@ def dns_list_command(
     domain: Annotated[str, typer.Argument(help="Domain to list records for")],
 ) -> None:
     """List current DNS records for a domain."""
-    provider = resolve_dns_provider()
+    provider = get_gigahost_client()
     zone = provider.find_zone(domain)
     if zone is None:
         output.error(f"No zone found for {domain}")

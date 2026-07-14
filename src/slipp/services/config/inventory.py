@@ -11,6 +11,7 @@ import yaml
 from slipp.models.deployment import DeploymentHostConfig, InventoryConfig
 from slipp.models.host import AnsibleHost
 from slipp.services.ansible import run_inventory
+from slipp.services.config.local import LocalConfigService
 from slipp.utils.errors import ConfigError, HostNotFoundError, InventoryParseError
 
 
@@ -25,10 +26,6 @@ def _resolve_inventory_path(project_root: Path) -> Path:
     Raises:
         ConfigError: If no inventory is configured or the file is missing.
     """
-    # Must stay lazy: local.py top-imports this module (see
-    # load_project_ansible_hosts).
-    from slipp.services.config.local import LocalConfigService
-
     local_config = LocalConfigService.load(project_root)
     if not local_config or not local_config.inventory:
         raise ConfigError(f"No inventory configured in {project_root}")
@@ -209,25 +206,3 @@ def parse_inventory(inventory_path: Path) -> InventoryConfig:
         return InventoryConfig.from_ansible_inventory_json(data)
     except Exception as e:
         raise InventoryParseError(f"Failed to parse {inventory_path}: {e}") from e
-
-
-def scan_roles_from_directories(
-    roles_paths: list[str], project_root: Path
-) -> list[str]:
-    """Scan role directories for role names (faster than ansible-playbook --list-tasks).
-
-    Args:
-        roles_paths: List of role directory paths (relative or absolute)
-        project_root: Project root for resolving relative paths
-
-    Returns:
-        Sorted list of unique role names
-    """
-    roles: set[str] = set()
-    for role_path_str in roles_paths:
-        role_path = Path(role_path_str)
-        if not role_path.is_absolute():
-            role_path = project_root / role_path
-        if role_path.exists():
-            roles.update(d.name for d in role_path.iterdir() if d.is_dir())
-    return sorted(roles)

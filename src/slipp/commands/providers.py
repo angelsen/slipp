@@ -6,6 +6,7 @@ from typing import Annotated
 import typer
 
 from slipp import output
+from slipp.constants import Provider
 from slipp.models.provider import GigahostConfig, PangolinConfig, WgDeployConfig
 from slipp.services.providers import ProviderConfigService
 from slipp.services.providers.gigahost import GigahostClient
@@ -17,31 +18,17 @@ providers_app = typer.Typer(
     help="Manage infrastructure providers",
 )
 
-SUPPORTED_PROVIDERS = ["gigahost", "pangolin", "wg-deploy"]
-
-
-def _validate_provider_name(name: str) -> None:
-    """Exit with an error + hint if `name` isn't a supported provider."""
-    if name not in SUPPORTED_PROVIDERS:
-        output.error(f"Unknown provider '{name}'")
-        output.hint(f"Supported providers: {', '.join(SUPPORTED_PROVIDERS)}")
-        raise typer.Exit(1)
-
 
 @providers_app.command(name="add")
 def add_provider(
-    name: Annotated[
-        str, typer.Argument(help="Provider name (gigahost, pangolin, wg-deploy)")
-    ],
+    name: Annotated[Provider, typer.Argument(help="Provider name")],
 ) -> None:
     """Configure and verify an infrastructure provider."""
-    _validate_provider_name(name)
-
-    if name == "pangolin":
+    if name == Provider.pangolin:
         _add_pangolin()
         return
 
-    if name == "wg-deploy":
+    if name == Provider.wg_deploy:
         _add_wg_deploy()
         return
 
@@ -147,14 +134,12 @@ def list_providers() -> None:
 
 @providers_app.command(name="remove")
 def remove_provider(
-    name: Annotated[str, typer.Argument(help="Provider name to remove")],
+    name: Annotated[Provider, typer.Argument(help="Provider name to remove")],
 ) -> None:
     """Remove a configured provider."""
-    _validate_provider_name(name)
-
     config = ProviderConfigService.load()
 
-    if name == "pangolin":
+    if name == Provider.pangolin:
         if not config.pangolin:
             output.warning("Pangolin is not configured")
             return
@@ -162,7 +147,7 @@ def remove_provider(
         output.success("Removed pangolin provider")
         return
 
-    if name == "wg-deploy":
+    if name == Provider.wg_deploy:
         if not config.wg_deploy:
             output.warning("wg-deploy is not configured")
             return

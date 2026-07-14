@@ -7,7 +7,7 @@ import typer
 
 from slipp import output
 from slipp.commands.common import DryRunOption
-from slipp.constants import DEFAULT_SSH_PORT, DEFAULT_SSH_USER
+from slipp.constants import DEFAULT_SERVICE_USER, DEFAULT_SSH_PORT, DEFAULT_SSH_USER
 from slipp.services.bootstrap import provision_account
 from slipp.services.ssh import hint_ssh_log
 from slipp.utils.errors import BootstrapError, SSHConnectionError
@@ -67,7 +67,7 @@ def account_command(
         typer.Option(
             "--user", help="Name of service account to create (default: slipp)"
         ),
-    ] = "slipp",
+    ] = DEFAULT_SERVICE_USER,
     dry_run: DryRunOption = False,
 ) -> None:
     """Create slipp service account on VPS."""

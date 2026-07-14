@@ -5,8 +5,8 @@ route wired up on this instance yet, so we authenticate the way the
 dashboard itself does -- a session cookie plus a static CSRF header
 (confirmed via `server/middlewares/csrfProtection.ts`: it checks for the
 literal string "x-csrf-protection", not a per-session token). Once the
-Integration API is reachable, swap `_headers()` for a plain
-`Authorization: Bearer <key>` header -- no call site needs to change.
+Integration API is reachable, swap the headers dict built in `__init__` for
+a plain `Authorization: Bearer <key>` header -- no call site needs to change.
 """
 
 from typing import Any

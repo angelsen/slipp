@@ -195,6 +195,25 @@ def parse_proxy_routes(specs: list[str]) -> list[ProxyRoute]:
     return routes
 
 
+def _require_tunnel_out_for_auth(
+    tunnel_auth: str | None,
+    tunnel_out: list[str],
+    *,
+    existing_out: list[str] | None = None,
+) -> None:
+    """Raise if --tunnel-auth is set without a tunnel-out.
+
+    Auth applies to Caddy routes (tunnel-out), not tunnel-in.
+    """
+    if not tunnel_auth or tunnel_out or existing_out:
+        return
+    if existing_out is None:
+        raise ConfigError("--tunnel-auth requires --tunnel-out")
+    raise ConfigError(
+        "--tunnel-auth requires a tunnel-out (existing or via --tunnel-out)"
+    )
+
+
 def build_profile(
     cmd: str,
     env: list[str],
@@ -205,14 +224,14 @@ def build_profile(
     tunnel_auth: str | None = None,
 ) -> RunProfile:
     """Build a RunProfile from command options."""
+    _require_tunnel_out_for_auth(tunnel_auth, tunnel_out)
+
     tunnels = None
     if tunnel_out or tunnel_in:
         auth = hash_tunnel_auth(tunnel_auth) if tunnel_auth else None
         tunnels = TunnelConfig.model_validate(
             {"out": tunnel_out, "in": tunnel_in, "auth": auth}
         )
-    elif tunnel_auth:
-        raise ConfigError("--tunnel-auth requires --tunnel-out")
 
     proxy_routes = parse_proxy_routes(proxy)
 
@@ -251,10 +270,7 @@ def merge_runtime_options(
         existing_in = merged_tunnels.in_ if merged_tunnels else []
         existing_auth = merged_tunnels.auth if merged_tunnels else None
 
-        if tunnel_auth and not (existing_out or tunnel_out):
-            raise ConfigError(
-                "--tunnel-auth requires a tunnel-out (existing or via --tunnel-out)"
-            )
+        _require_tunnel_out_for_auth(tunnel_auth, tunnel_out, existing_out=existing_out)
 
         merged_tunnels = TunnelConfig.model_validate(
             {

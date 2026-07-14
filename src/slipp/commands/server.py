@@ -7,7 +7,11 @@ import typer
 from slipp import output
 from slipp.commands.common import ForceOption, confirm_or_exit
 from slipp.services.providers import get_gigahost_client
-from slipp.services.providers.provision import install_server, resolve_server
+from slipp.services.providers.provision import (
+    install_server,
+    is_resuming_install,
+    resolve_server,
+)
 
 server_app = typer.Typer(name="server", help="Out-of-band server operations")
 
@@ -45,4 +49,9 @@ def install_command(
 ) -> None:
     """Reinstall server OS."""
     client = get_gigahost_client()
-    install_server(client, name_or_ip, force=force)
+    srv_id, display, ip = resolve_server(client, name_or_ip)
+
+    if not is_resuming_install(display):
+        confirm_or_exit(f"Wipe and reinstall '{display}' ({ip})?", force=force)
+
+    install_server(client, srv_id, display, ip)

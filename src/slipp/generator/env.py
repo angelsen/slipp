@@ -11,8 +11,9 @@ from slipp.generator.errors import TemplateGenerationError
 TEMPLATE_DIR = Path(__file__).parent / "templates"
 
 
-def make_env() -> Environment:
-    """Create the standard Jinja2 environment for generator templates."""
+@lru_cache(maxsize=1)
+def get_env() -> Environment:
+    """Shared, lazily-built Jinja2 environment for generator templates."""
     return Environment(
         loader=FileSystemLoader(str(TEMPLATE_DIR)),
         trim_blocks=True,
@@ -20,12 +21,6 @@ def make_env() -> Environment:
         keep_trailing_newline=True,
         undefined=StrictUndefined,
     )
-
-
-@lru_cache(maxsize=1)
-def get_env() -> Environment:
-    """Shared, lazily-built Jinja2 environment for generator templates."""
-    return make_env()
 
 
 def render_template(template_name: str, context: dict[str, Any], *, label: str) -> str:

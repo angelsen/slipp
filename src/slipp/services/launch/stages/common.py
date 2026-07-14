@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Generic, TypeVar
 
 from slipp import output
-from slipp.constants import VALID_PROXIES
+from slipp.constants import ProxyType
 from slipp.models.local_config import ExposeEntry
 from slipp.models.service import Runtime
 from slipp.scanner.routing import default_expose
@@ -269,7 +269,7 @@ class ValidationStage:
     def execute(self, context: ScanContext) -> None:
         """Validate proxy and runtime configuration.
 
-        Checks that proxy choice is in VALID_PROXIES list. Does *not*
+        Checks that proxy choice is a valid ProxyType. Does *not*
         resolve "auto" or set skip_caddy -- that's ProxyResolutionStage's
         job, and it needs inventory (SSH details) that doesn't exist yet
         when this stage runs. Also validates container_runtime when the
@@ -282,10 +282,9 @@ class ValidationStage:
         Raises:
             LaunchError: If proxy or runtime choice is invalid.
         """
-        if context.proxy not in VALID_PROXIES:
+        if context.proxy not in ProxyType:
             raise LaunchError(
-                f"Invalid proxy: {context.proxy}\n"
-                f"Valid options: {', '.join(VALID_PROXIES)}"
+                f"Invalid proxy: {context.proxy}\nValid options: {', '.join(ProxyType)}"
             )
 
         # Only DockerfileContext carries this field, and it's inherently

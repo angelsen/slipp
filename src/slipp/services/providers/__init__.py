@@ -1,7 +1,6 @@
 """Provider resolution helpers.
 
-Single entry point for getting an authenticated Gigahost client, and for
-resolving which configured provider manages a given domain's DNS zone.
+Single entry point for getting authenticated provider clients.
 """
 
 from slipp.services.providers.config import ProviderConfigService
@@ -50,19 +49,6 @@ def get_pangolin_client() -> PangolinClient:
     )
 
 
-def resolve_dns_provider() -> DNSProvider:
-    """The provider that should manage DNS.
-
-    With Gigahost as the only DNS-capable provider this is trivially the
-    Gigahost client. When a second provider lands, this should take the
-    domain and prefer whichever provider already has a zone for it.
-
-    Raises:
-        ProviderNotConfiguredError: If no provider is configured.
-    """
-    return get_gigahost_client()
-
-
 __all__ = [
     "DNSProvider",
     "GigahostClient",
@@ -75,6 +61,5 @@ __all__ = [
     "resolve_server",
     "ensure_domain_registered",
     "register_domain_interactive",
-    "resolve_dns_provider",
     "sync_dns",
 ]

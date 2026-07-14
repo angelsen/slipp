@@ -7,6 +7,7 @@ import webbrowser
 from pathlib import Path
 
 from slipp import output
+from slipp.services.config import resolve_vault_target
 from slipp.services.secrets.callback_server import CallbackServer
 from slipp.services.secrets.nor_auth import (
     NorAuthSource,
@@ -88,8 +89,6 @@ def _store_in_vault(
 
 def _resolve_vault_path(target: str | None) -> Path:
     """Resolve vault path (existing file → project vault → cwd config vault)."""
-    from slipp.services.config import resolve_vault_target
-
     try:
         _, vault_path = resolve_vault_target(target)
     except ProjectNotFoundError:
