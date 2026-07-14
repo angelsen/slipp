@@ -258,8 +258,10 @@ def merge_runtime_options(
 
         merged_tunnels = TunnelConfig.model_validate(
             {
-                "out": list(existing_out) + [t for t in tunnel_out if t not in existing_out],
-                "in": list(existing_in) + [t for t in tunnel_in if t not in existing_in],
+                "out": list(existing_out)
+                + [t for t in tunnel_out if t not in existing_out],
+                "in": list(existing_in)
+                + [t for t in tunnel_in if t not in existing_in],
                 "auth": hash_tunnel_auth(tunnel_auth) if tunnel_auth else existing_auth,
             }
         )
@@ -269,7 +271,8 @@ def merge_runtime_options(
         r
         for r in new_proxy
         if not any(
-            e.from_ == r.from_ and e.to == r.to and e.host == r.host for e in profile.proxy
+            e.from_ == r.from_ and e.to == r.to and e.host == r.host
+            for e in profile.proxy
         )
     ]
 
