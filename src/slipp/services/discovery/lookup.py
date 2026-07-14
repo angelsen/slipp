@@ -5,12 +5,7 @@ belong to that project. Hosts are loaded on-demand from local configs.
 """
 
 from slipp.models.host import AnsibleHost
-from slipp.services.discovery.discovery import DiscoveryService
-from slipp.utils.errors import (
-    AmbiguousServiceError,
-    SSHAuthenticationError,
-    SSHConnectionError,
-)
+from slipp.utils.errors import AmbiguousServiceError
 
 
 def lookup_host_by_service(
@@ -32,14 +27,15 @@ def lookup_host_by_service(
     # Must stay lazy: config/__init__ (hosts.py) top-imports
     # lookup_host_by_service from this package's __init__, so this executes
     # while config/__init__ is still mid-import -- HostResolver isn't bound
-    # yet at that point. The one intentional lazy import on this boundary.
+    # yet at that point. The one intentional lazy import on this boundary;
+    # discover_across_hosts (pipeline.py) also depends on services.config,
+    # so it has to stay lazy here too.
     from slipp.services.config import HostResolver
+    from slipp.services.discovery.pipeline import discover_across_hosts
 
     resolver = HostResolver()
-    discovery = DiscoveryService()
 
-    matches: list[tuple[str, AnsibleHost]] = []
-
+    candidates: list[tuple[str, AnsibleHost]] = []
     for project_name, ansible_host in resolver.all_hosts():
         if project and project_name != project:
             continue
@@ -51,14 +47,35 @@ def lookup_host_by_service(
             ):
                 continue
 
-        try:
-            services = discovery.discover(ansible_host, include_system=True)
-        except (SSHConnectionError, SSHAuthenticationError):
-            # Host unreachable - can't confirm the service runs here, skip it
-            continue
+        candidates.append((project_name, ansible_host))
 
-        if any(s.name == service_name for s in services):
-            matches.append((project_name, ansible_host))
+    if not candidates:
+        return None
+
+    # Unreachable hosts land in the discarded errors list instead of raising
+    # -- can't confirm the service runs there, so skip them, same as before.
+    services, _errors = discover_across_hosts(candidates, include_system=True)
+
+    host_by_key = {
+        (ansible_host.ansible_host, ansible_host.inventory_hostname): (
+            project_name,
+            ansible_host,
+        )
+        for project_name, ansible_host in candidates
+    }
+
+    matches: list[tuple[str, AnsibleHost]] = []
+    seen: set[tuple[str, str]] = set()
+    for svc in services:
+        if svc.name != service_name:
+            continue
+        key = (svc.host, svc.inventory_hostname)
+        if key in seen:
+            continue
+        match = host_by_key.get(key)
+        if match:
+            seen.add(key)
+            matches.append(match)
 
     if not matches:
         return None

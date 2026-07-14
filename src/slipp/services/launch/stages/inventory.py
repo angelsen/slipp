@@ -5,7 +5,7 @@ from pathlib import Path
 import yaml
 
 from slipp import output
-from slipp.constants import get_inventory_filename
+from slipp.constants import ProxyType, get_inventory_filename
 from slipp.generator.inventory_generator import generate_inventory
 from slipp.models.deployment import DeploymentHostConfig, InventoryConfig
 from slipp.utils.network import is_ip_address
@@ -120,6 +120,22 @@ class InventoryValidationStage:
             raise LaunchError(
                 "Launch command requires admin_email in inventory\n"
                 "For external projects, use 'slipp deploy -i/-p' instead"
+            )
+
+        # Unlike CaddyConfigStage (which falls back to routing an IP on
+        # :80 with no subdomains), wg-manage has no IP-only mode --
+        # build_wg_services() rejects it outright. Catching that here,
+        # before any file-writing stage runs, avoids resolve_expose()
+        # minting nonsense per-service subdomains (e.g. worker.1.2.3.4)
+        # and failing mid-pipeline after inventory/playbook/group_vars
+        # have already been written to disk.
+        if context.proxy == ProxyType.wg_manage and is_ip_address(
+            first_host.app_domain
+        ):
+            raise LaunchError(
+                "wg-manage requires a real domain in app_domain -- "
+                "IP-only targets aren't supported (wg-manage routes "
+                "services via subdomains)"
             )
 
 

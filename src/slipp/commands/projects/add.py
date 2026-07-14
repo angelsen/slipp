@@ -11,7 +11,7 @@ from typing import Annotated
 import typer
 
 from slipp import output
-from slipp.models.service import Runtime
+from slipp.commands.common import RuntimeOption
 from slipp.output import format_path
 from slipp.services.config import LocalConfigService
 from slipp.services.config.detection import (
@@ -19,9 +19,36 @@ from slipp.services.config.detection import (
     PLAYBOOK_PATTERNS,
     ROLES_PATTERNS,
     detect_path,
+    path_exists,
 )
 from slipp.services.launch.registration import register_project
 from slipp.utils.errors import ConfigError, LaunchError
+
+
+def _validate_exists(
+    project_root: Path, path: Path, kind: str, *, is_dir: bool = False
+) -> Path:
+    """Confirm a resolved path exists, else exit with an error.
+
+    Args:
+        project_root: Base directory, used to render a relative path in errors.
+        path: The path to validate.
+        kind: Human name for error messages (e.g. "inventory", "playbook").
+        is_dir: If True, validate as a directory instead of a file.
+
+    Returns:
+        The validated path, unchanged.
+
+    Raises:
+        typer.Exit: If the path doesn't exist.
+    """
+    if not path_exists(path, is_dir=is_dir):
+        output.error(
+            f"{kind.capitalize()} not found: {format_path(path, project_root)}"
+        )
+        raise typer.Exit(1)
+
+    return path
 
 
 def _resolve_required(
@@ -60,14 +87,7 @@ def _resolve_required(
         output.hint(f"Specify with: {flag_hint}")
         raise typer.Exit(1)
 
-    exists = path.is_dir() if is_dir else path.exists()
-    if not exists:
-        output.error(
-            f"{kind.capitalize()} not found: {format_path(path, project_root)}"
-        )
-        raise typer.Exit(1)
-
-    return path
+    return _validate_exists(project_root, path, kind, is_dir=is_dir)
 
 
 def add_command(
@@ -104,10 +124,7 @@ def add_command(
         str | None,
         typer.Option("--vault", help="Path to vault.yml for secret management"),
     ] = None,
-    runtime: Annotated[
-        Runtime | None,
-        typer.Option("--runtime", help="How the app runs: systemd, docker, podman"),
-    ] = None,
+    runtime: RuntimeOption = None,
 ) -> None:
     """Register an Ansible project with slipp."""
     # Intentionally no root discovery: this command creates/claims THIS
@@ -123,13 +140,12 @@ def add_command(
     )
 
     if roles:
-        roles_paths = [project_root / r for r in roles]
-        for rp in roles_paths:
-            if not rp.is_dir():
-                output.error(
-                    f"Roles directory not found: {format_path(rp, project_root)}"
-                )
-                raise typer.Exit(1)
+        roles_paths = [
+            _validate_exists(
+                project_root, project_root / r, "roles directory", is_dir=True
+            )
+            for r in roles
+        ]
     else:
         roles_paths = [
             _resolve_required(

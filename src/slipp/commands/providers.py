@@ -11,6 +11,7 @@ from slipp.models.provider import GigahostConfig, PangolinConfig, WgDeployConfig
 from slipp.services.providers import ProviderConfigService
 from slipp.services.providers.gigahost import GigahostClient
 from slipp.services.providers.pangolin import PangolinClient
+from slipp.services.providers.wg_deploy import verify_repo as verify_wg_deploy_repo
 from slipp.utils.errors import ProviderError
 
 providers_app = typer.Typer(
@@ -34,30 +35,30 @@ def add_provider(
 
     api_key = output.prompt_password("Gigahost API key (flux_live_...)")
 
-    client = GigahostClient(api_key)
-    try:
-        account = client.get_account()
-    except ProviderError as e:
-        output.error(f"Verification failed: {e}")
-        raise typer.Exit(1)
+    with GigahostClient(api_key) as client:
+        try:
+            account = client.get_account()
+        except ProviderError as e:
+            output.error(f"Verification failed: {e}")
+            raise typer.Exit(1)
 
-    account_name = account.get("cust_name")
+        account_name = account.get("cust_name")
 
-    ProviderConfigService.set_gigahost(
-        GigahostConfig(api_key=api_key, account_name=account_name)
-    )
+        ProviderConfigService.set_gigahost(
+            GigahostConfig(api_key=api_key, account_name=account_name)
+        )
 
-    output.success(f"Gigahost configured for account: {account_name}")
+        output.success(f"Gigahost configured for account: {account_name}")
 
-    try:
-        servers = client.list_servers()
-        zones = client.list_zones()
-        output.kv("servers", len(servers), indent=1)
-        output.kv("domains", len(zones), indent=1)
-    except ProviderError:
-        # Account verified fine; a secondary listing call failing shouldn't
-        # undo the successful "add".
-        pass
+        try:
+            servers = client.list_servers()
+            zones = client.list_zones()
+            output.kv("servers", len(servers), indent=1)
+            output.kv("domains", len(zones), indent=1)
+        except ProviderError:
+            # Account verified fine; a secondary listing call failing shouldn't
+            # undo the successful "add".
+            pass
 
 
 def _add_pangolin() -> None:
@@ -72,12 +73,12 @@ def _add_pangolin() -> None:
     # field defaults (the single source of truth), not a second hardcoded
     # copy in the client.
     config = PangolinConfig(session_cookie=cookie)
-    client = PangolinClient(cookie, org=config.org, base_url=config.base_url)
-    try:
-        sites = client.list_sites()
-    except ProviderError as e:
-        output.error(f"Verification failed: {e}")
-        raise typer.Exit(1)
+    with PangolinClient(cookie, org=config.org, base_url=config.base_url) as client:
+        try:
+            sites = client.list_sites()
+        except ProviderError as e:
+            output.error(f"Verification failed: {e}")
+            raise typer.Exit(1)
 
     ProviderConfigService.set_pangolin(config)
 
@@ -95,11 +96,10 @@ def _add_wg_deploy() -> None:
     raw_path = output.prompt("wg-deploy repo path")
     repo_path = Path(raw_path).expanduser().resolve()
 
-    if (
-        not (repo_path / "playbook.yml").is_file()
-        or not (repo_path / "scripts" / "new-host.sh").is_file()
-    ):
-        output.error(f"Not a wg-deploy checkout: {repo_path}")
+    try:
+        verify_wg_deploy_repo(repo_path)
+    except ProviderError as e:
+        output.error(str(e))
         output.hint("Expected playbook.yml and scripts/new-host.sh in this directory")
         raise typer.Exit(1)
 

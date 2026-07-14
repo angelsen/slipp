@@ -105,6 +105,7 @@ def generate_app_role(
     uv_extra: str | None = None,
     exec_args: str | None = None,
     health_check: str | None = None,
+    systemd_vars: dict[str, Any] | None = None,
 ) -> dict[Path, str]:
     """Generate role files for a service.
 
@@ -132,6 +133,10 @@ def generate_app_role(
             restart; on failure the previous deployment is restored
             (systemd deploys only). Also enables crash-loop detection
             (no rollback) when unset.
+        systemd_vars: Precomputed extract_systemd_vars() result, if the
+            caller already needed it for its own purposes -- avoids a
+            second extract_template_variables() call for this service.
+            Computed internally when omitted.
 
     Returns:
         Dict mapping file paths to content
@@ -155,7 +160,8 @@ def generate_app_role(
         project_root if project_root is not None else service.path,
     )
     template_dir = _template_dir(runtime, service)
-    systemd_vars = _extract_systemd_vars(template_dir, service)
+    if systemd_vars is None:
+        systemd_vars = extract_systemd_vars(runtime, service)
 
     files[Path(f"roles/{role_name}/tasks/main.yml")] = _render_tasks(
         service,
@@ -205,7 +211,7 @@ def _render_tasks(
             rollback on failure (systemd deploys only)
         template_dir: Source template set, from _template_dir()
         systemd_vars: Systemd-only template vars, from
-            _extract_systemd_vars() (None for non-systemd runtimes)
+            extract_systemd_vars() (None for non-systemd runtimes)
 
     Returns:
         Rendered tasks YAML content
@@ -245,7 +251,7 @@ def _render_systemd(
             deploys only)
         template_dir: Source template set, from _template_dir()
         systemd_vars: Systemd-only template vars, from
-            _extract_systemd_vars() (None for non-systemd runtimes)
+            extract_systemd_vars() (None for non-systemd runtimes)
 
     Returns:
         Rendered systemd unit content
@@ -265,10 +271,16 @@ def _render_systemd(
     )
 
 
-def _extract_systemd_vars(
-    template_dir: str, service: DetectedService
+def extract_systemd_vars(
+    runtime: Runtime, service: DetectedService
 ) -> dict[str, Any] | None:
     """Compute systemd-only template vars (exec entrypoint, deps), once per role.
+
+    Public so a caller that also needs these vars for its own purposes
+    (e.g. AppRolesStage's missing-entrypoint warning) can compute them
+    once and pass the result to generate_app_role() via its systemd_vars
+    param, instead of triggering a second extract_template_variables()
+    call for the same service.
 
     extract_template_variables() also sets a "runtime" key (a
     Dockerfile-label display string, e.g. "SvelteKit") for the
@@ -280,6 +292,7 @@ def _extract_systemd_vars(
         Vars to merge into the render context, or None for non-systemd
         template dirs (tasks/systemd renders are then unaffected).
     """
+    template_dir = _template_dir(runtime, service)
     if template_dir not in _SYSTEMD_TEMPLATE_DIRS:
         return None
     extra = extract_template_variables(service)

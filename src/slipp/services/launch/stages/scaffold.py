@@ -31,7 +31,7 @@ class ScaffoldValidationStage:
 
         # Install requirements before validation (roles needed for syntax check)
         if context.requirements_path and context.requirements_path.exists():
-            if not context.roles_path:
+            if not context.galaxy_roles_path:
                 raise LaunchError(
                     "--roles-path required when requirements.yml exists\n"
                     "Example: slipp generate scaffold -p setup.yml --roles-path roles/galaxy"
@@ -39,7 +39,7 @@ class ScaffoldValidationStage:
 
             ensure_requirements_installed(
                 str(context.requirements_path),
-                context.roles_path,
+                context.galaxy_roles_path,
                 log_dir=get_log_dir(context.output_dir),
             )
 
@@ -55,7 +55,7 @@ class ScaffoldValidationStage:
             f"Validating {format_path(context.playbook_path, context.output_dir)}..."
         )
 
-        roles = [context.roles_path] if context.roles_path else None
+        roles = [context.galaxy_roles_path] if context.galaxy_roles_path else None
 
         if not syntax_check(context.playbook_path, roles_path=roles):
             raise LaunchError(
@@ -113,10 +113,6 @@ class ScaffoldInventoryStage:
         """Create Ansible inventory structure with templated configuration files."""
         output.info("Generating inventory files...")
 
-        if context.dry_run:
-            output.info("Would generate: hosts file, vars.yml, vault.yml")
-            return
-
         host_inventory_dir = require(context.inventory_dir, "inventory dir")
         inventory_dir = context.output_dir / "inventory"
 
@@ -164,8 +160,8 @@ class ScaffoldRegistrationStage:
         playbook_path = require(context.playbook_path, "playbook path")
 
         galaxy_path: str | None = None
-        if context.roles_path:
-            roles_path_obj = Path(context.roles_path)
+        if context.galaxy_roles_path:
+            roles_path_obj = Path(context.galaxy_roles_path)
             galaxy_path = (
                 relative_or_absolute(roles_path_obj, context.output_dir)
                 if roles_path_obj.is_absolute()

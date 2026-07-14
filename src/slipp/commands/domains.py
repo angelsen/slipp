@@ -21,8 +21,8 @@ def check_domain(
     domain: Annotated[str, typer.Argument(help="Domain to check (.no only)")],
 ) -> None:
     """Check .no domain availability."""
-    client = get_gigahost_client()
-    available, reason = client.check_domain(domain)
+    with get_gigahost_client() as client:
+        available, reason = client.check_domain(domain)
 
     if available:
         output.success(f"{domain} is available")
@@ -35,16 +35,18 @@ def register_domain(
     domain: Annotated[str, typer.Argument(help="Domain to register (.no only)")],
 ) -> None:
     """Register a .no domain (prompts for registrant info)."""
-    client = get_gigahost_client()
-    available, reason = client.check_domain(domain)
+    with get_gigahost_client() as client:
+        available, reason = client.check_domain(domain)
 
-    if not available:
-        output.error(f"{domain} is not available" + (f": {reason}" if reason else ""))
-        raise typer.Exit(1)
+        if not available:
+            output.error(
+                f"{domain} is not available" + (f": {reason}" if reason else "")
+            )
+            raise typer.Exit(1)
 
-    output.info(f"{domain} is available")
+        output.info(f"{domain} is available")
 
-    result = register_domain_interactive(client, domain)
+        result = register_domain_interactive(client, domain)
 
     output.success(f"Registered {domain}")
     output.kv("zone_id", result.get("zone_id"), indent=1)
@@ -54,8 +56,8 @@ def register_domain(
 @domains_app.command(name="list")
 def list_domains() -> None:
     """List domains across configured providers."""
-    client = get_gigahost_client()
-    zones = client.list_zones()
+    with get_gigahost_client() as client:
+        zones = client.list_zones()
 
     output.empty_or_table(
         [{"domain": z.name, "records": z.record_count} for z in zones],

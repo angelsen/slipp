@@ -16,8 +16,12 @@ from slipp import output
 from slipp.models.local_config import LocalConfig
 from slipp.models.run import ProxyRoute, RunProfile, TunnelConfig
 from slipp.services.config.local import LocalConfigService
-from slipp.services.run.proxy import parse_proxy_spec
-from slipp.utils.errors import ConfigError, ProfileNotFoundError
+from slipp.services.ssh import (
+    parse_container_tunnel_in,
+    parse_tunnel_in,
+    parse_tunnel_out,
+)
+from slipp.utils.errors import ConfigError, ProfileNotFoundError, ProxyRouteError
 
 LOCAL_RUNS_FILENAME = ".slipp/runs.local.yaml"
 
@@ -186,12 +190,46 @@ def hash_tunnel_auth(spec: str) -> str:
     return f"{user}:{hashed}"
 
 
+def _validate_tunnel_specs(tunnel_out: list[str], tunnel_in: list[str]) -> None:
+    """Eagerly validate tunnel spec formats so a bad value fails at save time.
+
+    Mirrors the parsing done at execution time (services/run/executor.py)
+    without resolving hosts, matching the eager validation already done for
+    --tunnel-auth and --proxy -- otherwise a malformed --tunnel-out/-in gets
+    persisted into slipp.yaml and only errors on the next `slipp run`.
+
+    Raises:
+        TunnelError: If any spec is malformed.
+    """
+    for spec in tunnel_out:
+        parse_tunnel_out(spec)
+    for spec in tunnel_in:
+        if parse_container_tunnel_in(spec) is None:
+            parse_tunnel_in(spec)
+
+
 def parse_proxy_routes(specs: list[str]) -> list[ProxyRoute]:
-    """Parse --proxy specs into ProxyRoute models."""
+    """Parse --proxy specs (format: 'from@host -> to') into ProxyRoute models."""
     routes = []
     for spec in specs:
-        from_url, to_url, host = parse_proxy_spec(spec)
-        routes.append(ProxyRoute(**{"from": from_url, "to": to_url, "host": host}))
+        if " -> " not in spec:
+            raise ProxyRouteError(
+                f"Invalid proxy spec: {spec}\nExpected: from@host -> to"
+            )
+
+        from_part, to_url = spec.split(" -> ", 1)
+
+        if "@" not in from_part:
+            raise ProxyRouteError(
+                f"Missing @host in proxy spec: {spec}\nExpected: from@host -> to"
+            )
+
+        from_url, host = from_part.rsplit("@", 1)
+        routes.append(
+            ProxyRoute(
+                **{"from": from_url.strip(), "to": to_url.strip(), "host": host.strip()}
+            )
+        )
     return routes
 
 
@@ -225,6 +263,7 @@ def build_profile(
 ) -> RunProfile:
     """Build a RunProfile from command options."""
     _require_tunnel_out_for_auth(tunnel_auth, tunnel_out)
+    _validate_tunnel_specs(tunnel_out, tunnel_in)
 
     tunnels = None
     if tunnel_out or tunnel_in:
@@ -260,6 +299,8 @@ def merge_runtime_options(
     """
     if not any([env, vault, tunnel_out, tunnel_in, proxy, tunnel_auth]):
         return profile
+
+    _validate_tunnel_specs(tunnel_out, tunnel_in)
 
     merged_env = list(profile.env) + list(env)
     merged_vaults = list(profile.vaults) + [v for v in vault if v not in profile.vaults]

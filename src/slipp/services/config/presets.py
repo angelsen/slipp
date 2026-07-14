@@ -99,3 +99,29 @@ def parse_preset_args(args: str) -> tuple[str | None, str | None]:
             i += 1
 
     return tags, skip_tags
+
+
+def build_preset_args(tags: str | None, skip_tags: str | None) -> str:
+    """Build a preset args string from tags and skip_tags.
+
+    Inverse of `parse_preset_args`.
+
+    Args:
+        tags: Comma-separated Ansible tags to run, if any
+        skip_tags: Comma-separated Ansible tags to skip, if any
+
+    Returns:
+        String like "--tags setup-all --skip-tags foo,bar"
+
+    Examples:
+        >>> build_preset_args("setup-all", None)
+        '--tags setup-all'
+        >>> build_preset_args("setup-all", "foo,bar")
+        '--tags setup-all --skip-tags foo,bar'
+    """
+    parts = []
+    if tags:
+        parts.append(f"--tags {shlex.quote(tags)}")
+    if skip_tags:
+        parts.append(f"--skip-tags {shlex.quote(skip_tags)}")
+    return " ".join(parts)

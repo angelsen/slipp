@@ -24,7 +24,7 @@ def build_status_command(unit_name: str) -> str:
     return f"sudo env LC_ALL=C systemctl status {shlex.quote(unit_name)}"
 
 
-def parse_systemctl_status(output_text: str) -> dict:
+def parse_systemctl_status(output_text: str) -> dict[str, str]:
     """Parse systemctl status output to extract key details.
 
     Args:

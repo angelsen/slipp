@@ -7,6 +7,7 @@ import typer
 
 from slipp import output
 from slipp.commands.common import DryRunOption
+from slipp.services.config.detection import detect_path
 from slipp.services.launch import ScaffoldContext, run_scaffold_pipeline
 
 
@@ -60,11 +61,7 @@ def scaffold_command(
 ) -> None:
     """Scaffold inventory for existing Ansible project."""
     output_dir = playbook.parent
-    reqs_path = requirements
-    if not reqs_path:
-        default_reqs = output_dir / "requirements.yml"
-        if default_reqs.exists():
-            reqs_path = default_reqs
+    reqs_path = requirements or detect_path(output_dir, ["requirements.yml"])
 
     project_name = name or output_dir.name
     if not name:
@@ -76,7 +73,7 @@ def scaffold_command(
         playbook_path=playbook,
         inventory_path=inventory,
         requirements_path=reqs_path,
-        roles_path=roles_path,
+        galaxy_roles_path=roles_path,
         project_name=project_name,
     )
 

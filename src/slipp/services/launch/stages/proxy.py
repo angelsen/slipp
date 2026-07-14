@@ -8,6 +8,7 @@ connection details (ansible_host/user/port) exist.
 """
 
 from slipp import output
+from slipp.constants import ProxyType
 from slipp.models.deployment import DeploymentHostConfig
 from slipp.services.launch.context import FullContext
 from slipp.services.launch.stages.common import require
@@ -61,7 +62,7 @@ class ProxyResolutionStage:
         inventory_config = require(context.inventory_config, "inventory config")
         first_host = inventory_config.first_host
 
-        if context.proxy != "auto":
+        if context.proxy != ProxyType.auto:
             resolved = context.proxy
         elif first_host.proxy_owner:
             resolved = first_host.proxy_owner
@@ -72,7 +73,7 @@ class ProxyResolutionStage:
             # InventoryLoadStage fills in a dummy, unreachable host for dry
             # runs -- probing it would just burn the SSH connect timeout.
             output.info("Dry run: skipping wg-manage probe, assuming caddy")
-            resolved = "caddy"
+            resolved = ProxyType.caddy
         else:
             probed = self._probe(first_host)
             if probed is None:
@@ -85,19 +86,19 @@ class ProxyResolutionStage:
             first_host.proxy_owner = resolved
 
         context.proxy = resolved
-        context.skip_caddy = resolved != "caddy"
+        context.skip_caddy = resolved != ProxyType.caddy
 
-        if context.public and resolved != "wg-manage":
+        if context.public and resolved != ProxyType.wg_manage:
             raise LaunchError("--public only applies to --proxy wg-manage")
 
-    def _probe(self, host: DeploymentHostConfig) -> str | None:
+    def _probe(self, host: DeploymentHostConfig) -> ProxyType | None:
         """SSH-probe a host for `wg-manage --version`.
 
         Returns:
-            "wg-manage" or "caddy" for a connected probe (confirmed
-            present/absent, safe to cache); None if the connection itself
-            failed (inconclusive -- caller fails the launch rather than
-            guessing).
+            ProxyType.wg_manage or ProxyType.caddy for a connected probe
+            (confirmed present/absent, safe to cache); None if the
+            connection itself failed (inconclusive -- caller fails the
+            launch rather than guessing).
         """
         output.info(f"Probing {host.ansible_host} for a wg-manage hub...")
         try:
@@ -109,7 +110,7 @@ class ProxyResolutionStage:
 
         if result.exit_code == 0:
             output.success(f"{host.ansible_host} is a wg-manage hub")
-            return "wg-manage"
+            return ProxyType.wg_manage
 
         output.info("wg-manage not found on host; using slipp's caddy role")
-        return "caddy"
+        return ProxyType.caddy

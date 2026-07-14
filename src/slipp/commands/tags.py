@@ -7,7 +7,7 @@ import typer
 
 from slipp import output
 from slipp.models.local_config import LocalConfig
-from slipp.services.config import LocalConfigService, PresetResolver
+from slipp.services.config import LocalConfigService, PresetResolver, build_preset_args
 
 
 tags_app = typer.Typer(
@@ -69,12 +69,7 @@ def add_preset(
         output.hint("Example: slipp tags add setup --tags setup-all")
         raise typer.Exit(1)
 
-    parts = []
-    if tags:
-        parts.append(f"--tags {tags}")
-    if skip_tags:
-        parts.append(f"--skip-tags {skip_tags}")
-    args = " ".join(parts)
+    args = build_preset_args(tags, skip_tags)
 
     if name in config.tag_presets:
         old_args = config.tag_presets[name]

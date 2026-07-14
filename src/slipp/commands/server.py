@@ -21,9 +21,9 @@ def status_command(
     name_or_ip: Annotated[str, typer.Argument(help="Server name or IP address")],
 ) -> None:
     """Show server power state."""
-    client = get_gigahost_client()
-    srv_id, _display, _ip = resolve_server(client, name_or_ip)
-    powered_on = client.get_powerstate(srv_id)
+    with get_gigahost_client() as client:
+        srv_id, _display, _ip = resolve_server(client, name_or_ip)
+        powered_on = client.get_powerstate(srv_id)
     output.kv("power", "on" if powered_on else "off")
 
 
@@ -33,12 +33,12 @@ def reboot_command(
     force: ForceOption = False,
 ) -> None:
     """Reboot a server."""
-    client = get_gigahost_client()
-    srv_id, display, _ip = resolve_server(client, name_or_ip)
+    with get_gigahost_client() as client:
+        srv_id, display, _ip = resolve_server(client, name_or_ip)
 
-    confirm_or_exit(f"Reboot '{display}'?", force=force)
+        confirm_or_exit(f"Reboot '{display}'?", force=force)
 
-    client.reboot(srv_id)
+        client.reboot(srv_id)
     output.success(f"Reboot requested for '{display}'")
 
 
@@ -48,10 +48,10 @@ def install_command(
     force: ForceOption = False,
 ) -> None:
     """Reinstall server OS."""
-    client = get_gigahost_client()
-    srv_id, display, ip = resolve_server(client, name_or_ip)
+    with get_gigahost_client() as client:
+        srv_id, display, ip = resolve_server(client, name_or_ip)
 
-    if not is_resuming_install(display):
-        confirm_or_exit(f"Wipe and reinstall '{display}' ({ip})?", force=force)
+        if not is_resuming_install(display):
+            confirm_or_exit(f"Wipe and reinstall '{display}' ({ip})?", force=force)
 
-    install_server(client, srv_id, display, ip)
+        install_server(client, srv_id, display, ip)

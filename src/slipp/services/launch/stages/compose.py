@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from slipp.generator.compose_generator import generate_compose
-from slipp.models.deployment import ComposeConfig
+from slipp.models.compose import ComposeConfig
 from slipp.services.launch.context import FullContext
 from slipp.services.launch.stages.common import FileGenerationStage, is_systemd_runtime
 
@@ -18,6 +18,12 @@ class ComposeGenerationStage(FileGenerationStage[FullContext]):
     def __init__(self):
         super().__init__("Generating docker-compose.yml")
 
+    def should_skip(self, context: FullContext) -> str | None:
+        """Skip for a systemd runtime (no containers to compose)."""
+        if is_systemd_runtime(context):
+            return "Skipping docker-compose.yml (systemd runtime, no containers)"
+        return None
+
     def generate_content(self, context: FullContext) -> dict[Path, str]:
         """Generate docker-compose.yml content from deployment context.
 
@@ -27,11 +33,8 @@ class ComposeGenerationStage(FileGenerationStage[FullContext]):
 
         Returns:
             Dictionary mapping docker-compose.yml path to generated YAML
-            content, or empty if the runtime is systemd.
+            content.
         """
-        if is_systemd_runtime(context):
-            return {}
-
         compose_config = ComposeConfig(
             services=context.services,
             project_name=context.project_name,

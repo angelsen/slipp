@@ -5,12 +5,8 @@ from pathlib import Path
 from slipp import output
 from slipp.utils.network import is_ip_address
 from slipp.generator.caddy_generator import generate_caddy_role
-from slipp.models.deployment import (
-    CaddyConfig,
-    CaddySite,
-    DetectedService,
-    ProvisionConfig,
-)
+from slipp.models.caddy import CaddyConfig, CaddySite
+from slipp.models.deployment import DetectedService, ProvisionConfig
 from slipp.models.local_config import ExposeEntry
 from slipp.scanner.routing import ip_expose, validate_expose
 from slipp.services.launch.context import FullContext
@@ -86,20 +82,23 @@ class CaddyConfigStage:
             # IP-only deploys route on :80 -- there are no subdomains to
             # mint, so services beyond the primary/backend pair get no
             # route (and the expose block is never persisted).
-            if is_ip:
-                expose, unroutable = ip_expose(context.services, caddy_domain)
-                for svc in unroutable:
-                    output.warning(
-                        f"'{svc.name}' gets no route on an IP-only deploy -- "
-                        f"it will be deployed but unreachable "
-                        f"(would need {svc.name}.<domain>)"
-                    )
-                if unroutable:
-                    output.hint(
-                        "Set app_domain to a real domain to route it on a subdomain"
-                    )
-            else:
-                expose = resolve_expose(context, caddy_domain)
+            try:
+                if is_ip:
+                    expose, unroutable = ip_expose(context.services, caddy_domain)
+                    for svc in unroutable:
+                        output.warning(
+                            f"'{svc.name}' gets no route on an IP-only deploy -- "
+                            f"it will be deployed but unreachable "
+                            f"(would need {svc.name}.<domain>)"
+                        )
+                    if unroutable:
+                        output.hint(
+                            "Set app_domain to a real domain to route it on a subdomain"
+                        )
+                else:
+                    expose = resolve_expose(context, caddy_domain)
+            except ValueError as e:
+                raise LaunchError(str(e)) from e
             caddy_sites = build_caddy_sites(context.services, expose)
             caddy_config = CaddyConfig(
                 sites=caddy_sites,
@@ -139,6 +138,12 @@ class CaddyRoleStage(FileGenerationStage[FullContext]):
         """Initialize Caddy role generation stage."""
         super().__init__("Generating Caddy role")
 
+    def should_skip(self, context: FullContext) -> str | None:
+        """Skip if proxy resolved to something other than Caddy."""
+        if context.skip_caddy:
+            return f"Skipping Caddy role (proxy: {context.proxy})"
+        return None
+
     def generate_content(self, context: FullContext) -> dict[Path, str]:
         """Generate Caddy role files.
 
@@ -148,9 +153,6 @@ class CaddyRoleStage(FileGenerationStage[FullContext]):
         Returns:
             Mapping of file paths to generated content strings.
         """
-        if context.skip_caddy:
-            return {}
-
         inventory_config = require(context.inventory_config, "inventory config")
         provision_config = require(context.provision_config, "provision config")
 

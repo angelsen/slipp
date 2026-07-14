@@ -7,10 +7,10 @@ the main playbook, group variables, and app role definitions.
 from pathlib import Path
 
 from slipp import output
+from slipp.constants import PLAYBOOK_FILENAME
 from slipp.generator.env import render_template
-from slipp.generator.extractors import extract_template_variables
 from slipp.generator.playbook_generator import generate_playbook
-from slipp.generator.role_generator import generate_app_role
+from slipp.generator.role_generator import extract_systemd_vars, generate_app_role
 from slipp.models.service import Runtime
 from slipp.scanner.models import PYTHON_FRAMEWORKS
 from slipp.services.launch.context import FullContext
@@ -27,7 +27,7 @@ class PlaybookGenerationStage(FileGenerationStage[FullContext]):
         provision_config = require(context.provision_config, "provision config")
 
         playbook_content = generate_playbook(provision_config)
-        playbook_path = context.output_dir / "playbook.yml"
+        playbook_path = context.output_dir / PLAYBOOK_FILENAME
 
         return {playbook_path: playbook_content}
 
@@ -83,16 +83,15 @@ class AppRolesStage(FileGenerationStage[FullContext]):
         any_python_systemd = runtime == Runtime.SYSTEMD and any(
             service.framework in PYTHON_FRAMEWORKS for service in context.services
         )
-        if context.exec_args and not any_python_systemd:
-            output.warning(
-                f"--exec-args has no effect on {runtime.value} deploys - "
-                "only used for Python systemd deploys."
-            )
-        if context.python_extra and not any_python_systemd:
-            output.warning(
-                f"--python-extra has no effect on {runtime.value} deploys - "
-                "only used for Python systemd deploys."
-            )
+        for flag_name, flag_value in (
+            ("exec-args", context.exec_args),
+            ("python-extra", context.python_extra),
+        ):
+            if flag_value and not any_python_systemd:
+                output.warning(
+                    f"--{flag_name} has no effect on {runtime.value} deploys - "
+                    "only used for Python systemd deploys."
+                )
 
         all_files = {}
         for service in context.services:
@@ -108,19 +107,28 @@ class AppRolesStage(FileGenerationStage[FullContext]):
                     "standalone uv.lock here for reproducible, frozen "
                     "deploys."
                 )
-            if is_python_systemd and not context.exec_args:
-                exec_vars = extract_template_variables(service)
-                if exec_vars.get("execBinary") == "python" and not exec_vars.get(
-                    "execScript"
-                ):
-                    output.warning(
-                        f"{service.name} has no [project.scripts] entry and no "
-                        "recognized entrypoint file (server.py/main.py/app.py/"
-                        "run.py) - ExecStart would be a bare `python` with "
-                        "nothing to run, which will crash-loop. Pass "
-                        "--exec-args with the file/module to run, or add a "
-                        "[project.scripts] entry."
-                    )
+            # Computed once here (not left to generate_app_role's own
+            # internal call) so the missing-entrypoint check below and the
+            # role generation itself share a single extract_template_variables()
+            # call for this service.
+            systemd_vars = (
+                extract_systemd_vars(runtime, service) if is_python_systemd else None
+            )
+            if (
+                is_python_systemd
+                and not context.exec_args
+                and systemd_vars
+                and systemd_vars.get("execBinary") == "python"
+                and not systemd_vars.get("execScript")
+            ):
+                output.warning(
+                    f"{service.name} has no [project.scripts] entry and no "
+                    "recognized entrypoint file (server.py/main.py/app.py/"
+                    "run.py) - ExecStart would be a bare `python` with "
+                    "nothing to run, which will crash-loop. Pass "
+                    "--exec-args with the file/module to run, or add a "
+                    "[project.scripts] entry."
+                )
             role_files = generate_app_role(
                 service,
                 context.project_name,
@@ -130,6 +138,7 @@ class AppRolesStage(FileGenerationStage[FullContext]):
                 uv_extra=context.python_extra,
                 exec_args=context.exec_args,
                 health_check=context.health_check,
+                systemd_vars=systemd_vars,
             )
 
             for path, content in role_files.items():

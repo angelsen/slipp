@@ -67,8 +67,9 @@ def _show_table(project_root: Path) -> None:
     output.blank()
     if hosts:
         output.info(f"Hosts ({len(hosts)}):")
-        for host in hosts:
-            output.info(f"  - {host['inventory_hostname']}: {host['ansible_host']}")
+        output.list_items(
+            [f"{host['inventory_hostname']}: {host['ansible_host']}" for host in hosts]
+        )
     else:
         output.warning("No hosts found in inventory")
 

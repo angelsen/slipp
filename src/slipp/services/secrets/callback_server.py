@@ -113,10 +113,11 @@ class CallbackServer:
             timeout: Maximum seconds to wait. Defaults to 300.
 
         Returns:
-            Received credentials list, or None if timeout reached.
+            Received credentials list. May be empty/None if the callback
+            fired but no resources were selected for export.
+
+        Raises:
+            TimeoutError: If no callback is received within timeout.
         """
-        try:
-            await asyncio.wait_for(self._received.wait(), timeout)
-        except asyncio.TimeoutError:
-            return None
+        await asyncio.wait_for(self._received.wait(), timeout)
         return self.credentials

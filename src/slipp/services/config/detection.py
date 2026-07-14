@@ -34,6 +34,11 @@ def detect_path(
     return None
 
 
+def path_exists(path: Path, is_dir: bool = False) -> bool:
+    """True if path exists as the expected kind (file or directory)."""
+    return path.is_dir() if is_dir else path.exists()
+
+
 def has_caddy_role(project_root: Path) -> bool:
     """True if this project's generated Ansible project has a Caddy role.
 

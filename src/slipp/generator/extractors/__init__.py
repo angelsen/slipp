@@ -7,6 +7,7 @@ plain-function registry architecture (slipp.scanner.scanner).
 from collections.abc import Callable
 from typing import Any
 
+from slipp.generator.errors import GeneratorError
 from slipp.generator.extractors.nodejs_extractor import extract_nodejs
 from slipp.generator.extractors.python_extractor import extract_python
 from slipp.models.deployment import DetectedService
@@ -36,20 +37,14 @@ def extract_template_variables(service: DetectedService) -> dict[str, Any]:
         Dictionary of template variables ready for rendering
 
     Raises:
-        ValueError: If no extractor is registered for the service's framework
+        GeneratorError: If no extractor is registered for the service's framework
     """
     extractor = EXTRACTORS.get(service.framework)
 
     if extractor is None:
-        raise ValueError(f"No extractor for framework {service.framework!r}")
+        raise GeneratorError(f"No extractor for framework {service.framework!r}")
 
     return extractor(service)
 
 
-__all__ = [
-    "VariableExtractor",
-    "extract_python",
-    "extract_nodejs",
-    "EXTRACTORS",
-    "extract_template_variables",
-]
+__all__ = ["extract_template_variables"]

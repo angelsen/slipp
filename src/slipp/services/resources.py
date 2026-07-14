@@ -45,6 +45,21 @@ def resolve_public_target(project_root: Path) -> tuple[str, str, int, str]:
     return app_domain, host.ansible_host, port, method
 
 
+def find_resource(
+    resources: list[dict], *, name: str | None = None, full_domain: str | None = None
+) -> dict | None:
+    """Find a Pangolin resource by name or fullDomain from a list_resources() result."""
+    return next(
+        (
+            r
+            for r in resources
+            if (name is not None and r.get("name") == name)
+            or (full_domain is not None and r.get("fullDomain") == full_domain)
+        ),
+        None,
+    )
+
+
 def sync_pangolin_resource(
     client: PangolinClient,
     *,
@@ -71,10 +86,7 @@ def sync_pangolin_resource(
 
     domain_id, subdomain = resolve_domain(app_domain, client.list_domains())
 
-    resource = next(
-        (r for r in client.list_resources() if r.get("fullDomain") == app_domain),
-        None,
-    )
+    resource = find_resource(client.list_resources(), full_domain=app_domain)
     if not resource:
         if dry_run:
             output.warning(f"Would create Pangolin resource: {app_domain}")

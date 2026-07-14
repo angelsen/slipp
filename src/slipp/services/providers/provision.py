@@ -353,7 +353,7 @@ def is_resuming_install(display: str) -> bool:
 
 def install_server(
     client: GigahostClient, srv_id: int, display: str, ip: str
-) -> tuple[str, int] | None:
+) -> tuple[str, int]:
     """Reinstall OS on an existing server and bootstrap the slipp user.
 
     Caller must resolve the server and confirm the wipe first (see

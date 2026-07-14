@@ -2,6 +2,7 @@
 
 import shlex
 import subprocess
+import threading
 
 from slipp.models.host import AnsibleHost
 from slipp.services.ssh import SSHService, build_ssh_command, build_vps_command
@@ -17,19 +18,16 @@ def detect_local_runtime(image: str) -> str | None:
     Returns:
         "podman" or "docker" if the image exists locally, None otherwise
     """
-    check = subprocess.run(
-        ["podman", "image", "exists", image],
-        capture_output=True,
-    )
-    if check.returncode == 0:
-        return "podman"
-
-    check = subprocess.run(
-        ["docker", "image", "inspect", image],
-        capture_output=True,
-    )
-    if check.returncode == 0:
-        return "docker"
+    for runtime, args in (
+        ("podman", ["podman", "image", "exists", image]),
+        ("docker", ["docker", "image", "inspect", image]),
+    ):
+        try:
+            check = subprocess.run(args, capture_output=True)
+        except FileNotFoundError:
+            continue
+        if check.returncode == 0:
+            return runtime
 
     return None
 
@@ -65,6 +63,7 @@ def list_images(
     cmd = build_vps_command("root", base_cmd, ssh_config.ansible_user)
 
     with SSHService(ssh_config) as ssh:
+        ssh.ensure_sudo("Listing container images")
         result = ssh.execute(cmd)
 
     try:
@@ -103,6 +102,14 @@ def push_image(
     Raises:
         ImageTransferError: If the transfer fails
     """
+    # Primed here (rather than relying on the raw ssh subprocess below) because
+    # that subprocess's stdin carries the piped image tar, leaving no channel
+    # to answer a sudo password prompt -- only NOPASSWD hosts can complete the
+    # load. Priming first turns a missing-NOPASSWD host into a clear upfront
+    # error instead of a confusing failure partway through the transfer.
+    with SSHService(ssh_config) as ssh:
+        ssh.ensure_sudo("Transferring container image")
+
     save_proc = subprocess.Popen(
         [local_runtime, "save", image],
         stdout=subprocess.PIPE,
@@ -125,9 +132,30 @@ def push_image(
     if save_proc.stdout:
         save_proc.stdout.close()
 
-    _, stderr = load_proc.communicate()
-    save_proc.wait()
-    save_stderr = save_proc.stderr.read() if save_proc.stderr else b""
+    # save_proc's stderr must be drained concurrently with load_proc.communicate():
+    # if save_proc writes more than a pipe buffer's worth of stderr, it blocks
+    # on that pipe (unread until after communicate() returns below), which stops
+    # it feeding load_proc's stdin, which stalls communicate() forever.
+    save_stderr_chunks: list[bytes] = []
+
+    def _drain_save_stderr() -> None:
+        if save_proc.stderr:
+            save_stderr_chunks.append(save_proc.stderr.read())
+
+    stderr_reader = threading.Thread(target=_drain_save_stderr, daemon=True)
+    stderr_reader.start()
+
+    try:
+        _, stderr = load_proc.communicate()
+        save_proc.wait()
+    finally:
+        for proc in (save_proc, load_proc):
+            if proc.poll() is None:
+                proc.terminate()
+                proc.wait()
+
+    stderr_reader.join()
+    save_stderr = save_stderr_chunks[0] if save_stderr_chunks else b""
 
     if save_proc.returncode != 0:
         message = f"Failed to save local image '{image}'"
@@ -146,6 +174,7 @@ def push_image(
             "root", f"{remote_runtime} tag {image} {rename}", ssh_config.ansible_user
         )
         with SSHService(ssh_config) as ssh:
+            ssh.ensure_sudo("Tagging transferred image")
             try:
                 ssh.execute(tag_cmd).check(f"Failed to tag image as {rename}")
             except SSHCommandError as e:

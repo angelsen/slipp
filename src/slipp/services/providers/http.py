@@ -1,5 +1,6 @@
 """Shared httpx request/error handling for provider API clients."""
 
+from types import TracebackType
 from typing import Any
 
 import httpx
@@ -11,11 +12,27 @@ class ApiClientMixin:
     """Shared `_request` for provider clients wrapping an httpx.Client.
 
     Subclasses set `PROVIDER_NAME` (used in error messages) and `self._client`
-    (a configured httpx.Client) in their own `__init__`.
+    (a configured httpx.Client) in their own `__init__`. Usable as a context
+    manager to close the underlying connection pool deterministically.
     """
 
     PROVIDER_NAME: str
     _client: httpx.Client
+
+    def close(self) -> None:
+        """Close the underlying httpx.Client's connection pool."""
+        self._client.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        self.close()
 
     def _request(
         self,

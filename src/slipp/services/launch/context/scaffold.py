@@ -19,7 +19,11 @@ class ScaffoldContext(BaseContext):
         playbook_path: Path to the main Ansible playbook file.
         inventory_path: Path to the inventory file or directory.
         requirements_path: Path to requirements.yml for role dependencies.
-        roles_path: Path to the roles directory.
+        galaxy_roles_path: Path to the external Ansible Galaxy roles
+            directory (--roles-path). Unrelated to registration.py's
+            roles_path, which tracks slipp's own generated role
+            directories for managed_roles scanning -- this project has
+            none of those, since it's a pre-existing Ansible project.
         hostname: Target host name for the deployment.
         host_ip: IP address of the target host.
         inventory_dir: Path to the inventory directory being scaffolded.
@@ -30,7 +34,7 @@ class ScaffoldContext(BaseContext):
     playbook_path: Path | None = None
     inventory_path: Path | None = None
     requirements_path: Path | None = None
-    roles_path: str | None = None
+    galaxy_roles_path: str | None = None
     hostname: str = ""
     host_ip: str = ""
     inventory_dir: Path | None = None

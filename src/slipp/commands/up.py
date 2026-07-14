@@ -6,7 +6,11 @@ from typing import Annotated
 import typer
 
 from slipp import output
-from slipp.commands.common import confirm_or_fail, sync_wg_manage_after_deploy
+from slipp.commands.common import (
+    confirm_or_fail,
+    run_deploy_or_exit,
+    sync_wg_manage_after_deploy,
+)
 from slipp.commands.dns import sync_and_report
 from slipp.commands.provision import provision_or_exit
 from slipp.constants import (
@@ -18,9 +22,8 @@ from slipp.constants import (
 )
 from slipp.models.deployment import DeploymentHostConfig, InventoryConfig
 from slipp.models.service import Runtime
-from slipp.services import wg_manage
 from slipp.services.config import LocalConfigService
-from slipp.services.deploy import run_deploy
+from slipp.services.deploy import DeployOverrides
 from slipp.services.launch import FullContext, run_full_pipeline
 from slipp.services.providers import (
     GigahostClient,
@@ -28,7 +31,8 @@ from slipp.services.providers import (
     ensure_domain_registered,
     get_gigahost_client,
 )
-from slipp.utils.errors import DeployError, LaunchError, ProviderError
+from slipp.services.providers.wg_deploy import make_hub as make_wg_deploy_hub
+from slipp.utils.errors import LaunchError, ProviderError
 
 
 class _StepCounter:
@@ -68,7 +72,7 @@ def _make_hub(step: _StepCounter, name: str, ip: str) -> None:
         decline_message="Hub-ification declined -- aborting (launch needs a hub)",
     )
 
-    wg_manage.make_hub(name, ip, wg_deploy.repo_path)
+    make_wg_deploy_hub(name, ip, wg_deploy.repo_path)
 
     output.success(f"{ip} is now a wg-manage hub")
 
@@ -109,77 +113,81 @@ def up_command(
 
     step = _StepCounter()
 
-    if host:
-        ip = host
-        output.info(f"Using existing host: {ip}")
-        ssh_user = DEFAULT_SSH_USER
-        output.hint(
-            f"Assuming SSH user '{DEFAULT_SSH_USER}' -- edit inventory if different"
+    try:
+        if host:
+            ip = host
+            output.info(f"Using existing host: {ip}")
+            ssh_user = DEFAULT_SSH_USER
+            output.hint(
+                f"Assuming SSH user '{DEFAULT_SSH_USER}' -- edit inventory if different"
+            )
+        else:
+            step("Provisioning server...")
+            ip = provision_or_exit(get_client(), name)
+            ssh_user = DEFAULT_SERVICE_USER
+
+        if hub:
+            _make_hub(step, name, ip)
+
+        resolved_domain = domain
+        if resolved_domain:
+            step(f"Checking domain {resolved_domain}...")
+            try:
+                ensure_domain_registered(get_client(), resolved_domain)
+            except ProviderError as e:
+                output.error(f"Domain registration failed: {e}")
+                raise typer.Exit(1)
+
+        if not resolved_domain:
+            resolved_domain = output.prompt("App domain")
+
+        step("Generating Ansible project...")
+        context = FullContext(
+            output_dir=Path.cwd(),
+            dry_run=False,
+            environment=environment,
+            project_dirs=[Path.cwd()],
+            project_name=name,
+            inventory_config=InventoryConfig(
+                hosts={
+                    environment: DeploymentHostConfig(
+                        inventory_hostname=environment,
+                        ansible_host=ip,
+                        ansible_user=ssh_user,
+                        ansible_port=DEFAULT_SSH_PORT,
+                        app_domain=resolved_domain,
+                        admin_email=f"admin@{resolved_domain}",
+                        runtime=Runtime.DOCKER,
+                    )
+                }
+            ),
         )
-    else:
-        step("Provisioning server...")
-        ip = provision_or_exit(get_client(), name)
-        ssh_user = DEFAULT_SERVICE_USER
-
-    if hub:
-        _make_hub(step, name, ip)
-
-    resolved_domain = domain
-    if resolved_domain:
-        step(f"Checking domain {resolved_domain}...")
         try:
-            ensure_domain_registered(get_client(), resolved_domain)
-        except ProviderError as e:
-            output.error(f"Domain registration failed: {e}")
+            run_full_pipeline(context)
+        except LaunchError as e:
+            output.error(f"Launch failed: {e}")
             raise typer.Exit(1)
 
-    if not resolved_domain:
-        resolved_domain = output.prompt("App domain")
-
-    step("Generating Ansible project...")
-    context = FullContext(
-        output_dir=Path.cwd(),
-        dry_run=False,
-        environment=environment,
-        project_dirs=[Path.cwd()],
-        project_name=name,
-        inventory_config=InventoryConfig(
-            hosts={
-                environment: DeploymentHostConfig(
-                    inventory_hostname=environment,
-                    ansible_host=ip,
-                    ansible_user=ssh_user,
-                    ansible_port=DEFAULT_SSH_PORT,
-                    app_domain=resolved_domain,
-                    admin_email=f"admin@{resolved_domain}",
-                    runtime=Runtime.DOCKER,
-                )
-            }
-        ),
-    )
-    try:
-        run_full_pipeline(context)
-    except LaunchError as e:
-        output.error(f"Launch failed: {e}")
-        raise typer.Exit(1)
-
-    if dns == "manual":
-        step("DNS sync skipped (--dns manual)")
-        output.hint(f"Point {resolved_domain} A record to {ip}")
-    else:
-        step(f"Syncing DNS for {resolved_domain}...")
-        sync_and_report(get_client(), resolved_domain, ip)
+        if dns == DnsMode.manual:
+            step("DNS sync skipped (--dns manual)")
+            output.hint(f"Point {resolved_domain} A record to {ip}")
+        else:
+            step(f"Syncing DNS for {resolved_domain}...")
+            sync_and_report(get_client(), resolved_domain, ip)
+    finally:
+        if _client is not None:
+            _client.close()
 
     step("Deploying...")
     project_root = LocalConfigService.resolve_root()
-    try:
-        result = run_deploy(project_root, name, environment, tags=None, skip_tags=None)
-    except DeployError as e:
-        output.error(str(e))
-        raise typer.Exit(1)
-
-    if result.exit_code != 0:
-        raise typer.Exit(result.exit_code)
+    run_deploy_or_exit(
+        project_root,
+        name,
+        environment,
+        tags=None,
+        skip_tags=None,
+        overrides=DeployOverrides(),
+    )
 
     sync_wg_manage_after_deploy(project_root, name)
 

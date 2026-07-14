@@ -133,9 +133,8 @@ class LocalConfigService:
     ) -> LocalConfig:
         """Construct a new LocalConfig without writing it to disk.
 
-        Same parameters as `create()`, for callers that need to build a
-        config and save it atomically alongside an existence check (see
-        `create_or_update_with`).
+        For callers that need to build a config and save it atomically
+        alongside an existence check (see `create_or_update_with`).
         """
         root = project_root or Path.cwd()
 
@@ -347,7 +346,7 @@ class LocalConfigService:
         gitignore = logs_dir / ".gitignore"
 
         if logs_dir.exists() and not gitignore.exists():
-            gitignore.write_text("*\n!.gitignore\n")
+            atomic_write_text(gitignore, "*\n!.gitignore\n")
 
 
 def collect_managed_roles(project: str | None = None) -> list[str] | None:

@@ -1,7 +1,7 @@
 """Registration and summary stages."""
 
 from slipp import output
-from slipp.constants import get_inventory_filename
+from slipp.constants import ProxyType, get_inventory_filename
 from slipp.models.service import Runtime
 from slipp.services.launch.context import FullContext
 from slipp.services.launch.registration import register_project
@@ -86,10 +86,19 @@ class SummaryStage:
             ]
             if not context.skip_caddy:
                 summary_items.append("roles/caddy/ (5 files)")
-            elif context.proxy == "wg-manage":
+            elif context.proxy == ProxyType.wg_manage:
                 summary_items.append("roles/wg-manage-exposure/ (1 file)")
+            first_role_dir = f"roles/app-{context.services[0].name}/"
+            files_per_service = sum(
+                1
+                for f in context.generated_files
+                if relative_or_absolute(f, context.output_dir).startswith(
+                    first_role_dir
+                )
+            )
             summary_items.append(
-                f"roles/app-{{service}}/ ({len(context.services)} services, 3 files each)"
+                f"roles/app-{{service}}/ ({len(context.services)} services, "
+                f"{files_per_service} files each)"
             )
             if not is_systemd:
                 summary_items += [

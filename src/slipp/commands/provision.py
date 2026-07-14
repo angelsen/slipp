@@ -48,8 +48,8 @@ def provision_command(
     ] = DEFAULT_ENV,
 ) -> None:
     """Order a VPS via Gigahost, bootstrap it, and register it as a slipp project."""
-    client = get_gigahost_client()
-    ip = provision_or_exit(client, name)
+    with get_gigahost_client() as client:
+        ip = provision_or_exit(client, name)
 
     inventory_filename = get_inventory_filename(environment)
     write_minimal_inventory(Path.cwd() / inventory_filename, environment, ip)

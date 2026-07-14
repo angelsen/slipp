@@ -185,7 +185,7 @@ def _load_vault_secrets(vaults: list[str]) -> dict[str, str]:
         Environment variables from the vaults
 
     Raises:
-        DuplicateEnvVarError: If duplicate env vars found across vaults
+        VaultError: If duplicate env vars found across vaults
         VaultDecryptError: If vault decryption fails
     """
     with vault_password_file(confirm=False) as pw_file:
@@ -232,7 +232,7 @@ def _setup_tunnels(
 
         return tunnel_manager
 
-    except TunnelError:
+    except (TunnelError, KeyboardInterrupt):
         tunnel_manager.cleanup()
         raise
 
@@ -298,7 +298,7 @@ def execute_profile(profile: RunProfile) -> int:
     Raises:
         ProfileExecutionError: If Caddy requirements not met
         ConfigError: If env var format is invalid
-        DuplicateEnvVarError: If duplicate env vars found
+        VaultError: If duplicate env vars found
         VaultDecryptError: If vault decryption fails
         TunnelError: If tunnel setup fails
         CaddyProxyError: If Caddy route setup fails

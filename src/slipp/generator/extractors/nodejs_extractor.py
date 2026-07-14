@@ -5,13 +5,28 @@ SvelteKit and generic Node today; the extraction logic itself is generic
 enough to cover other frameworks once a scanner detector exists for them.
 """
 
-import json
 import re
 from pathlib import Path
 from typing import Any
 
 from slipp.models.deployment import DetectedService
+from slipp.scanner.models import NODE_FRAMEWORKS
+from slipp.utils.files import read_json_file
 from slipp.utils.nodejs import detect_package_manager
+
+# Human-readable runtime name and systemd ExecStart entrypoint per Node
+# framework. Keys must match NODE_FRAMEWORKS exactly (asserted below) so
+# adding a framework there without updating this map fails loudly at import
+# time instead of with a bare KeyError deep in extraction.
+_RUNTIME_NAMES = {
+    "sveltekit": "SvelteKit",
+    "node": "Node.js",
+}
+_EXEC_STARTS = {
+    "sveltekit": "node build",
+    "node": "node .",
+}
+assert _RUNTIME_NAMES.keys() == _EXEC_STARTS.keys() == NODE_FRAMEWORKS
 
 
 def extract_nodejs(service: DetectedService) -> dict[str, Any]:
@@ -77,13 +92,7 @@ def _detect_yarn_version(pkg: dict[str, Any] | None) -> str:
 
 def _load_package_json(service_path: Path) -> dict[str, Any] | None:
     """Load and parse package.json, returning None on missing/invalid."""
-    package_json = service_path / "package.json"
-    if not package_json.exists():
-        return None
-    try:
-        return json.loads(package_json.read_text())
-    except (json.JSONDecodeError, IOError):
-        return None
+    return read_json_file(service_path / "package.json")
 
 
 def _detect_nodejs_version(service_path: Path, pkg: dict[str, Any] | None) -> str:
@@ -120,12 +129,7 @@ def _get_runtime_name(framework: str) -> str:
     Returns:
         Runtime name string
     """
-    runtime_map = {
-        "sveltekit": "SvelteKit",
-        "node": "Node.js",
-    }
-
-    return runtime_map[framework]
+    return _RUNTIME_NAMES[framework]
 
 
 def _get_exec_start(framework: str) -> str:
@@ -141,9 +145,4 @@ def _get_exec_start(framework: str) -> str:
     Returns:
         Entrypoint command, without the /usr/bin/ prefix (e.g. "node build")
     """
-    entrypoint_map = {
-        "sveltekit": "node build",
-        "node": "node .",
-    }
-
-    return entrypoint_map[framework]
+    return _EXEC_STARTS[framework]

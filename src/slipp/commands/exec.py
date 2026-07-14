@@ -92,9 +92,7 @@ def exec_command(
             output.blank()
             output.error(f"Command failed (exit {result.exit_code})")
 
-            if "Permission denied" in result.stderr or "not permitted" in (
-                result.stderr
-            ):
+            if SSHService.is_permission_denied(result):
                 output.blank()
                 output.hint("Hint: Try running as root: slipp exec -u root ...")
 

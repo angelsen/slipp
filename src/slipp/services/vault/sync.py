@@ -88,7 +88,8 @@ class SecretSynchronizer:
         vault_exists = vault_path.is_file()
         if vault_exists and not force:
             raise VaultSyncError(
-                f"Vault file already exists: {vault_path}. Use force=True to overwrite."
+                f"Vault file already exists: {vault_path}. "
+                "Use --force-existing to add to it."
             )
 
         existing_keys = set(list_keys(vault_path)) if vault_exists else set()

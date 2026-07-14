@@ -9,6 +9,7 @@ from pathlib import Path
 from slipp.scanner.helpers import (
     DEFAULT_PYTHON_PORT,
     PYTHON_DOCKER_TEMPLATE,
+    configure_by_dependency,
     extract_python_dependencies,
 )
 from slipp.scanner.models import SourceInfo
@@ -36,13 +37,11 @@ def configure_flask(source_dir: Path) -> SourceInfo | None:
         >>> info.port
         8080
     """
-    dependencies = extract_python_dependencies(source_dir)
-    if "flask" not in dependencies:
-        return None
-
-    return SourceInfo(
+    return configure_by_dependency(
+        source_dir,
+        extract_python_dependencies,
+        "flask",
         family="Flask",
         port=DEFAULT_PYTHON_PORT,
         template_url=PYTHON_DOCKER_TEMPLATE,
-        dependencies=dependencies,  # Include for metadata
     )

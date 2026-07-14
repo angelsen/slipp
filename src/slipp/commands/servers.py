@@ -14,8 +14,8 @@ servers_app = typer.Typer(
 @servers_app.command(name="list")
 def list_servers() -> None:
     """List VPS servers across configured providers (no SSH needed)."""
-    client = get_gigahost_client()
-    servers = client.list_servers()
+    with get_gigahost_client() as client:
+        servers = client.list_servers()
 
     rows = [
         {

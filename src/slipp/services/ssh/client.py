@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import IO
 
 import paramiko
+from paramiko.channel import ChannelStdinFile
 
 from slipp import output
 from slipp.models.host import AnsibleHost
@@ -22,7 +23,7 @@ from slipp.utils.files import get_log_dir, open_log
 
 # Verified sudo passwords per connection, so every SSHService in one CLI
 # invocation (discovery, then logs/status/exec's second connection) reuses
-# a password prompted once. Keyed by AnsibleHost.connection_string().
+# a password prompted once. Keyed by AnsibleHost.connection_string.
 _sudo_passwords: dict[str, str] = {}
 # Connections verified to have working passwordless sudo (skip re-probing).
 _sudo_passwordless: set[str] = set()
@@ -80,15 +81,31 @@ def hint_ssh_log() -> None:
         output.hint(f"See log: {_ssh_log_path}")
 
 
-def _log_ssh_call(host: AnsibleHost, command: str, result: "SSHResult") -> None:
-    """Append one command's invocation and output to this run's SSH log."""
-    _ensure_ssh_log_open()
+def _write_ssh_log(text: str, *, ensure_open: bool = False) -> None:
+    """Append text to this run's SSH log.
+
+    Args:
+        text: Text to append.
+        ensure_open: Lazily open the log first (for the first write of a
+            command/stream); later writes to an already-open stream skip
+            this since `_ensure_ssh_log_open` has already run.
+    """
+    if ensure_open:
+        _ensure_ssh_log_open()
     if _ssh_log_handle is None:
         return
+    with _ssh_log_lock:
+        if _ssh_log_handle is not None:
+            _ssh_log_handle.write(text)
+            _ssh_log_handle.flush()
+
+
+def _log_ssh_call(host: AnsibleHost, command: str, result: "SSHResult") -> None:
+    """Append one command's invocation and output to this run's SSH log."""
     parts = [
-        f"--- [{datetime.now().strftime('%H:%M:%S')}] {host.connection_string()} ---\n"
+        f"--- [{datetime.now().strftime('%H:%M:%S')}] {host.connection_string} ---\n",
+        f"$ {command}\n",
     ]
-    parts.append(f"$ {command}\n")
     if result.stdout:
         parts.append(
             result.stdout if result.stdout.endswith("\n") else result.stdout + "\n"
@@ -96,10 +113,7 @@ def _log_ssh_call(host: AnsibleHost, command: str, result: "SSHResult") -> None:
     for line in result.stderr.splitlines():
         parts.append(f"[stderr] {line}\n")
     parts.append(f"[exit {result.exit_code}]\n\n")
-    with _ssh_log_lock:
-        if _ssh_log_handle is not None:
-            _ssh_log_handle.write("".join(parts))
-            _ssh_log_handle.flush()
+    _write_ssh_log("".join(parts), ensure_open=True)
 
 
 def _log_stream_start(host: AnsibleHost, command: str) -> None:
@@ -109,38 +123,23 @@ def _log_stream_start(host: AnsibleHost, command: str) -> None:
     `logs -f`, which can run indefinitely — buffering the whole stream in
     memory to log it in one shot would grow unbounded.
     """
-    _ensure_ssh_log_open()
-    if _ssh_log_handle is None:
-        return
-    with _ssh_log_lock:
-        if _ssh_log_handle is not None:
-            _ssh_log_handle.write(
-                f"--- [{datetime.now().strftime('%H:%M:%S')}] {host.connection_string()} ---\n"
-            )
-            _ssh_log_handle.write(f"$ {command}\n")
-            _ssh_log_handle.flush()
+    _write_ssh_log(
+        f"--- [{datetime.now().strftime('%H:%M:%S')}] {host.connection_string} ---\n"
+        f"$ {command}\n",
+        ensure_open=True,
+    )
 
 
 def _log_stream_line(line: str) -> None:
     """Write one streamed output line to the log as it's yielded."""
-    if _ssh_log_handle is None:
-        return
-    with _ssh_log_lock:
-        if _ssh_log_handle is not None:
-            _ssh_log_handle.write(f"{line}\n")
-            _ssh_log_handle.flush()
+    _write_ssh_log(f"{line}\n")
 
 
 def _log_stream_end(stderr: str, exit_code: int) -> None:
     """Write a stream's trailing stderr/exit-code footer, once it ends."""
-    if _ssh_log_handle is None:
-        return
-    with _ssh_log_lock:
-        if _ssh_log_handle is not None:
-            for line in stderr.splitlines():
-                _ssh_log_handle.write(f"[stderr] {line}\n")
-            _ssh_log_handle.write(f"[exit {exit_code}]\n\n")
-            _ssh_log_handle.flush()
+    parts = [f"[stderr] {line}\n" for line in stderr.splitlines()]
+    parts.append(f"[exit {exit_code}]\n\n")
+    _write_ssh_log("".join(parts))
 
 
 @dataclass(frozen=True)
@@ -212,7 +211,7 @@ class SSHService:
         before the prompt happened (e.g. exec's connection, opened before
         discovery) still picks the password up.
         """
-        return _sudo_passwords.get(self.config.connection_string())
+        return _sudo_passwords.get(self.config.connection_string)
 
     def __enter__(self):
         """Context manager entry - establish connection.
@@ -276,13 +275,13 @@ class SSHService:
             self.client.close()
             self.client = None
             raise SSHAuthenticationError(
-                f"Authentication failed for {self.config.connection_string()}"
+                f"Authentication failed for {self.config.connection_string}"
             ) from e
         except Exception as e:
             self.client.close()
             self.client = None
             raise SSHConnectionError(
-                f"Failed to connect to {self.config.connection_string()}: {e}"
+                f"Failed to connect to {self.config.connection_string}: {e}"
             ) from e
 
     def ensure_sudo(self, context: str) -> None:
@@ -293,7 +292,7 @@ class SSHService:
         SSHService to the same connection. Raises SudoPasswordError when
         prompting is impossible or the password is rejected 3 times.
         """
-        key = self.config.connection_string()
+        key = self.config.connection_string
         if self.sudo_password is not None or key in _sudo_passwordless:
             return
         if self.execute("sudo -n true").ok:
@@ -366,6 +365,19 @@ class SSHService:
             return f"LC_MESSAGES=C sudo -S -p '' {rest}", self.sudo_password + "\n"
         return f"LC_MESSAGES=C sudo {rest}", None
 
+    @staticmethod
+    def _prime_stdin(stdin: ChannelStdinFile, data: str | None) -> None:
+        """Write optional data to a command's stdin, then signal EOF.
+
+        Shared by execute() and execute_stream(): both write an optional
+        payload (sudo password, caller-supplied stdin_data) before closing
+        the write side so the remote command sees EOF on stdin.
+        """
+        if data:
+            stdin.write(data)
+            stdin.flush()
+        stdin.channel.shutdown_write()
+
     def check_sudo(self, result: SSHResult, context: str) -> None:
         """Raise SudoPasswordError if a result looks like a sudo auth failure."""
         if (
@@ -386,6 +398,19 @@ class SSHService:
             raise SudoPasswordError(
                 f"{context}: sudo requires a password on this host. {hint}"
             )
+
+    @staticmethod
+    def is_permission_denied(result: SSHResult) -> bool:
+        """Whether a failed result looks like a plain file/command permission error.
+
+        Distinct from check_sudo(), which detects sudo *authentication*
+        failures (missing/rejected password); this catches the more common
+        case of a command failing because the connected user simply lacks
+        permission, unrelated to sudo.
+        """
+        return not result.ok and (
+            "Permission denied" in result.stderr or "not permitted" in result.stderr
+        )
 
     def execute(self, command: str, stdin_data: str | None = None) -> SSHResult:
         """Execute command and return its exit code, stdout, and stderr.
@@ -417,10 +442,7 @@ class SSHService:
         stdin, stdout, stderr = self.client.exec_command(command)
 
         try:
-            if stdin_data is not None:
-                stdin.write(stdin_data)
-                stdin.flush()
-            stdin.channel.shutdown_write()
+            self._prime_stdin(stdin, stdin_data)
 
             out = stdout.read().decode("utf-8", errors="ignore")
             err = stderr.read().decode("utf-8", errors="ignore")
@@ -468,10 +490,7 @@ class SSHService:
 
         _log_stream_start(self.config, command)
         try:
-            if sudo_stdin:
-                chan_stdin.write(sudo_stdin)
-                chan_stdin.flush()
-            chan_stdin.channel.shutdown_write()
+            self._prime_stdin(chan_stdin, sudo_stdin)
             for line in chan_stdout:
                 stripped = line.rstrip()
                 _log_stream_line(stripped)

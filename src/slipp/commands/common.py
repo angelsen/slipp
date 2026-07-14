@@ -15,6 +15,7 @@ from slipp.constants import SecretEncoding
 from slipp.models.deployment import DeploymentHostConfig
 from slipp.models.host import AnsibleHost
 from slipp.models.service import Runtime, Service
+from slipp.output import format_path
 from slipp.scanner.workspaces import detect_workspace_members
 from slipp.services import wg_manage
 from slipp.services.config import (
@@ -24,11 +25,12 @@ from slipp.services.config import (
     is_wg_manage_host,
     load_first_host,
 )
+from slipp.services.deploy import DeployOverrides, DeployResult, run_deploy
 from slipp.services.discovery import filter_services, find_service
 from slipp.services.discovery.pipeline import discover_and_enrich
 from slipp.services.registry import ProjectRegistry
 from slipp.services.vault import generate_jwk, generate_secret
-from slipp.utils.errors import AmbiguousServiceError, WgManageError
+from slipp.utils.errors import AmbiguousServiceError, DeployError, WgManageError
 from slipp.utils.identifiers import parse_service_identifier
 from slipp.utils.matching import get_suggestions
 
@@ -68,6 +70,11 @@ ProjectOption = Annotated[
     typer.Option("--project", "-p", help="Project name"),
 ]
 
+RuntimeOption = Annotated[
+    Runtime | None,
+    typer.Option("--runtime", help="How the app runs: systemd, docker, podman"),
+]
+
 NumBytesOption = Annotated[
     int,
     typer.Option("--bytes", "-b", help="Bytes of entropy (default: 32 = 256-bit)"),
@@ -105,6 +112,22 @@ def validate_num_bytes_encoding(num_bytes: int, encoding: SecretEncoding) -> Non
         )
 
 
+def _validate_jwk_flags(num_bytes: int, encoding: SecretEncoding) -> None:
+    """Reject --bytes/--encoding overrides that --jwk can't honor.
+
+    --jwk generates an RSA keypair, not a random-byte secret -- --bytes and
+    --encoding have no effect on it, so a non-default value would silently
+    produce output the user didn't ask for.
+
+    Raises:
+        typer.BadParameter: If --bytes or --encoding was overridden alongside --jwk
+    """
+    if num_bytes != 32 or encoding != SecretEncoding.hex:
+        raise typer.BadParameter(
+            "--bytes/--encoding have no effect with --jwk (use --bits instead)"
+        )
+
+
 def generate_secret_value(
     num_bytes: int,
     encoding: SecretEncoding,
@@ -114,6 +137,7 @@ def generate_secret_value(
 ) -> str:
     """Validate args and generate a secret or JWK keypair, whichever was asked for."""
     if jwk:
+        _validate_jwk_flags(num_bytes, encoding)
         return generate_jwk(bits)
     validate_num_bytes_encoding(num_bytes, encoding)
     return generate_secret(num_bytes, encoding)
@@ -254,6 +278,55 @@ def sync_wg_manage_after_deploy(project_root: Path, project_name: str) -> None:
         sync_wg_manage_project(project_root, project_name, host, quiet=True)
     except WgManageError as e:
         output.warning(f"wg-manage exposure sync failed after deploy: {e}")
+
+
+def run_deploy_or_exit(
+    project_root: Path,
+    project_name: str,
+    environment: str,
+    tags: str | None,
+    skip_tags: str | None,
+    *,
+    overrides: DeployOverrides,
+    cli_name: str | None = None,
+    requirements: str | None = None,
+    dry_run: bool = False,
+    force_requirements: bool = False,
+    ask_become_pass: bool = False,
+) -> DeployResult:
+    """Run a deploy, exiting with a formatted error on failure.
+
+    Shared by `slipp deploy` and `slipp up`'s final deploy step so both
+    report DeployError and a non-zero playbook exit code identically.
+
+    Raises:
+        typer.Exit: On DeployError or a non-zero playbook exit code
+    """
+    try:
+        result = run_deploy(
+            project_root,
+            project_name,
+            environment,
+            tags,
+            skip_tags,
+            overrides=overrides,
+            cli_name=cli_name,
+            requirements=requirements,
+            dry_run=dry_run,
+            force_requirements=force_requirements,
+            ask_become_pass=ask_become_pass,
+        )
+    except DeployError as e:
+        output.error(str(e))
+        if e.log_dir:
+            output.hint(f"See log: {format_path(e.log_dir, project_root)}")
+        raise typer.Exit(1)
+
+    if result.exit_code != 0:
+        output.hint(f"Review log: {format_path(result.log_dir, project_root)}")
+        raise typer.Exit(result.exit_code)
+
+    return result
 
 
 def resolve_host_or_exit(

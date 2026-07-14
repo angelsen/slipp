@@ -50,11 +50,6 @@ and a hand-edit + redeploy surviving the post-deploy sync.
       installs across all servers (for multi-project, multi-VPS workflows)
 - [ ] Cloudflare provider (DNS-only, official Python SDK): `GET /zones`,
       `POST /zones/{id}/dns_records`, `DELETE /zones/{id}/dns_records/{id}`
-- [ ] `services/image/transfer.py` and `services/run/caddy.py:is_installed`
-      still run sudo over SSH without calling `SSHService.ensure_sudo()` —
-      they pick up a cached password for free if one was already prompted
-      elsewhere in the process, but fail with no prompt on a password host
-      with no prior prompt.
 - [ ] Port `scans/portal` (`~/Projects/work/ultraportalen/scans/`,
       SvelteKit/systemd) to slipp — best remaining porting candidate, VPS
       already uses wg-manage for Caddy, first real consumer of `--proxy

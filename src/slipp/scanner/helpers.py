@@ -5,11 +5,16 @@ helpers.go patterns. All checks are composable and return bool.
 """
 
 import functools
-import json
 import logging
 import re
+from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
+
+import yaml
+
+from slipp.scanner.models import SourceInfo
+from slipp.utils.files import read_json_file
 
 logger = logging.getLogger(__name__)
 
@@ -113,6 +118,45 @@ def detect_python_dep_manager(source_dir: Path) -> PythonDepManager | None:
         return "pip"
 
     return None
+
+
+def configure_by_dependency(
+    source_dir: Path,
+    extract_dependencies: Callable[[Path], list[str]],
+    marker: str | None,
+    *,
+    family: str,
+    port: int,
+    template_url: str,
+) -> SourceInfo | None:
+    """Build a SourceInfo if `marker` is present in extracted dependencies.
+
+    Shared by detectors whose only difference is the dependency extractor,
+    the marker package name, and the family/port/template to emit (Flask,
+    SvelteKit, generic Node). `marker=None` always matches, for detectors
+    without a marker package (e.g. Node's package.json fallback).
+
+    Args:
+        source_dir: Directory to scan.
+        extract_dependencies: Language-specific dependency extractor.
+        marker: Dependency name that must be present, or None to skip the check.
+        family: Framework name to emit (e.g. "Flask").
+        port: Default port to emit.
+        template_url: Dockerfile template URL to emit.
+
+    Returns:
+        SourceInfo if the marker matched (or was None), None otherwise.
+    """
+    dependencies = extract_dependencies(source_dir)
+    if marker is not None and marker not in dependencies:
+        return None
+
+    return SourceInfo(
+        family=family,
+        port=port,
+        template_url=template_url,
+        dependencies=dependencies,
+    )
 
 
 def file_exists(source_dir: Path, *filenames: str) -> bool:
@@ -256,6 +300,52 @@ def parse_setup_cfg_dependencies(source_dir: Path) -> list[str]:
     return dependencies
 
 
+def parse_environment_yml_dependencies(source_dir: Path) -> list[str]:
+    """Parse dependencies from a conda environment.yml.
+
+    Extracts conda package specs from the top-level `dependencies` list,
+    plus any pip-installed packages nested under a `pip:` sub-list.
+
+    Args:
+        source_dir: Directory containing environment.yml
+
+    Returns:
+        List of normalized package names (lowercase, no version specifiers)
+        Empty list if environment.yml doesn't exist or can't be parsed
+
+    Example:
+        >>> deps = parse_environment_yml_dependencies(Path("/path/to/conda-app"))
+        >>> "flask" in deps
+        True
+    """
+    env_file = source_dir / "environment.yml"
+    if not env_file.exists():
+        return []
+
+    try:
+        data = yaml.safe_load(env_file.read_text())
+    except (yaml.YAMLError, OSError, UnicodeDecodeError):
+        logger.debug("Failed to parse %s", env_file, exc_info=True)
+        return []
+
+    if not isinstance(data, dict):
+        return []
+
+    dependencies = []
+    for dep in data.get("dependencies") or []:
+        if isinstance(dep, str):
+            package = parse_dependency(dep)
+            if package and package not in ("python", "pip"):
+                dependencies.append(package)
+        elif isinstance(dep, dict):
+            for pip_dep in dep.get("pip") or []:
+                package = parse_dependency(pip_dep)
+                if package:
+                    dependencies.append(package)
+
+    return dependencies
+
+
 def extract_python_dependencies(source_dir: Path) -> list[str]:
     """Extract all Python dependencies from multiple formats (centralized).
 
@@ -264,6 +354,7 @@ def extract_python_dependencies(source_dir: Path) -> list[str]:
     2. requirements.txt
     3. Pipfile ([packages] table)
     4. setup.cfg ([options] install_requires)
+    5. environment.yml (conda)
 
     setup.py is intentionally not parsed: its dependency list is defined by
     executing arbitrary Python (the `install_requires=` kwarg to `setup()`),
@@ -305,6 +396,7 @@ def extract_python_dependencies(source_dir: Path) -> list[str]:
 
     dependencies.update(parse_pipfile_dependencies(source_dir))
     dependencies.update(parse_setup_cfg_dependencies(source_dir))
+    dependencies.update(parse_environment_yml_dependencies(source_dir))
 
     return sorted(dependencies)
 
@@ -332,18 +424,11 @@ def extract_nodejs_dependencies(source_dir: Path) -> list[str]:
         >>> "vite" in deps
         True
     """
-    package_json = source_dir / "package.json"
-    if not package_json.exists():
+    config_data = read_json_file(source_dir / "package.json")
+    if config_data is None:
         return []
 
-    try:
-        with open(package_json) as f:
-            config_data = json.load(f)
-
-        dependencies = set()
-        dependencies.update(config_data.get("dependencies", {}).keys())
-        dependencies.update(config_data.get("devDependencies", {}).keys())
-        return sorted(dependencies)
-
-    except (json.JSONDecodeError, IOError):
-        return []
+    dependencies = set()
+    dependencies.update(config_data.get("dependencies", {}).keys())
+    dependencies.update(config_data.get("devDependencies", {}).keys())
+    return sorted(dependencies)

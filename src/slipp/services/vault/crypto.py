@@ -5,9 +5,10 @@ Encrypt/decrypt operations, vault file IO, and vault-format introspection
 """
 
 import re
-from contextlib import contextmanager
+from collections.abc import Iterator
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
-from typing import Iterator
+from typing import Any
 
 import yaml
 
@@ -122,6 +123,15 @@ def encrypt_secrets(
         }
 
 
+def _require_mapping(data: object, path: Path) -> dict[str, Any]:
+    """Raise VaultDecryptError unless a loaded YAML document is a mapping."""
+    if not isinstance(data, dict):
+        raise VaultDecryptError(
+            f"Expected YAML mapping in {path}, got {type(data).__name__}"
+        )
+    return data
+
+
 def list_keys(vault_path: Path) -> list[str]:
     """List variable names from an inline vault file.
 
@@ -145,12 +155,8 @@ def list_keys(vault_path: Path) -> list[str]:
 
     if data is None:
         return []
-    if not isinstance(data, dict):
-        raise VaultDecryptError(
-            f"Expected YAML mapping in {vault_path}, got {type(data).__name__}"
-        )
 
-    return list(data.keys())
+    return list(_require_mapping(data, vault_path).keys())
 
 
 def write_missing_secrets(vault_path: Path, secrets: dict[str, str]) -> list[str]:
@@ -225,37 +231,47 @@ def extract_vault_refs(yaml_content: str) -> set[str]:
     return set(matches)
 
 
-def _decrypt_inline_value(encrypted_value: str, password_file: Path) -> str:
-    """Decrypt a single inline vault value.
+def _decrypt_inline_values(
+    encrypted_values: dict[str, str], password_file: Path
+) -> dict[str, str]:
+    """Decrypt multiple inline vault values in a single ansible-vault call.
+
+    `ansible-vault decrypt --output -` only accepts one input file, so
+    batching means decrypting each value's temp file in place (no
+    --output) in one subprocess invocation, then reading the results back.
 
     Args:
-        encrypted_value: The encrypted string (starting with $ANSIBLE_VAULT)
+        encrypted_values: Mapping of key -> encrypted string (starting with
+            $ANSIBLE_VAULT)
         password_file: Path to vault password file
 
     Returns:
-        Decrypted string value
+        Dict of key -> decrypted string value
 
     Raises:
         VaultDecryptError: If decryption fails
     """
-    with temp_secret_file(
-        encrypted_value, prefix="vault_val_", suffix=".yml"
-    ) as temp_path:
-        result = run_checked(
+    with ExitStack() as stack:
+        temp_paths = {
+            key: stack.enter_context(
+                temp_secret_file(value, prefix="vault_val_", suffix=".yml")
+            )
+            for key, value in encrypted_values.items()
+        }
+
+        run_checked(
             [
                 "ansible-vault",
                 "decrypt",
-                str(temp_path),
+                *(str(p) for p in temp_paths.values()),
                 "--vault-password-file",
                 str(password_file),
-                "--output",
-                "-",
             ],
             VaultDecryptError,
-            context="Failed to decrypt value",
+            context="Failed to decrypt vault values",
         )
 
-        return result.stdout.strip()
+        return {key: path.read_text().strip() for key, path in temp_paths.items()}
 
 
 def decrypt_vault(vault_path: Path, password_file: Path) -> dict[str, str]:
@@ -300,12 +316,7 @@ def decrypt_vault(vault_path: Path, password_file: Path) -> dict[str, str]:
             secrets = yaml.safe_load(result.stdout)
             if secrets is None:
                 return {}
-            if not isinstance(secrets, dict):
-                raise VaultDecryptError(
-                    f"Expected YAML mapping in {vault_path}, "
-                    f"got {type(secrets).__name__}"
-                )
-            return {k: str(v) for k, v in secrets.items()}
+            return {k: str(v) for k, v in _require_mapping(secrets, vault_path).items()}
         except yaml.YAMLError as e:
             raise VaultDecryptError(f"Invalid YAML in vault: {e}") from e
 
@@ -314,17 +325,18 @@ def decrypt_vault(vault_path: Path, password_file: Path) -> dict[str, str]:
             data = yaml.load(content, Loader=_VaultLoader)
             if data is None:
                 return {}
-            if not isinstance(data, dict):
-                raise VaultDecryptError(
-                    f"Expected YAML mapping in {vault_path}, got {type(data).__name__}"
-                )
+            data = _require_mapping(data, vault_path)
 
-            secrets: dict[str, str] = {}
-            for key, value in data.items():
-                if isinstance(value, str) and "$ANSIBLE_VAULT" in value:
-                    secrets[key] = _decrypt_inline_value(value, password_file)
-                else:
-                    secrets[key] = str(value)
+            encrypted = {
+                key: value
+                for key, value in data.items()
+                if isinstance(value, str) and "$ANSIBLE_VAULT" in value
+            }
+            secrets: dict[str, str] = {
+                key: str(value) for key, value in data.items() if key not in encrypted
+            }
+            if encrypted:
+                secrets.update(_decrypt_inline_values(encrypted, password_file))
 
             return secrets
         except yaml.YAMLError as e:

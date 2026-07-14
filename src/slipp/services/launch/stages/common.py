@@ -31,7 +31,7 @@ def resolve_runtime(context: ScanContext) -> Runtime | None:
     if context.inventory_config is not None:
         return context.inventory_config.first_host.runtime
     if isinstance(context, DockerfileContext):
-        return Runtime(context.container_runtime)
+        return context.container_runtime
     return None
 
 
@@ -196,10 +196,6 @@ def write_generated_file(
     """
     display_path = relative_or_absolute(path, context.output_dir)
 
-    if context.dry_run:
-        output.hint(f"  Would create: {display_path}")
-        return
-
     if never_overwrite and path.exists():
         output.info(f"Already exists, not overwriting: {display_path}")
         return
@@ -207,6 +203,10 @@ def write_generated_file(
     if respect_customized and is_customized(path):
         output.warning(f"  {path} has been customized (skipping)")
         output.hint("     To regenerate: restore slipp marker or delete file")
+        return
+
+    if context.dry_run:
+        output.hint(f"  Would create: {display_path}")
         return
 
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -237,6 +237,14 @@ class FileGenerationStage(Generic[CtxT]):
         """
         raise NotImplementedError("Subclasses must implement generate_content()")
 
+    def should_skip(self, context: CtxT) -> str | None:
+        """Return an info message and skip generation, or None to proceed.
+
+        Override to make a stage a no-op under some condition (wrong
+        runtime, wrong proxy, ...) instead of generating files.
+        """
+        return None
+
     def execute(self, context: CtxT) -> None:
         """Execute file generation stage.
 
@@ -246,6 +254,11 @@ class FileGenerationStage(Generic[CtxT]):
         Args:
             context: Stage execution context with output_dir, dry_run flags.
         """
+        skip_message = self.should_skip(context)
+        if skip_message is not None:
+            output.info(skip_message)
+            return
+
         output.info(f"{self.description}...")
 
         try:
@@ -259,8 +272,10 @@ class FileGenerationStage(Generic[CtxT]):
                     respect_customized=True,
                 )
 
+        except LaunchError:
+            raise
         except Exception as e:
-            raise LaunchError(f"Failed to {self.description.lower()}: {e}") from e
+            raise LaunchError(f"{self.description} failed: {e}") from e
 
 
 class ValidationStage:

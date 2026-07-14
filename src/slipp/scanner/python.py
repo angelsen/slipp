@@ -11,6 +11,7 @@ from pathlib import Path
 from slipp.scanner.helpers import (
     DEFAULT_PYTHON_PORT,
     PYTHON_DOCKER_TEMPLATE,
+    configure_by_dependency,
     detect_python_dep_manager,
     extract_python_dependencies,
     file_exists,
@@ -50,10 +51,11 @@ def configure_python(source_dir: Path) -> SourceInfo | None:
     if not is_python_project:
         return None
 
-    dependencies = extract_python_dependencies(source_dir)
-    return SourceInfo(
+    return configure_by_dependency(
+        source_dir,
+        extract_python_dependencies,
+        None,
         family="Python",
         port=DEFAULT_PYTHON_PORT,
         template_url=PYTHON_DOCKER_TEMPLATE,
-        dependencies=dependencies,
     )

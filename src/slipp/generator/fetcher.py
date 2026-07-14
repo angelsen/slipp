@@ -31,7 +31,6 @@ class TemplateFetcher:
     def __init__(self):
         """Initialize fetcher, sharing the ~/.cache/slipp/cache.json store."""
         self.cache = Cache()
-        self.client = httpx.Client(timeout=30.0)
 
     def fetch_template(self, template_path: str) -> TemplateFile:
         """Fetch single template file from GitHub.
@@ -60,7 +59,8 @@ class TemplateFetcher:
         url = f"{self.BASE_URL}/{template_path}"
 
         try:
-            response = self.client.get(url)
+            with httpx.Client(timeout=30.0) as client:
+                response = client.get(url)
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
@@ -96,7 +96,7 @@ class TemplateFetcher:
 
         try:
             return TemplateFile(**data)
-        except ValueError:
+        except (ValueError, TypeError):
             # Cache corrupted, ignore
             return None
 

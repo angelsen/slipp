@@ -15,7 +15,12 @@ from slipp.services.secrets.nor_auth import (
     find_available_port,
 )
 from slipp.services.vault import encrypt_secrets, write_missing_secrets
-from slipp.utils.errors import ProjectNotFoundError, PullTimeoutError, VaultError
+from slipp.utils.errors import (
+    ProjectNotFoundError,
+    PullError,
+    PullTimeoutError,
+    VaultError,
+)
 
 
 async def pull_secrets(
@@ -38,6 +43,7 @@ async def pull_secrets(
 
     Raises:
         PullTimeoutError: If approval not received within timeout.
+        PullError: If approval was received but no resources were selected.
     """
     session = PullSession(
         session_secret=stdlib_secrets.token_urlsafe(32),
@@ -50,17 +56,28 @@ async def pull_secrets(
     output.info("Opening browser for approval...")
     output.hint(f"Select and approve the export in {source.name}")
 
-    async with CallbackServer(session.port, session.session_secret) as server:
+    server = CallbackServer(session.port, session.session_secret)
+    try:
+        await server.start()
+    except OSError as e:
+        raise PullError(f"Failed to start callback server on port {session.port}: {e}") from e
+
+    try:
         with output.spinner("Waiting for approval"):
             with contextlib.redirect_stdout(io.StringIO()):
                 webbrowser.open(auth_url)
-            raw_credentials = await server.wait_for_credentials(timeout)
+            try:
+                raw_credentials = await server.wait_for_credentials(timeout)
+            except TimeoutError:
+                raise PullTimeoutError("Timed out waiting for credentials")
 
         if not raw_credentials:
-            raise PullTimeoutError("Timed out waiting for credentials")
+            raise PullError("No resources were selected for export")
 
         variables = source.parse_credentials(raw_credentials)
         return _store_in_vault(variables, target)
+    finally:
+        await server.stop()
 
 
 def _store_in_vault(

@@ -9,18 +9,17 @@ from slipp import output
 from slipp.commands.common import (
     AskBecomePassOption,
     DryRunOption,
+    RuntimeOption,
+    run_deploy_or_exit,
     sync_wg_manage_after_deploy,
 )
 from slipp.constants import DEFAULT_ENV
-from slipp.models.service import Runtime
-from slipp.output import format_path
 from slipp.services.config import LocalConfigService, resolve_project_name
 from slipp.services.deploy import (
+    DeployOverrides,
     ensure_local_config,
     resolve_environment_and_tags,
-    run_deploy,
 )
-from slipp.utils.errors import DeployError
 
 
 def deploy_command(
@@ -62,8 +61,9 @@ def deploy_command(
         ),
     ] = None,
     roles: Annotated[
-        list[str], typer.Option("--roles", help="Role search directories (repeatable)")
-    ] = [],
+        list[str] | None,
+        typer.Option("--roles", help="Role search directories (repeatable)"),
+    ] = None,
     galaxy_path_flag: Annotated[
         str | None,
         typer.Option(
@@ -86,13 +86,11 @@ def deploy_command(
         str | None,
         typer.Option("--skip-tags", help="Ansible tags to skip (comma-separated)"),
     ] = None,
-    runtime: Annotated[
-        Runtime | None,
-        typer.Option("--runtime", help="How the app runs: systemd, docker, podman"),
-    ] = None,
+    runtime: RuntimeOption = None,
     ask_become_pass: AskBecomePassOption = False,
 ) -> None:
     """Execute ansible-playbook to deploy services and manage infrastructure."""
+    roles = roles or []
     if name and inventory:
         # Bound to cwd, never a walked root: creates/updates *this* directory's
         # config. The resolve_root() below then finds the file just created
@@ -114,34 +112,26 @@ def deploy_command(
         target, preset, tags, skip_tags
     )
 
-    try:
-        result = run_deploy(
-            project_root,
-            project_name,
-            environment,
-            resolved_tags,
-            resolved_skip_tags,
-            cli_name=name,
-            cli_inventory=inventory,
-            cli_playbook=playbook,
-            cli_roles=roles if roles else None,
-            cli_vault=vault,
-            cli_galaxy_path=galaxy_path_flag,
-            requirements=requirements,
+    result = run_deploy_or_exit(
+        project_root,
+        project_name,
+        environment,
+        resolved_tags,
+        resolved_skip_tags,
+        overrides=DeployOverrides(
+            inventory=inventory,
+            playbook=playbook,
+            roles=roles if roles else None,
+            vault=vault,
+            galaxy_path=galaxy_path_flag,
             runtime=runtime,
-            dry_run=dry_run,
-            force_requirements=force_requirements,
-            ask_become_pass=ask_become_pass,
-        )
-    except DeployError as e:
-        output.error(str(e))
-        if e.log_dir:
-            output.hint(f"See log: {format_path(e.log_dir, project_root)}")
-        raise typer.Exit(1)
-
-    if result.exit_code != 0:
-        output.hint(f"Review log: {format_path(result.log_dir, project_root)}")
-        raise typer.Exit(result.exit_code)
+        ),
+        cli_name=name,
+        requirements=requirements,
+        dry_run=dry_run,
+        force_requirements=force_requirements,
+        ask_become_pass=ask_become_pass,
+    )
 
     output.success_animation("Deploy completed")
 

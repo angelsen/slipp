@@ -22,6 +22,7 @@ from slipp.services.config import (
 )
 from slipp.services.config.detection import has_caddy_role
 from slipp.services.deploy.config import (
+    DeployOverrides,
     ensure_project_registered,
     persist_config_updates,
 )
@@ -223,14 +224,9 @@ def run_deploy(
     tags: str | None,
     skip_tags: str | None,
     *,
+    overrides: DeployOverrides,
     cli_name: str | None = None,
-    cli_inventory: str | None = None,
-    cli_playbook: str | None = None,
-    cli_roles: list[str] | None = None,
-    cli_vault: str | None = None,
-    cli_galaxy_path: str | None = None,
     requirements: str | None = None,
-    runtime: str | None = None,
     dry_run: bool = False,
     force_requirements: bool = False,
     ask_become_pass: bool = False,
@@ -240,9 +236,10 @@ def run_deploy(
     Shared orchestrator for `slipp deploy` and `slipp up`'s final deploy
     step, so the two commands can't drift on what a deploy actually does.
 
-    On success (including a dry run), persists CLI flag overrides into
+    On success (excluding a dry run), persists CLI flag overrides into
     slipp.yaml (unless --name already handled config creation), registers
-    the project in the global registry, and ensures logs are gitignored.
+    the project in the global registry, and ensures logs are gitignored. A
+    dry run never persists these side effects.
     wg-manage exposure sync is intentionally NOT done here -- it depends on
     command-layer helpers (resolve_project_dirs/resolve_declared_dirs) that
     services must not import; callers should run it themselves after a
@@ -256,13 +253,9 @@ def run_deploy(
         skip_tags: Ansible tags to skip.
         cli_name: Raw --name flag, if given (suppresses config persistence,
             since --name already created/updated slipp.yaml separately).
-        cli_inventory: --inventory override.
-        cli_playbook: --playbook override.
-        cli_roles: --roles override.
-        cli_vault: --vault override.
-        cli_galaxy_path: --galaxy-path override.
+        overrides: CLI flag overrides (inventory/playbook/roles/vault/
+            galaxy_path/runtime).
         requirements: --requirements override.
-        runtime: --runtime override.
         dry_run: Run ansible-playbook in --check mode.
         force_requirements: Force reinstall galaxy roles/collections.
         ask_become_pass: Prompt for the sudo/become password.
@@ -278,11 +271,11 @@ def run_deploy(
     """
     resolver = ConfigResolver(project_root)
     config = resolver.resolve(
-        cli_inventory=cli_inventory,
-        cli_playbook=cli_playbook,
-        cli_roles=cli_roles,
-        cli_vault=cli_vault,
-        cli_galaxy_path=cli_galaxy_path,
+        cli_inventory=overrides.inventory,
+        cli_playbook=overrides.playbook,
+        cli_roles=overrides.roles,
+        cli_vault=overrides.vault,
+        cli_galaxy_path=overrides.galaxy_path,
         environment=environment,
     )
 
@@ -295,7 +288,7 @@ def run_deploy(
         roles_paths.append(galaxy_path)
 
     needs_vault_password, vault_file = validate_deploy_files(
-        config, resolver, cli_inventory, cli_playbook
+        config, resolver, overrides.inventory, overrides.playbook
     )
 
     log_dir = get_log_dir(project_root)
@@ -337,29 +330,8 @@ def run_deploy(
             port=host.app_port,
         )
 
-    if (
-        any(
-            [
-                cli_inventory,
-                cli_playbook,
-                cli_roles,
-                cli_galaxy_path,
-                cli_vault,
-                runtime,
-            ]
-        )
-        and not dry_run
-        and not cli_name
-    ):
-        persist_config_updates(
-            cli_inventory,
-            cli_playbook,
-            cli_roles,
-            cli_galaxy_path,
-            cli_vault,
-            project_root,
-            runtime,
-        )
+    if overrides.any_set() and not dry_run and not cli_name:
+        persist_config_updates(overrides, project_root)
 
     if not dry_run:
         ensure_project_registered(project_name, project_root)

@@ -3,6 +3,7 @@
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from slipp.constants import ProxyType
 from slipp.models.deployment import DetectedService, InventoryConfig
 from slipp.services.launch.context.base import BaseContext
 
@@ -24,11 +25,9 @@ class ScanContext(BaseContext):
         inventory_config: Optional Ansible inventory configuration. When set,
             its first host's runtime takes precedence over a subclass's own
             runtime field (e.g. DockerfileContext.container_runtime).
-        skip_caddy: If True, exclude Caddy proxy setup.
     """
 
     project_dirs: list[Path] = field(default_factory=list)
-    proxy: str = "auto"
+    proxy: ProxyType = ProxyType.auto
     services: list[DetectedService] = field(default_factory=list)
     inventory_config: InventoryConfig | None = None
-    skip_caddy: bool = False

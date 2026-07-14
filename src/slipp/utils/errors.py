@@ -79,12 +79,6 @@ class PasswordMismatchError(VaultError):
     pass
 
 
-class DuplicateEnvVarError(VaultError):
-    """Duplicate environment variable found across vaults."""
-
-    pass
-
-
 class HostNotFoundError(SlippError):
     """Requested host not found."""
 
@@ -269,12 +263,6 @@ class ImageTransferError(SlippError):
 
 class ProviderError(SlippError):
     """Provider operation failed."""
-
-    pass
-
-
-class ProviderNotConfiguredError(ProviderError):
-    """No provider configured for this operation."""
 
     pass
 

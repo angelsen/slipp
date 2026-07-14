@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from slipp.generator.env import render_template
-from slipp.models.deployment import CaddyConfig
+from slipp.models.caddy import CaddyConfig
 
 
 def generate_caddy_role(

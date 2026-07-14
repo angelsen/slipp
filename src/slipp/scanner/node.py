@@ -11,6 +11,7 @@ from pathlib import Path
 from slipp.scanner.helpers import (
     DEFAULT_NODE_PORT,
     NODE_DOCKER_TEMPLATE,
+    configure_by_dependency,
     extract_nodejs_dependencies,
     file_exists,
 )
@@ -39,11 +40,11 @@ def configure_node(source_dir: Path) -> SourceInfo | None:
     if not file_exists(source_dir, "package.json"):
         return None
 
-    dependencies = extract_nodejs_dependencies(source_dir)
-
-    return SourceInfo(
+    return configure_by_dependency(
+        source_dir,
+        extract_nodejs_dependencies,
+        None,
         family="Node",
         port=DEFAULT_NODE_PORT,
         template_url=NODE_DOCKER_TEMPLATE,
-        dependencies=dependencies,
     )

@@ -10,7 +10,7 @@ from slipp.services.ssh.command import (
     build_ssh_command,
     build_vps_command,
 )
-from slipp.services.ssh.session import container_shell, ssh_as_user, ssh_session
+from slipp.services.ssh.session import container_shell, ssh_as_user
 from slipp.services.ssh.tunnel import (
     TunnelManager,
     parse_container_tunnel_in,
@@ -28,7 +28,6 @@ __all__ = [
     "parse_tunnel_out",
     "container_shell",
     "ssh_as_user",
-    "ssh_session",
     "build_container_command",
     "build_logs_command",
     "build_ssh_command",

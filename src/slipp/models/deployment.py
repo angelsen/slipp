@@ -1,18 +1,19 @@
-"""Data models for deployment operations.
+"""Deployment topology models: detected services, hosts, and inventory.
 
-This module defines the core data structures used throughout the launch and deploy
-commands, including service detection, deployment configuration, and results.
+Caddy-specific config lives in models/caddy.py, compose template context in
+models/compose.py -- both import DetectedService/ProvisionConfig from here.
 
 All models use Pydantic v2 for validation and serialization.
 """
 
-from pathlib import Path
-
 from pydantic import BaseModel, Field, field_validator
 
+from slipp.constants import ProxyType
+from slipp.models.caddy import CaddyConfig
 from slipp.models.host import AnsibleHost
 from slipp.models.service import LenientRuntime, Runtime
 from slipp.models.types import PathStr
+from slipp.utils.errors import HostNotFoundError
 from slipp.utils.identifiers import validate_config_name
 
 
@@ -79,7 +80,7 @@ class DeploymentHostConfig(AnsibleHost):
     app_port: int | None = Field(
         default=None, description="Primary service port (--proxy none deploys)"
     )
-    proxy_owner: str | None = Field(
+    proxy_owner: ProxyType | None = Field(
         default=None, description="Resolved --proxy auto owner: caddy or wg-manage"
     )
 
@@ -118,10 +119,19 @@ class InventoryConfig(BaseModel):
             InventoryConfig instance
         """
         hosts_data = data.get("all", {}).get("hosts", {})
-        hosts = {
-            name: DeploymentHostConfig(inventory_hostname=name, **config)
-            for name, config in hosts_data.items()
-        }
+        hosts = {}
+        for name, config in hosts_data.items():
+            # ansible_ssh_user is Ansible's own pre-2.0 alias for
+            # ansible_user, still valid in hand-written inventories --
+            # DeploymentHostConfig has no such field, so leaving it in
+            # **config would be silently dropped by Pydantic and
+            # ansible_user would default to root. from_ansible_inventory_json()
+            # (below) already normalizes this; mirror it here for consistency.
+            config = dict(config)
+            ssh_user = config.pop("ansible_ssh_user", None)
+            if ssh_user is not None:
+                config.setdefault("ansible_user", ssh_user)
+            hosts[name] = DeploymentHostConfig(inventory_hostname=name, **config)
         return cls(hosts=hosts)
 
     @classmethod
@@ -195,7 +205,13 @@ class InventoryConfig(BaseModel):
         """
         return {
             "all": {
-                "hosts": {name: host.model_dump() for name, host in self.hosts.items()}
+                "hosts": {
+                    # mode="json" so enum fields (e.g. runtime) dump as plain
+                    # strings -- yaml.dump() has no representer for enum
+                    # instances and would emit an unsafe !!python/object tag.
+                    name: host.model_dump(mode="json")
+                    for name, host in self.hosts.items()
+                }
             }
         }
 
@@ -204,44 +220,14 @@ class InventoryConfig(BaseModel):
         """The first configured host, for single-host launch stages.
 
         Raises:
-            StopIteration: If hosts is empty (launch stages only call this
-                after InventoryValidationStage has confirmed hosts exist).
+            HostNotFoundError: If hosts is empty (launch stages only call
+                this after InventoryValidationStage has confirmed hosts
+                exist).
         """
-        return next(iter(self.hosts.values()))
-
-
-class CaddySite(BaseModel):
-    """Caddy site configuration for a service.
-
-    Represents a single reverse proxy configuration.
-
-    Attributes:
-        domain: Domain or subdomain
-        upstream_port: Backend port
-        path_prefix: Path routing (default: /)
-    """
-
-    domain: str = Field(description="Domain or subdomain")
-    upstream_port: int = Field(description="Backend port")
-    path_prefix: str = Field(default="/", description="Path routing")
-
-
-class CaddyConfig(BaseModel):
-    """Caddy role configuration.
-
-    Configuration for Caddy reverse proxy setup.
-
-    Attributes:
-        sites: List of site configurations
-        auto_https: Enable automatic HTTPS (default: True)
-        sites_dir: Site configs directory (default: /etc/caddy/sites)
-    """
-
-    sites: list[CaddySite] = Field(default_factory=list)
-    auto_https: bool = Field(default=True, description="Enable automatic HTTPS")
-    sites_dir: str = Field(
-        default="/etc/caddy/sites", description="Site configs directory"
-    )
+        try:
+            return next(iter(self.hosts.values()))
+        except StopIteration:
+            raise HostNotFoundError("No hosts configured in inventory") from None
 
 
 class ProvisionConfig(BaseModel):
@@ -265,7 +251,7 @@ class ProvisionConfig(BaseModel):
     project_root: PathStr = Field(description="Absolute path to project")
     caddy_config: CaddyConfig = Field(description="Caddy configuration")
     skip_caddy: bool = Field(default=False, description="Skip Caddy role generation")
-    proxy: str = Field(default="caddy", description="Reverse proxy mode")
+    proxy: ProxyType = Field(default=ProxyType.caddy, description="Reverse proxy mode")
 
     def to_dict(self) -> dict:
         """Convert to dict for template rendering.
@@ -287,39 +273,4 @@ class ProvisionConfig(BaseModel):
             "proxy": self.proxy,
             "app_domain": first_host.app_domain or "",
             "runtime": first_host.runtime,
-        }
-
-
-class ComposeConfig(BaseModel):
-    """Context for docker-compose.yml template rendering.
-
-    Attributes:
-        services: Detected services
-        project_name: Project name
-        project_root: Project root directory for path relativization
-    """
-
-    services: list[DetectedService] = Field(description="Detected services")
-    project_name: str = Field(description="Project name")
-    project_root: PathStr = Field(description="Project root directory")
-
-    def to_dict(self) -> dict:
-        """Convert to dict for Jinja2 template context."""
-        root = Path(self.project_root)
-        services = []
-        for s in self.services:
-            data = s.model_dump()
-            try:
-                rel = Path(data["path"]).relative_to(root)
-                data["build_context"] = "." if str(rel) == "." else f"./{rel}"
-            except ValueError:
-                # Service outside project_root (e.g. --dir pointed elsewhere)
-                # -- fall back to an absolute context path.
-                data["build_context"] = data["path"]
-            services.append(data)
-
-        return {
-            "services": services,
-            "project_name": self.project_name,
-            "project_root": str(self.project_root),
         }

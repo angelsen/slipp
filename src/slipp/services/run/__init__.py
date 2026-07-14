@@ -4,7 +4,7 @@ This package provides services for executing run profiles with tunnels, vault, a
 """
 
 from slipp.services.run.caddy import CaddyProxy
-from slipp.services.run.executor import execute_profile
+from slipp.services.run.executor import execute_profile, resolve_tunnel_host
 from slipp.services.run.profiles import (
     RunProfileService,
     build_profile,
@@ -17,4 +17,5 @@ __all__ = [
     "build_profile",
     "execute_profile",
     "merge_runtime_options",
+    "resolve_tunnel_host",
 ]

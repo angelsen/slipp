@@ -4,9 +4,10 @@ stdout = data (pipeable), stderr = diagnostics (progress, hints, errors).
 All commands MUST use these primitives.
 """
 
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Callable, Generator, TypeVar
+from typing import Any, TypeVar
 
 from rich import box
 from rich.console import Console

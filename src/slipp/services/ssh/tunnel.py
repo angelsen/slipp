@@ -26,6 +26,20 @@ from slipp.utils.errors import (
 CONTAINER_TUNNEL_PATTERN = re.compile(r"^(docker|podman)://([^:]+):(\d+):(\d+)@(.+)$")
 
 
+def _split_spec(spec: str) -> tuple[str, str, str]:
+    """Split '<a>:<b>@<host>' into (a, b, host).
+
+    Raises:
+        ValueError: If the spec doesn't match the shape (left for callers to
+            wrap into a format-specific TunnelError).
+    """
+    a, rest = spec.split(":", 1)
+    b, host = rest.rsplit("@", 1)
+    if not host:
+        raise ValueError("empty host")
+    return a, b, host
+
+
 def parse_tunnel_out(spec: str) -> tuple[int, str, str]:
     """Parse tunnel-out spec: 'local_port:domain@host'.
 
@@ -39,10 +53,7 @@ def parse_tunnel_out(spec: str) -> tuple[int, str, str]:
         TunnelError: If spec is invalid
     """
     try:
-        port_part, rest = spec.split(":", 1)
-        domain, host = rest.rsplit("@", 1)
-        if not host:
-            raise ValueError("empty host")
+        port_part, domain, host = _split_spec(spec)
         return int(port_part), domain, host
     except ValueError as e:
         raise TunnelError(
@@ -64,10 +75,7 @@ def parse_tunnel_in(spec: str) -> tuple[str, int, str]:
         TunnelError: If spec is invalid
     """
     try:
-        service, rest = spec.split(":", 1)
-        port_str, host = rest.rsplit("@", 1)
-        if not host:
-            raise ValueError("empty host")
+        service, port_str, host = _split_spec(spec)
         return service, int(port_str), host
     except ValueError as e:
         raise TunnelError(
@@ -93,7 +101,7 @@ def parse_container_tunnel_in(spec: str) -> tuple[str, str, int, int, str] | Non
     return runtime, container, int(remote_port), int(local_port), host_spec
 
 
-def is_port_in_use(port: int) -> bool:
+def _is_port_in_use(port: int) -> bool:
     """Check if a local port is in use.
 
     Args:
@@ -104,6 +112,15 @@ def is_port_in_use(port: int) -> bool:
     """
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         return s.connect_ex(("localhost", port)) == 0
+
+
+def _check_port_free(port: int) -> None:
+    """Raise TunnelError if a local port is already in use."""
+    if _is_port_in_use(port):
+        raise TunnelError(
+            f"Local port {port} already in use\n"
+            f"Hint: Stop the local service or use a different port"
+        )
 
 
 def _spawn_ssh_tunnel(
@@ -206,11 +223,7 @@ class TunnelManager:
         Raises:
             TunnelError: If tunnel fails to start or local port in use
         """
-        if is_port_in_use(remote_port):
-            raise TunnelError(
-                f"Local port {remote_port} already in use\n"
-                f"Hint: Stop the local service or use a different port"
-            )
+        _check_port_free(remote_port)
 
         proc = _spawn_ssh_tunnel(
             ["-L", f"{remote_port}:{service}:{remote_port}"],
@@ -241,11 +254,7 @@ class TunnelManager:
         Raises:
             TunnelError: If tunnel fails to start or container not found
         """
-        if is_port_in_use(local_port):
-            raise TunnelError(
-                f"Local port {local_port} already in use\n"
-                f"Hint: Stop the local service or use a different port"
-            )
+        _check_port_free(local_port)
 
         # Resolve container IP via SSH, escalating to root for docker/podman
         # socket access. Add space separator to handle containers on
@@ -260,9 +269,12 @@ class TunnelManager:
 
         try:
             with SSHService(host) as ssh:
+                if inspect_cmd.startswith("sudo "):
+                    ssh.ensure_sudo(f"Inspecting container '{container}'")
+                inspect_result = ssh.execute(inspect_cmd)
+                ssh.check_sudo(inspect_result, f"Inspecting container '{container}'")
                 result = (
-                    ssh.execute(inspect_cmd)
-                    .check(f"Failed to inspect container '{container}'")
+                    inspect_result.check(f"Failed to inspect container '{container}'")
                     .stdout.strip()
                     .strip('"')
                 )

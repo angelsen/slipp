@@ -5,6 +5,8 @@ from difflib import SequenceMatcher
 
 def _score(query_clean: str, candidate_clean: str) -> float:
     """Similarity score: length-weighted for substring containment, else SequenceMatcher ratio."""
+    if not query_clean or not candidate_clean:
+        return 0.0
     if query_clean in candidate_clean or candidate_clean in query_clean:
         return min(1.0, 0.9 + (len(query_clean) / len(candidate_clean)) * 0.1)
     return SequenceMatcher(None, query_clean, candidate_clean).ratio()

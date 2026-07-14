@@ -10,14 +10,10 @@ import typer
 
 from slipp import output
 from slipp.commands.common import AskBecomePassOption
-from slipp.models.host import AnsibleHost
-from slipp.services.config import HostResolver
-from slipp.services.run import CaddyProxy
+from slipp.services.run import CaddyProxy, resolve_tunnel_host
 from slipp.services.ssh import hint_ssh_log
 from slipp.utils.errors import (
     CaddyProxyError,
-    ConfigError,
-    HostNotFoundError,
     SSHAuthenticationError,
     SSHConnectionError,
 )
@@ -39,15 +35,7 @@ def proxy_command(
     ask_become_pass: AskBecomePassOption = False,
 ) -> None:
     """Setup dev proxy infrastructure for slipp run --tunnel-out."""
-    try:
-        resolver = HostResolver()
-        ansible_host = resolver.by_project(host)
-    except (ConfigError, HostNotFoundError):
-        ansible_host = AnsibleHost(
-            inventory_hostname=host,
-            ansible_host=host,
-            ansible_user="slipp",
-        )
+    ansible_host = resolve_tunnel_host(host)
 
     output.blank()
     output.info(f"Setting up dev proxy on {ansible_host.ansible_host}...")
@@ -64,6 +52,7 @@ def proxy_command(
             port_free = proxy.is_port_443_free()
         except (SSHConnectionError, SSHAuthenticationError) as e:
             output.error(f"Could not reach {ansible_host.ansible_host}: {e}")
+            hint_ssh_log()
             raise typer.Exit(1)
         if not port_free:
             output.error("Port 443 in use")

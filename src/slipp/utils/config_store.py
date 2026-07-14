@@ -9,9 +9,10 @@ import fcntl
 import json
 import os
 import shutil
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator, TypeVar, overload
+from typing import TypeVar, overload
 
 import yaml
 from pydantic import BaseModel

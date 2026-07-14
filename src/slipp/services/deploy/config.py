@@ -1,16 +1,54 @@
 """Local config persistence for the deploy command."""
 
 import os
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from slipp import output
+from slipp.constants import PLAYBOOK_FILENAME
 from slipp.models.service import Runtime
 from slipp.output import format_path
 from slipp.services.config import LocalConfigService
 from slipp.services.config.detection import PLAYBOOK_PATTERNS, detect_path
 from slipp.services.registry import ProjectRegistry
 from slipp.utils.errors import ConfigError, ConfigParseError, SlippError
+
+
+def _parse_runtime(runtime: str) -> Runtime:
+    """Parse a CLI --runtime flag value into the Runtime enum."""
+    return Runtime(runtime.lower())
+
+
+@dataclass
+class DeployOverrides:
+    """CLI flag overrides for deploy config resolution and persistence.
+
+    Every field mirrors a `slipp deploy`/`slipp up` CLI flag that can
+    override the project's slipp.yaml. Grouped so run_deploy() and
+    persist_config_updates() take one value instead of the same five
+    flags threaded through both signatures by hand.
+    """
+
+    inventory: str | None = None
+    playbook: str | None = None
+    roles: list[str] | None = None
+    vault: str | None = None
+    galaxy_path: str | None = None
+    runtime: str | None = None
+
+    def any_set(self) -> bool:
+        """Whether any override was actually given on the CLI."""
+        return any(
+            [
+                self.inventory,
+                self.playbook,
+                self.roles,
+                self.vault,
+                self.galaxy_path,
+                self.runtime,
+            ]
+        )
 
 
 def ensure_local_config(
@@ -55,7 +93,7 @@ def ensure_local_config(
     else:
         detected = detect_path(project_root, PLAYBOOK_PATTERNS)
         playbook_path = (
-            str(detected.relative_to(project_root)) if detected else "playbook.yml"
+            str(detected.relative_to(project_root)) if detected else PLAYBOOK_FILENAME
         )
 
     try:
@@ -76,7 +114,7 @@ def ensure_local_config(
         if vault:
             changes["vault"] = vault
         if runtime:
-            changes["runtime"] = Runtime(runtime.lower())
+            changes["runtime"] = _parse_runtime(runtime)
 
         _, created = LocalConfigService.create_or_update_with(
             lambda: LocalConfigService.build(
@@ -96,7 +134,11 @@ def ensure_local_config(
             output.info(f"Created slipp.yaml with name '{name}'")
         else:
             output.info(f"Updated slipp.yaml with name '{name}'")
-    except Exception as e:
+    except (ValueError, OSError) as e:
+        # ValueError: bad --runtime value (invalid Runtime enum member).
+        # OSError: config file couldn't be written (permissions, disk).
+        # Anything else is a real bug -- let it propagate as a traceback
+        # rather than mislabeling it as a config problem.
         raise ConfigError(f"Failed to create config: {e}") from e
 
 
@@ -134,27 +176,15 @@ def _resolve_or_warn(value: str, description: str, project_root: Path) -> str | 
     return relative
 
 
-def persist_config_updates(
-    inventory: str | None,
-    playbook: str | None,
-    roles_list: list[str] | None,
-    galaxy_path_flag: str | None,
-    vault: str | None,
-    project_root: Path,
-    runtime: str | None = None,
-) -> None:
+def persist_config_updates(overrides: DeployOverrides, project_root: Path) -> None:
     """Persist CLI flag overrides into slipp.yaml after a successful deploy.
 
     Args:
-        inventory: Inventory path CLI override, if given.
-        playbook: Playbook path CLI override, if given.
-        roles_list: Role search directories CLI override, if given.
-        galaxy_path_flag: Galaxy install path CLI override, if given.
-        vault: Vault path CLI override, if given.
+        overrides: CLI flag overrides (inventory/playbook/roles/vault/
+            galaxy_path/runtime), if given.
         project_root: Root the deploy resolved against (cwd or a discovered
             enclosing project) -- flag paths are converted to be relative to
             this before persisting.
-        runtime: Runtime CLI override, if given.
     """
     changes: dict[str, Any] = {}
 
@@ -163,14 +193,14 @@ def persist_config_updates(
         if relative is not None:
             changes[key] = relative
 
-    if inventory:
-        _set("inventory", inventory)
-    if playbook:
-        _set("playbook", playbook)
-    if roles_list:
+    if overrides.inventory:
+        _set("inventory", overrides.inventory)
+    if overrides.playbook:
+        _set("playbook", overrides.playbook)
+    if overrides.roles:
         resolved_roles = [
             relative
-            for role in roles_list
+            for role in overrides.roles
             if (
                 relative := _resolve_or_warn(
                     role, f"roles_path entry {role}", project_root
@@ -180,12 +210,12 @@ def persist_config_updates(
         ]
         if resolved_roles:
             changes["roles_path"] = resolved_roles
-    if galaxy_path_flag:
-        _set("galaxy_path", galaxy_path_flag)
-    if vault:
-        _set("vault", vault)
-    if runtime:
-        changes["runtime"] = Runtime(runtime.lower())
+    if overrides.galaxy_path:
+        _set("galaxy_path", overrides.galaxy_path)
+    if overrides.vault:
+        _set("vault", overrides.vault)
+    if overrides.runtime:
+        changes["runtime"] = _parse_runtime(overrides.runtime)
 
     if not changes:
         return

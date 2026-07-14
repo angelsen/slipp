@@ -16,18 +16,18 @@ from slipp.services.providers.provision import (
     provision_and_bootstrap,
     resolve_server,
 )
-from slipp.utils.errors import ProviderNotConfiguredError
+from slipp.utils.errors import ProviderError
 
 
 def get_gigahost_client() -> GigahostClient:
     """Get an authenticated Gigahost client.
 
     Raises:
-        ProviderNotConfiguredError: If no Gigahost API key is configured.
+        ProviderError: If no Gigahost API key is configured.
     """
     config = ProviderConfigService.get_gigahost()
     if not config:
-        raise ProviderNotConfiguredError(
+        raise ProviderError(
             "Gigahost not configured. Run: slipp providers add gigahost"
         )
     return GigahostClient(config.api_key)
@@ -37,11 +37,11 @@ def get_pangolin_client() -> PangolinClient:
     """Get an authenticated Pangolin client.
 
     Raises:
-        ProviderNotConfiguredError: If no Pangolin session cookie is configured.
+        ProviderError: If no Pangolin session cookie is configured.
     """
     config = ProviderConfigService.get_pangolin()
     if not config:
-        raise ProviderNotConfiguredError(
+        raise ProviderError(
             "Pangolin not configured. Run: slipp providers add pangolin"
         )
     return PangolinClient(

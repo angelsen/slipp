@@ -47,7 +47,8 @@ def dns_sync_command() -> None:
     ip = host.ansible_host
 
     output.info(f"Syncing DNS for {domain} -> {ip}")
-    sync_and_report(get_gigahost_client(), domain, ip)
+    with get_gigahost_client() as client:
+        sync_and_report(client, domain, ip)
 
 
 @dns_app.command(name="list")
@@ -55,12 +56,12 @@ def dns_list_command(
     domain: Annotated[str, typer.Argument(help="Domain to list records for")],
 ) -> None:
     """List current DNS records for a domain."""
-    provider = get_gigahost_client()
-    zone = provider.find_zone(domain)
-    if zone is None:
-        output.error(f"No zone found for {domain}")
-        raise typer.Exit(1)
-    records = provider.list_records(zone.zone_id)
+    with get_gigahost_client() as provider:
+        zone = provider.find_zone(domain)
+        if zone is None:
+            output.error(f"No zone found for {domain}")
+            raise typer.Exit(1)
+        records = provider.list_records(zone.zone_id)
 
     output.empty_or_table(
         [

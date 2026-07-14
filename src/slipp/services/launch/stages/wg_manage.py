@@ -9,6 +9,7 @@ Caddyfile directly.
 import shlex
 from pathlib import Path
 
+from slipp.constants import ProxyType
 from slipp.generator.env import render_template
 from slipp.services import wg_manage
 from slipp.services.launch.context import FullContext
@@ -26,6 +27,12 @@ class WgManageRoleStage(FileGenerationStage[FullContext]):
         """Initialize wg-manage role generation stage."""
         super().__init__("Generating wg-manage exposure role")
 
+    def should_skip(self, context: FullContext) -> str | None:
+        """Skip for any proxy other than wg-manage."""
+        if context.proxy != ProxyType.wg_manage:
+            return f"Skipping wg-manage exposure role (proxy: {context.proxy})"
+        return None
+
     def generate_content(self, context: FullContext) -> dict[Path, str]:
         """Generate wg-manage-exposure role files.
 
@@ -35,9 +42,6 @@ class WgManageRoleStage(FileGenerationStage[FullContext]):
         Returns:
             Mapping of file paths to generated content strings.
         """
-        if context.proxy != "wg-manage":
-            return {}
-
         inventory_config = require(context.inventory_config, "inventory config")
         app_domain = require(inventory_config.first_host.app_domain, "app_domain")
 

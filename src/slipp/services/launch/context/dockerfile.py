@@ -22,4 +22,4 @@ class DockerfileContext(ScanContext):
             include "systemd".
     """
 
-    container_runtime: str = Runtime.DOCKER.value
+    container_runtime: Runtime = Runtime.DOCKER

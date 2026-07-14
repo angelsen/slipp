@@ -4,11 +4,11 @@ import json
 import os
 import re
 import subprocess
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import IO, Any, Callable
+from typing import IO, Any
 
 import yaml
 
@@ -22,7 +22,7 @@ ProgressCallback = Callable[[str], None]
 _PROGRESS_RE = re.compile(r"^(PLAY|TASK|RUNNING HANDLER) \[(.+?)\]")
 
 
-def parse_playbook_progress(line: str) -> str | None:
+def _parse_playbook_progress(line: str) -> str | None:
     """Extract a clean progress label from an ansible-playbook output line.
 
     Returns None for lines that shouldn't change the displayed status
@@ -45,7 +45,7 @@ def spinner_progress_callback(update: Callable[[str], None]) -> ProgressCallback
     """Build an on_progress callback that feeds playbook progress labels to a spinner's update fn."""
 
     def on_progress(line: str) -> None:
-        label = parse_playbook_progress(line)
+        label = _parse_playbook_progress(line)
         if label:
             update(label[:60])
 
@@ -170,7 +170,7 @@ def get_host_group(playbook_path: Path, roles_path: list[str] | None = None) -> 
     return "servers"
 
 
-def check_roles_installed(install_dir: str) -> bool:
+def _check_roles_installed(install_dir: str) -> bool:
     """Check if roles are already installed.
 
     Args:
@@ -187,7 +187,7 @@ def _requirements_have_collections(requirements_file: str) -> bool:
     """Check if a requirements file declares a collections block.
 
     Collections install to a separate path from install_dir, so
-    check_roles_installed() can't see them -- this lets callers avoid
+    _check_roles_installed() can't see them -- this lets callers avoid
     skipping the install step when collections still need installing.
     """
     try:
@@ -212,28 +212,27 @@ def _stream_subprocess(
     line callback, and make sure the process is terminated if the caller
     bails out (e.g. Ctrl-C) before it exits on its own.
     """
-    proc = subprocess.Popen(
+    with subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
         cwd=cwd,
         env=env,
-    )
+    ) as proc:
+        try:
+            assert proc.stdout is not None
+            for line in proc.stdout:
+                if log_handle:
+                    log_handle.write(line)
+                if on_line:
+                    on_line(line)
 
-    try:
-        assert proc.stdout is not None
-        for line in proc.stdout:
-            if log_handle:
-                log_handle.write(line)
-            if on_line:
-                on_line(line)
-
-        return proc.wait()
-    finally:
-        if proc.poll() is None:
-            proc.terminate()
-            proc.wait()
+            return proc.wait()
+        finally:
+            if proc.poll() is None:
+                proc.terminate()
+                proc.wait()
 
 
 def _run_galaxy_command(
@@ -326,7 +325,7 @@ def ensure_requirements_installed(
 
     Shared by deploy and launch/scaffold, which both need "skip if already
     installed, show a spinner, raise with the log path on failure" - the
-    only prior difference was deploy re-implementing check_roles_installed()
+    only prior difference was deploy re-implementing _check_roles_installed()
     inline instead of calling it.
 
     Args:
@@ -340,7 +339,7 @@ def ensure_requirements_installed(
     """
     if (
         not force
-        and check_roles_installed(install_dir)
+        and _check_roles_installed(install_dir)
         and not _requirements_have_collections(requirements_file)
     ):
         output.info(f"Roles already installed in {install_dir}")

@@ -1,7 +1,7 @@
 """Docker Compose generator for local development."""
 
 from slipp.generator.env import render_template
-from slipp.models.deployment import ComposeConfig
+from slipp.models.compose import ComposeConfig
 
 
 def generate_compose(config: ComposeConfig) -> str:

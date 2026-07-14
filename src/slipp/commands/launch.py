@@ -5,7 +5,7 @@ from typing import Annotated
 import typer
 
 from slipp.commands.common import DryRunOption, ProjectDirsOption, resolve_project_dirs
-from slipp.constants import DEFAULT_ENV
+from slipp.constants import DEFAULT_ENV, ProxyType
 from slipp.services.launch import FullContext, run_full_pipeline
 
 
@@ -30,12 +30,12 @@ def launch_command(
         ),
     ] = False,
     proxy: Annotated[
-        str,
+        ProxyType,
         typer.Option(
             "--proxy",
             help="Reverse proxy: auto (probe host), caddy, none, wg-manage",
         ),
-    ] = "auto",
+    ] = ProxyType.auto,
     public: Annotated[
         bool,
         typer.Option(

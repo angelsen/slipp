@@ -26,6 +26,7 @@ class FullContext(ScanContext):
         expose: Resolved service routing (existing slipp.yaml block, or
             the seeded default) -- set lazily by resolve_expose(), then
             persisted by RegistrationStage.
+        skip_caddy: If True, exclude Caddy proxy setup.
     """
 
     environment: str = DEFAULT_ENV
@@ -36,3 +37,4 @@ class FullContext(ScanContext):
     exec_args: str | None = None
     health_check: str | None = None
     public: bool = False
+    skip_caddy: bool = False

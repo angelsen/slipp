@@ -30,18 +30,20 @@ def run_command(
         str | None, typer.Option("--cmd", help="Command (creates/updates profile)")
     ] = None,
     env: Annotated[
-        list[str], typer.Option("--env", help="Environment variable KEY=VALUE")
-    ] = [],
-    vault: Annotated[list[str], typer.Option("--vault", help="Vault project(s)")] = [],
+        list[str] | None, typer.Option("--env", help="Environment variable KEY=VALUE")
+    ] = None,
+    vault: Annotated[
+        list[str] | None, typer.Option("--vault", help="Vault project(s)")
+    ] = None,
     tunnel_out: Annotated[
-        list[str], typer.Option("--tunnel-out", help="Reverse tunnel")
-    ] = [],
+        list[str] | None, typer.Option("--tunnel-out", help="Reverse tunnel")
+    ] = None,
     tunnel_in: Annotated[
-        list[str], typer.Option("--tunnel-in", help="Forward tunnel")
-    ] = [],
+        list[str] | None, typer.Option("--tunnel-in", help="Forward tunnel")
+    ] = None,
     proxy: Annotated[
-        list[str], typer.Option("--proxy", help="Proxy route (from@host -> to)")
-    ] = [],
+        list[str] | None, typer.Option("--proxy", help="Proxy route (from@host -> to)")
+    ] = None,
     tunnel_auth: Annotated[
         str | None,
         typer.Option(
@@ -51,16 +53,15 @@ def run_command(
 ) -> None:
     """Execute a run profile, or create/update one with --cmd."""
     service = RunProfileService()
+    env = env or []
+    vault = vault or []
+    tunnel_out = tunnel_out or []
+    tunnel_in = tunnel_in or []
+    proxy = proxy or []
 
     if cmd:
         profile = build_profile(
-            cmd,
-            list(env),
-            list(vault),
-            list(tunnel_out),
-            list(tunnel_in),
-            list(proxy),
-            tunnel_auth,
+            cmd, env, vault, tunnel_out, tunnel_in, proxy, tunnel_auth
         )
         _save_profile(service, name, profile)
         _run_profile(_apply_extra_args(profile, ctx.args))
@@ -68,13 +69,7 @@ def run_command(
     elif service.profile_exists(name):
         profile = service.get_profile(name)
         merged = merge_runtime_options(
-            profile,
-            list(env),
-            list(vault),
-            list(tunnel_out),
-            list(tunnel_in),
-            list(proxy),
-            tunnel_auth,
+            profile, env, vault, tunnel_out, tunnel_in, proxy, tunnel_auth
         )
 
         _run_profile(_apply_extra_args(merged, ctx.args))

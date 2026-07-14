@@ -4,9 +4,9 @@ This module handles all file system operations for the global project registry.
 The registry is now a simple path index - hosts are loaded on-demand from local configs.
 """
 
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator
 
 from slipp.models.registry import GlobalRegistry
 from slipp.utils.config_store import (

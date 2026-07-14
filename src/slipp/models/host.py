@@ -29,6 +29,7 @@ class AnsibleHost(BaseModel):
     ansible_port: int = Field(default=22, ge=1, le=65535, description="SSH port")
     key_file: OptionalPathStr = Field(default=None, description="SSH private key path")
 
+    @property
     def connection_string(self) -> str:
         """SSH connection string for display.
 

@@ -96,4 +96,8 @@ def account_command(
         hint_ssh_log()
         raise typer.Exit(1)
 
-    _display_completion(host, ssh_port, slipp_user)
+    if dry_run:
+        output.blank()
+        output.info("Dry run complete, no changes made.")
+    else:
+        _display_completion(host, ssh_port, slipp_user)

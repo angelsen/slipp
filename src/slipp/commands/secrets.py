@@ -32,8 +32,10 @@ from slipp.services.vault import (
 from slipp.utils.errors import (
     AnsibleVaultNotInstalledError,
     ProjectNotFoundError,
+    PullError,
     PullTimeoutError,
     SourceNotFoundError,
+    VaultDecryptError,
     VaultError,
     VaultFileNotFoundError,
     VaultSyncError,
@@ -66,6 +68,11 @@ def _resolve_vault_or_exit(target: str | None) -> tuple[ConfigResolver, Path | N
         raise typer.Exit(1)
 
 
+_VaultLookupError = Literal[
+    "no vault configured", "vault file not found", "vault fully encrypted"
+]
+
+
 @dataclass
 class _VaultLookup:
     """Result of resolving a target and listing its vault keys, if any."""
@@ -74,7 +81,7 @@ class _VaultLookup:
     resolver: ConfigResolver
     vault_path: Path | None
     keys: list[str] | None
-    error: Literal["no vault configured", "vault file not found"] | None
+    error: _VaultLookupError | None
 
 
 def _lookup_vault_keys(target: str) -> _VaultLookup:
@@ -95,6 +102,8 @@ def _lookup_vault_keys(target: str) -> _VaultLookup:
         keys = list_keys(vault_path)
     except VaultFileNotFoundError:
         return _VaultLookup(target, resolver, vault_path, None, "vault file not found")
+    except VaultDecryptError:
+        return _VaultLookup(target, resolver, vault_path, None, "vault fully encrypted")
 
     return _VaultLookup(target, resolver, vault_path, keys, None)
 
@@ -137,50 +146,33 @@ def _list_available_vaults() -> None:
     )
 
 
-@secrets_app.command(name="list")
-def list_secrets(
-    targets: Annotated[
-        list[str] | None,
-        typer.Argument(
-            help="Project name(s) or vault file path(s) (discovery mode if omitted)"
-        ),
-    ] = None,
-    secret_name: Annotated[
-        str | None,
-        typer.Option("--name", "-n", help="Secret name to get template string for"),
-    ] = None,
-) -> None:
-    """List secrets in vault(s), or show available vaults."""
-    if not targets:
-        _list_available_vaults()
-        return
+def _show_json(lookups: list[_VaultLookup], secret_name: str | None) -> None:
+    """Display vault lookup results as JSON."""
+    results: list[dict[str, object]] = []
+    for lookup in lookups:
+        entry: dict[str, object] = {"target": lookup.target}
 
-    lookups = [_lookup_vault_keys(target) for target in targets]
-
-    if output.get_output_format() == OutputFormat.json:
-        results: list[dict[str, object]] = []
-        for lookup in lookups:
-            entry: dict[str, object] = {"target": lookup.target}
-
-            if lookup.error:
-                if lookup.vault_path:
-                    entry["vault_path"] = str(lookup.vault_path)
-                entry["error"] = lookup.error
-                results.append(entry)
-                continue
-
-            assert lookup.vault_path is not None and lookup.keys is not None
-            entry["vault_path"] = str(lookup.vault_path)
-            if secret_name:
-                entry["secret_name"] = secret_name
-                entry["found"] = secret_name in lookup.keys
-            else:
-                entry["keys"] = lookup.keys
+        if lookup.error:
+            if lookup.vault_path:
+                entry["vault_path"] = str(lookup.vault_path)
+            entry["error"] = lookup.error
             results.append(entry)
+            continue
 
-        output.json(results)
-        return
+        assert lookup.vault_path is not None and lookup.keys is not None
+        entry["vault_path"] = str(lookup.vault_path)
+        if secret_name:
+            entry["secret_name"] = secret_name
+            entry["found"] = secret_name in lookup.keys
+        else:
+            entry["keys"] = lookup.keys
+        results.append(entry)
 
+    output.json(results)
+
+
+def _show_table(lookups: list[_VaultLookup], secret_name: str | None) -> None:
+    """Display vault lookup results as formatted text."""
     for i, lookup in enumerate(lookups):
         if i > 0:
             output.blank()
@@ -192,6 +184,15 @@ def list_secrets(
             assert lookup.vault_path is not None
             output.error(
                 f"Vault file not found: {format_path(lookup.vault_path, lookup.resolver.project_root)}"
+            )
+            continue
+        if lookup.error == "vault fully encrypted":
+            assert lookup.vault_path is not None
+            output.error(
+                f"Vault is fully encrypted: {format_path(lookup.vault_path, lookup.resolver.project_root)}"
+            )
+            output.hint(
+                f"Decrypt to inspect keys: ansible-vault decrypt {format_path(lookup.vault_path, lookup.resolver.project_root)}"
             )
             continue
 
@@ -214,6 +215,32 @@ def list_secrets(
         )
         for key in keys:
             output.bullet(key, indent=1)
+
+
+@secrets_app.command(name="list")
+def list_secrets(
+    targets: Annotated[
+        list[str] | None,
+        typer.Argument(
+            help="Project name(s) or vault file path(s) (discovery mode if omitted)"
+        ),
+    ] = None,
+    secret_name: Annotated[
+        str | None,
+        typer.Option("--name", "-n", help="Secret name to get template string for"),
+    ] = None,
+) -> None:
+    """List secrets in vault(s), or show available vaults."""
+    if not targets:
+        _list_available_vaults()
+        return
+
+    lookups = [_lookup_vault_keys(target) for target in targets]
+
+    if output.get_output_format() == OutputFormat.json:
+        _show_json(lookups, secret_name)
+    else:
+        _show_table(lookups, secret_name)
 
 
 @secrets_app.command(name="add")
@@ -245,7 +272,18 @@ def add_secret(
         )
         raise typer.Exit(1)
 
-    if name in list_keys(vault_path):
+    try:
+        existing_keys = list_keys(vault_path)
+    except VaultDecryptError:
+        output.error(
+            f"Vault is fully encrypted: {format_path(vault_path, resolver.project_root)}"
+        )
+        output.hint(
+            f"Decrypt first: ansible-vault decrypt {format_path(vault_path, resolver.project_root)}"
+        )
+        raise typer.Exit(1)
+
+    if name in existing_keys:
         output.error(
             f"'{name}' already exists in {format_path(vault_path, resolver.project_root)}"
         )
@@ -283,13 +321,19 @@ def sync_secrets(
     num_bytes: NumBytesOption = 32,
     encoding: EncodingOption = SecretEncoding.hex,
     force: Annotated[
-        bool, typer.Option("--force", "-f", help="Overwrite existing vault.yml")
+        bool,
+        typer.Option(
+            "--force-existing",
+            "-f",
+            help="Add missing secrets to an existing vault.yml",
+        ),
     ] = False,
 ) -> None:
     """Scan YAML for vault references and auto-generate secrets."""
     validate_num_bytes_encoding(num_bytes, encoding)
     project_root = Path.cwd()
     vault_path = path.parent / "vault.yml"
+    vault_existed = vault_path.is_file()
 
     synchronizer = SecretSynchronizer(num_bytes=num_bytes, encoding=encoding)
 
@@ -309,14 +353,24 @@ def sync_secrets(
         output.bullet(ref, indent=1)
 
     try:
-        synchronizer.sync(vault_path, refs, force=force)
+        generated = synchronizer.sync(vault_path, refs, force=force)
     except VaultSyncError as e:
         output.error(str(e))
         if vault_path.exists():
-            output.hint("Use --force to overwrite")
+            output.hint("Use --force-existing to add to the existing vault")
         raise typer.Exit(1)
 
-    output.success(f"Created {format_path(vault_path, project_root)}")
+    if not vault_existed:
+        output.success(f"Created {format_path(vault_path, project_root)}")
+    elif generated:
+        output.success(
+            f"Added {len(generated)} secret(s) to "
+            f"{format_path(vault_path, project_root)}"
+        )
+    else:
+        output.info("All vault references already present, nothing to add")
+        return
+
     output.hint(
         f"Encrypt with: ansible-vault encrypt {format_path(vault_path, project_root)}"
     )
@@ -354,6 +408,9 @@ def pull_secrets(
     except PullTimeoutError:
         output.error(f"Timed out waiting for approval ({timeout}s)")
         output.hint("Make sure to approve the export in your browser")
+        raise typer.Exit(1)
+    except PullError as e:
+        output.error(str(e))
         raise typer.Exit(1)
     except VaultError as e:
         output.error(f"Failed to store credentials: {e}")

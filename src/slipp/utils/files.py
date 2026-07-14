@@ -1,13 +1,25 @@
 """File utilities shared across services."""
 
+import json
 import os
 import tempfile
+from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import IO, Iterator
+from typing import IO, Any
 
 from slipp import output
+
+
+def read_json_file(path: Path) -> dict[str, Any] | None:
+    """Load and parse a JSON file, returning None if missing or invalid."""
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return None
 
 
 @contextmanager
@@ -112,9 +124,9 @@ def atomic_write_text(path: Path, content: str, *, mode: int | None = None) -> N
     tmp = path.with_suffix(path.suffix + ".tmp")
     try:
         tmp.write_text(content, encoding="utf-8")
-        tmp.replace(path)
         if mode is not None:
-            path.chmod(mode)
+            tmp.chmod(mode)
+        tmp.replace(path)
     except Exception:
         if tmp.exists():
             tmp.unlink()

@@ -9,6 +9,7 @@ from pathlib import Path
 from slipp.scanner.helpers import (
     DEFAULT_NODE_PORT,
     NODE_DOCKER_TEMPLATE,
+    configure_by_dependency,
     extract_nodejs_dependencies,
 )
 from slipp.scanner.models import SourceInfo
@@ -36,13 +37,11 @@ def configure_sveltekit(source_dir: Path) -> SourceInfo | None:
         >>> info.port
         3000
     """
-    dependencies = extract_nodejs_dependencies(source_dir)
-    if "@sveltejs/kit" not in dependencies:
-        return None
-
-    return SourceInfo(
+    return configure_by_dependency(
+        source_dir,
+        extract_nodejs_dependencies,
+        "@sveltejs/kit",
         family="SvelteKit",
         port=DEFAULT_NODE_PORT,
         template_url=NODE_DOCKER_TEMPLATE,
-        dependencies=dependencies,
     )

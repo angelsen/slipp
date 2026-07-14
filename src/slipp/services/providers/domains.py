@@ -14,9 +14,10 @@ def register_domain_interactive(client: GigahostClient, domain: str) -> dict[str
     Raises:
         DomainRegistrationError: If the registration API call fails.
     """
-    registrant_type = output.prompt(
-        "Registrant type (organization/person)", default="organization"
+    is_organization = output.confirm(
+        "Register as an organization? (no = person)", default=True
     )
+    registrant_type = "organization" if is_organization else "person"
     email = output.prompt("Contact email")
     zip_code = output.prompt("Zip code")
     city = output.prompt("City")

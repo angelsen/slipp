@@ -2,15 +2,10 @@
 
 from pathlib import Path
 
-from slipp import output
 from slipp.generator import TemplateGenerator
 from slipp.models.service import Runtime
 from slipp.services.launch.context import ScanContext
-from slipp.services.launch.stages.common import (
-    FileGenerationStage,
-    resolve_runtime,
-    require,
-)
+from slipp.services.launch.stages.common import FileGenerationStage, resolve_runtime
 from slipp.utils.errors import LaunchError
 
 
@@ -30,16 +25,11 @@ class DockerfileGenerationStage(FileGenerationStage[ScanContext]):
         super().__init__("Generating Dockerfiles")
         self.generator = template_generator
 
-    def execute(self, context: ScanContext) -> None:
-        """Generate and write Dockerfiles for all services.
+    def should_skip(self, context: ScanContext) -> str | None:
+        """Skip for a systemd runtime (no container image to build).
 
-        Iterates through services, generates their Dockerfiles based on
-        the first host's runtime, and writes them to disk unless in
-        dry-run mode. Skips overwriting customized files.
-
-        Args:
-            context: Launch context containing services, inventory config,
-                and generation options.
+        Raises:
+            LaunchError: If no runtime is resolvable at all (pipeline bug).
         """
         runtime = resolve_runtime(context)
         if runtime is None:
@@ -48,10 +38,8 @@ class DockerfileGenerationStage(FileGenerationStage[ScanContext]):
             )
 
         if runtime == Runtime.SYSTEMD:
-            output.info("Skipping Dockerfiles (systemd runtime, no container image)")
-            return
-
-        super().execute(context)
+            return "Skipping Dockerfiles (systemd runtime, no container image)"
+        return None
 
     def generate_content(self, context: ScanContext) -> dict[Path, str]:
         """Generate Dockerfile content for every service.
@@ -62,7 +50,10 @@ class DockerfileGenerationStage(FileGenerationStage[ScanContext]):
         Returns:
             Dictionary mapping each generated Dockerfile path to its content.
         """
-        runtime = require(resolve_runtime(context), "runtime")
+        # execute() already validated resolve_runtime(context) is not None
+        # before generate_content() can be reached.
+        runtime = resolve_runtime(context)
+        assert runtime is not None
 
         content: dict[Path, str] = {}
         for service in context.services:

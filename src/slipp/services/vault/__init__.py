@@ -6,7 +6,6 @@ This package provides services for Ansible vault encryption, decryption, and sec
 from slipp.services.vault.crypto import (
     decrypt_vault,
     encrypt_secrets,
-    encrypt_string,
     extract_vault_refs,
     has_vault_content,
     list_keys,
@@ -27,7 +26,6 @@ __all__ = [
     "decrypt_vault",
     "decrypt_vault_to_env",
     "encrypt_secrets",
-    "encrypt_string",
     "extract_vault_refs",
     "generate_jwk",
     "generate_secret",

@@ -20,6 +20,7 @@ import shlex
 from contextlib import ExitStack
 from importlib.resources import files
 from pathlib import Path
+from typing import Any
 
 from slipp import output
 from slipp.models.host import AnsibleHost
@@ -50,7 +51,9 @@ def _domain_to_route_id(domain: str) -> str:
     return f"dev-{_slugify(domain)}"
 
 
-def _push_route(ssh: SSHService, route_config: dict, error_prefix: str) -> None:
+def _push_route(
+    ssh: SSHService, route_config: dict[str, Any], error_prefix: str
+) -> None:
     """Prepend a route to Caddy's config via the admin API, idempotently.
 
     Caddy rejects a config containing two routes with the same "@id", so
@@ -218,15 +221,21 @@ class CaddyProxy:
         """
         check_cmd = (
             "systemctl is-active caddy 2>/dev/null | grep -qx active && "
-            "iptables -t nat -S PREROUTING 2>/dev/null | grep -q 'slipp dev proxy' && "
+            "iptables -t nat -S PREROUTING 2>/dev/null | grep -q slipp && "
             "curl -sf http://localhost:2019/config/ >/dev/null && "
             "curl -sf http://localhost:2020/check >/dev/null"
         )
 
         # Wrapped in a single leading `sudo sh -c` (rather than `bash -c
         # '... sudo iptables ...'`) so _prepare_sudo_command's password
-        # piping actually applies -- see its docstring.
-        return self._connection().execute(f"sudo sh -c '{check_cmd}'").ok
+        # piping actually applies -- see its docstring. The iptables grep
+        # pattern must not itself contain a single quote: nesting one
+        # inside this outer '...' would split the string into extra
+        # positional args to `sh -c`, silently dropping everything after
+        # it from the executed script (the two curl checks never ran).
+        connection = self._connection()
+        connection.ensure_sudo("Checking dev proxy status")
+        return connection.execute(f"sudo sh -c '{check_cmd}'").ok
 
     def ensure_installed(self) -> bool:
         """Install Caddy dev proxy if not already installed.
@@ -359,7 +368,7 @@ class CaddyProxy:
         """
         route_id = _domain_to_route_id(domain)
 
-        handle: list[dict] = []
+        handle: list[dict[str, Any]] = []
         if auth:
             username, password_hash = auth
             handle.append(

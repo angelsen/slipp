@@ -3,6 +3,7 @@
 import base64
 import json
 import os
+import re
 import socket
 from dataclasses import dataclass
 from datetime import datetime
@@ -66,6 +67,9 @@ class NorAuthSource:
 
             if resource_type == "bot":
                 name = self._sanitize_name(resource.get("name", "bot"))
+                self._check_collision(
+                    result, f"vault_nor_bot_{name}_access_token", name
+                )
                 result.update(
                     {
                         f"vault_nor_bot_{name}_access_token": self._require(
@@ -84,11 +88,28 @@ class NorAuthSource:
                 )
             elif resource_type == "key":
                 name = self._sanitize_name(resource.get("name", "api_key"))
-                result[f"vault_nor_api_key_{name}"] = self._require(resource, "apiKey")
+                key = f"vault_nor_api_key_{name}"
+                self._check_collision(result, key, name)
+                result[key] = self._require(resource, "apiKey")
             else:
                 output.warning(f"Skipping unknown credential type: {resource_type!r}")
 
         return result
+
+    def _check_collision(self, result: dict[str, str], key: str, name: str) -> None:
+        """Raise if a prior resource already claimed this sanitized name.
+
+        Two resources with distinct display names can sanitize to the same
+        vault key (e.g. "Bot 1" and "Bot-1" both -> "bot_1", or two
+        unnamed resources both defaulting to "bot"/"api_key"). Without this
+        check, the second resource's `result.update`/assignment silently
+        overwrites the first's credentials with no error or warning.
+        """
+        if key in result:
+            raise PullError(
+                f"Duplicate credential name after sanitizing: {name!r} "
+                "collides with another resource -- rename one in nor-auth"
+            )
 
     def _require(self, resource: dict, key: str) -> str:
         """Fetch a required field, raising PullError if missing."""
@@ -100,8 +121,13 @@ class NorAuthSource:
         return resource[key]
 
     def _sanitize_name(self, name: str) -> str:
-        """Convert name to vault-safe identifier."""
-        return name.lower().replace(" ", "_").replace("-", "_")
+        """Convert name to vault-safe identifier.
+
+        Strips everything but alphanumerics/underscores so a crafted
+        display name (e.g. containing ':' or '\\n') can't inject extra
+        YAML keys or plaintext lines into the vault file.
+        """
+        return re.sub(r"[^a-z0-9_]+", "_", name.lower()).strip("_") or "_"
 
     def get_description(self) -> str:
         """Human-readable description for --help."""

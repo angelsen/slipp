@@ -240,6 +240,13 @@ class ConfigResolver:
             self.project_root / PLAYBOOK_FILENAME,
         )
 
+        # roles_path/galaxy_path don't go through _resolve_path: that helper's
+        # detect_path step exists to auto-discover a *file* by name pattern
+        # (playbook.yml, inventory.yml), which doesn't apply here -- roles_path
+        # is a list rather than a single value, and galaxy_path's fallback is
+        # a fixed conventional directory, not something to search for. Neither
+        # gets source tracking either, since nothing currently consumes it
+        # (unlike inventory/playbook, logged in deploy/runner.py).
         if cli_roles:
             roles_path = [_resolve_cli_path(r) for r in cli_roles]
         elif self._local_config and self._local_config.roles_path:

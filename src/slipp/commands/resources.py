@@ -37,7 +37,11 @@ from slipp.services.config import (
     resolve_project_name,
 )
 from slipp.services.providers import get_pangolin_client
-from slipp.services.resources import resolve_public_target, sync_pangolin_resource
+from slipp.services.resources import (
+    find_resource,
+    resolve_public_target,
+    sync_pangolin_resource,
+)
 
 resources_app = typer.Typer(
     name="resources",
@@ -122,16 +126,17 @@ def sync_resource(
 
     output.info(f"Syncing Pangolin resource for {app_domain} -> {ip}:{port}")
 
-    sync_pangolin_resource(
-        get_pangolin_client(),
-        project_name=project_name,
-        app_domain=app_domain,
-        ip=ip,
-        port=port,
-        method=method,
-        site=site,
-        dry_run=dry_run,
-    )
+    with get_pangolin_client() as client:
+        sync_pangolin_resource(
+            client,
+            project_name=project_name,
+            app_domain=app_domain,
+            ip=ip,
+            port=port,
+            method=method,
+            site=site,
+            dry_run=dry_run,
+        )
 
     output.blank()
     output.kv("resource", app_domain)
@@ -147,7 +152,8 @@ def list_resources() -> None:
         _list_wg_manage(wg_host)
         return
 
-    resources = get_pangolin_client().list_resources()
+    with get_pangolin_client() as client:
+        resources = client.list_resources()
 
     output.empty_or_table(
         [
@@ -179,13 +185,13 @@ def remove_resource(
         output.success(f"Removed wg-manage service: {name}")
         return
 
-    client = get_pangolin_client()
-    match = next((r for r in client.list_resources() if r.get("name") == name), None)
-    if not match:
-        output.error(f"Resource '{name}' not found")
-        raise typer.Exit(1)
+    with get_pangolin_client() as client:
+        match = find_resource(client.list_resources(), name=name)
+        if not match:
+            output.error(f"Resource '{name}' not found")
+            raise typer.Exit(1)
 
-    confirm_or_exit(f"Remove resource '{match.get('fullDomain')}'?", force=force)
+        confirm_or_exit(f"Remove resource '{match.get('fullDomain')}'?", force=force)
 
-    client.delete_resource(match["resourceId"])
+        client.delete_resource(match["resourceId"])
     output.success(f"Removed Pangolin resource: {match.get('fullDomain')}")

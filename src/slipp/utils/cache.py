@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from slipp import output
 from slipp.utils.files import atomic_write_text
 
 
@@ -57,7 +58,8 @@ class Cache:
         try:
             with open(self.cache_file, "r") as f:
                 return json.load(f)
-        except (json.JSONDecodeError, IOError):
+        except (json.JSONDecodeError, IOError) as e:
+            output.warning(f"Failed to read cache {self.cache_file}: {e}")
             return {}
 
     def _save(self) -> None:
@@ -65,8 +67,8 @@ class Cache:
         try:
             content = json.dumps(self._cache, indent=2, default=str)
             atomic_write_text(self.cache_file, content)
-        except (IOError, OSError):
-            pass
+        except (IOError, OSError) as e:
+            output.warning(f"Failed to write cache {self.cache_file}: {e}")
 
     def get(self, key: str) -> Any | None:
         """Get value from cache if not expired.

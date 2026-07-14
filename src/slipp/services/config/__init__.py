@@ -13,7 +13,7 @@ from slipp.services.config.inventory import (
     write_minimal_inventory,
 )
 from slipp.services.config.local import LocalConfigService, collect_managed_roles
-from slipp.services.config.presets import PresetResolver, parse_preset_args
+from slipp.services.config.presets import PresetResolver, build_preset_args
 from slipp.services.config.resolver import (
     ConfigResolver,
     ResolvedConfig,
@@ -36,7 +36,7 @@ __all__ = [
     "resolve_project_name",
     "resolve_vault_target",
     "PresetResolver",
-    "parse_preset_args",
+    "build_preset_args",
     "HostResolver",
     "RuntimeDetector",
 ]

@@ -11,7 +11,7 @@ from slipp.models.registry import RegisteredProject
 from slipp.services.config import LocalConfigService
 from slipp.services.registry import ProjectRegistry
 from slipp.services.vault.crypto import decrypt_vault, list_keys
-from slipp.utils.errors import ConfigError, DuplicateEnvVarError, ProjectNotFoundError
+from slipp.utils.errors import ConfigError, ProjectNotFoundError, VaultError
 
 
 @dataclass(frozen=True)
@@ -135,7 +135,7 @@ def merge_vault_envs(
         Merged dict of {ENV_VAR: value} pairs
 
     Raises:
-        DuplicateEnvVarError: If same key found in multiple vaults
+        VaultError: If same key found in multiple vaults
         VaultDecryptError: If decryption fails
     """
     merged: dict[str, str] = {}
@@ -146,7 +146,7 @@ def merge_vault_envs(
 
         for key, value in env.items():
             if key in merged:
-                raise DuplicateEnvVarError(
+                raise VaultError(
                     f"Duplicate env var '{key}' found in vaults: {sources[key]}, {vault_name}\n"
                     f"Hint: Remove one vault or rename the secret"
                 )

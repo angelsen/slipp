@@ -22,27 +22,31 @@ class ProxyRoute(BaseModel):
 
     model_config = {"populate_by_name": True}
 
+    @staticmethod
+    def _split_host_path(value: str) -> tuple[str, str]:
+        """Split 'host[/path]' into (host, path), defaulting path to '/'."""
+        parts = value.split("/", 1)
+        return parts[0], "/" + parts[1] if len(parts) > 1 else "/"
+
     @property
     def from_domain(self) -> str:
         """Return the domain from the 'from' field."""
-        return self.from_.split("/", 1)[0]
+        return self._split_host_path(self.from_)[0]
 
     @property
     def from_path(self) -> str:
         """Return the path from the 'from' field."""
-        parts = self.from_.split("/", 1)
-        return "/" + parts[1] if len(parts) > 1 else "/"
+        return self._split_host_path(self.from_)[1]
 
     @property
     def to_host(self) -> str:
         """Return the host:port from the 'to' field."""
-        return self.to.split("/", 1)[0]
+        return self._split_host_path(self.to)[0]
 
     @property
     def to_path(self) -> str:
         """Return the path from the 'to' field."""
-        parts = self.to.split("/", 1)
-        return "/" + parts[1] if len(parts) > 1 else "/"
+        return self._split_host_path(self.to)[1]
 
 
 class TunnelConfig(BaseModel):

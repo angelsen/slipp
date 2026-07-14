@@ -13,6 +13,7 @@ from slipp.models.host import AnsibleHost
 from slipp.services.ansible import run_inventory
 from slipp.services.config.local import LocalConfigService
 from slipp.utils.errors import ConfigError, HostNotFoundError, InventoryParseError
+from slipp.utils.files import atomic_write_text
 
 
 def _resolve_inventory_path(project_root: Path) -> Path:
@@ -111,7 +112,9 @@ def write_minimal_inventory(path: Path, environment: str, ip: str) -> None:
         ansible_port=22,
     )
     inventory = InventoryConfig(hosts={environment: host_config})
-    path.write_text(yaml.dump(inventory.to_ansible_format(), default_flow_style=False))
+    atomic_write_text(
+        path, yaml.dump(inventory.to_ansible_format(), default_flow_style=False)
+    )
 
 
 def load_project_ansible_hosts(project_path: Path) -> list[AnsibleHost]:
