@@ -16,6 +16,7 @@
         name:
           - apt-transport-https
           - iptables-persistent
+          - jq
         state: present
         update_cache: true
 

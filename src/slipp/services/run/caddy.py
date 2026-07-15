@@ -81,11 +81,23 @@ def _push_route(
     """
     route_json = json.dumps(route_config)
     route_id_json = json.dumps(route_config["@id"])
+    # (. // []): a fresh srv1 (no routes added yet) returns bare `null` from
+    # the GET below, not `[]` - `map` raises "Cannot iterate over null" on
+    # that, so every first-ever route push on a new install fails unless
+    # null is coalesced to an empty list first.
     jq_program = shlex.quote(
-        f'[$newroute] + (map(select(.["@id"] != {route_id_json})))'
+        f'[$newroute] + ((. // []) | map(select(.["@id"] != {route_id_json})))'
     )
 
+    # pipefail: without it, only the final curl's exit status is checked -- a
+    # broken earlier stage (e.g. jq missing) feeds the PATCH an empty body,
+    # which Caddy accepts as "set routes to null", silently wiping every
+    # existing route while this whole command still reports success. The
+    # connecting user's login shell is bash (see bootstrap's
+    # useradd -s /bin/bash), so `set -o pipefail` is available here without
+    # needing an explicit executable= override.
     add_cmd = (
+        "set -euo pipefail; "
         "route_json=$(cat) && "
         "curl -sf http://localhost:2019/config/apps/http/servers/srv1/routes | "
         f'jq --argjson newroute "$route_json" {jq_program} | '

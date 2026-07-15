@@ -11,6 +11,7 @@ import httpx
 
 from slipp.services.providers.dns import DNSRecord, DNSZone
 from slipp.services.providers.http import ApiClientMixin
+from slipp.utils.errors import ProviderError
 
 
 class GigahostClient(ApiClientMixin):
@@ -88,15 +89,28 @@ class GigahostClient(ApiClientMixin):
         return None
 
     def create_zone(self, domain: str) -> DNSZone:
-        """POST /dns/zones -- create a new (unregistered) DNS zone."""
+        """POST /dns/zones -- create a new (unregistered) DNS zone.
+
+        Like GET /dns/zones, this wraps its payload as `data: [...]` (a list)
+        rather than a bare object, even though it creates a single zone -
+        unwrap the same way list_zones() does instead of assuming a dict.
+        """
         data = self._request_data(
             "POST",
             "/dns/zones",
             json={"zone_name": domain, "create_default_records": False},
-            default={},
+            default=[],
         )
-        zone_id = data.get("zone_id")
-        return DNSZone(zone_id=str(zone_id), name=domain, record_count=0)
+        entries = data if isinstance(data, list) else [data]
+        for entry in entries:
+            if entry.get("zone_name", "").lower().rstrip(".") == domain.lower().rstrip(
+                "."
+            ):
+                return self._zone_from_dict(entry)
+
+        raise ProviderError(
+            f"{self.PROVIDER_NAME} did not return the created zone for {domain}"
+        )
 
     @staticmethod
     def _zone_from_dict(data: dict[str, Any]) -> DNSZone:
