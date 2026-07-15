@@ -38,7 +38,6 @@ def list_command() -> None:
         ]
         output.json(data)
     else:
-        output.blank()
         output.task("Registered Projects")
         output.blank()
 

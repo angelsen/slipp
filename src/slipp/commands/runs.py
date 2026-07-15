@@ -41,7 +41,6 @@ def list_profiles() -> None:
         output.json(data)
         return
 
-    output.blank()
     output.task("Saved profiles")
     output.blank()
 

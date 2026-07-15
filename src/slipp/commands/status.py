@@ -63,7 +63,6 @@ def status_command(
         if details.get("tasks"):
             output.stdout(f"Tasks: {details['tasks']}")
 
-        output.blank()
         output.task("Recent logs")
 
         log_lines = extract_status_log_lines(cmd_output)
