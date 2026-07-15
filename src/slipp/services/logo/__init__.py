@@ -74,7 +74,7 @@ RECOMMENDED_FONTS = [
 
 
 def show_logo(
-    file: TextIO = sys.stderr,
+    file: TextIO | None = None,
     save_path: Path | None = None,
     font: str = DEFAULT_FONT,
     colors: str | None = None,
@@ -85,7 +85,9 @@ def show_logo(
     """Render and display the slipp logo to terminal or save as HTML.
 
     Args:
-        file: Output file handle. Defaults to stderr.
+        file: Output file handle. Defaults to stderr (resolved at call
+            time, not import time, so a caller that redirects stderr still
+            gets the current stream).
         save_path: Optional path to export as HTML file.
         font: Figlet font name. Defaults to "ansi_shadow".
         colors: Palette name (see COLOR_PALETTES) or comma-separated hex
@@ -95,6 +97,8 @@ def show_logo(
         theme: Color theme name for HTML export. Defaults to "starlight"
             when save_path is set; pass "none" to force no theme.
     """
+    file = file if file is not None else sys.stderr
+
     from pyfiglet import Figlet
 
     if save_path and theme is None:

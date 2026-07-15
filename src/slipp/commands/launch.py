@@ -66,11 +66,6 @@ def launch_command(
     """Generate complete Ansible project from codebase."""
     dirs, output_dir = resolve_project_dirs(project_dirs)
 
-    if health_check and not health_check.startswith("/"):
-        raise typer.BadParameter(
-            f"--health-check must start with '/', got '{health_check}'"
-        )
-
     context = FullContext(
         output_dir=output_dir,
         environment=environment,

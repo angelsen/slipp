@@ -15,10 +15,10 @@ from slipp.commands.common import (
 )
 from slipp.services.ssh import (
     SSHService,
-    UserResolver,
     build_container_command,
     build_vps_command,
     hint_ssh_log,
+    resolve_user,
 )
 
 
@@ -51,26 +51,22 @@ def exec_command(
                 ssh_config, service_name, include_system=False
             )
 
-        user_resolver = UserResolver(ssh)
-        resolution = user_resolver.resolve(service, user, ssh_config.ansible_user)
-
-        if resolution.warning:
-            output.warning(resolution.warning)
+        resolved_user = resolve_user(ssh, service, user, ssh_config.ansible_user)
 
         if service and service.runtime.is_container():
             exec_cmd = build_container_command(
-                service.name, command, resolution.user, service.runtime
+                service.name, command, resolved_user, service.runtime
             )
             context_msg = f"container {service.name}"
         else:
             exec_cmd = build_vps_command(
-                resolution.user, command, ssh_config.ansible_user
+                resolved_user, command, ssh_config.ansible_user
             )
             context_msg = "VPS"
 
         output.blank()
         output.info(
-            f"Executing on {ssh_config.ansible_host} ({context_msg}, as {resolution.user})"
+            f"Executing on {ssh_config.ansible_host} ({context_msg}, as {resolved_user})"
         )
         output.info(f"Command: {command}")
         output.blank()

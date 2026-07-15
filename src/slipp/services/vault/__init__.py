@@ -13,6 +13,7 @@ from slipp.services.vault.crypto import (
     write_missing_secrets,
 )
 from slipp.services.vault.generate import generate_jwk, generate_secret
+from slipp.services.vault.lookup import VaultLookup, VaultLookupError, lookup_vault_keys
 from slipp.services.vault.projects import (
     VaultInfo,
     decrypt_vault_to_env,
@@ -23,6 +24,8 @@ from slipp.services.vault.sync import SecretSynchronizer
 
 __all__ = [
     "VaultInfo",
+    "VaultLookup",
+    "VaultLookupError",
     "decrypt_vault",
     "decrypt_vault_to_env",
     "encrypt_secrets",
@@ -32,6 +35,7 @@ __all__ = [
     "has_vault_content",
     "list_keys",
     "list_project_vaults",
+    "lookup_vault_keys",
     "merge_vault_envs",
     "vault_password_file",
     "write_missing_secrets",

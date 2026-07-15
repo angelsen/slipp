@@ -9,11 +9,13 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, TypeVar
 
+import typer
 from rich import box
 from rich.console import Console
 from rich.table import Table
 
 from slipp.constants import OutputFormat
+from slipp.utils.errors import PasswordMismatchError
 
 T = TypeVar("T")
 
@@ -255,8 +257,6 @@ def prompt(question: str, default: Any = None, *, type: type | None = None) -> A
     The value type is `type` if given, else inferred from `default`
     (typer's behavior) -- so int prompts work with either.
     """
-    import typer
-
     return typer.prompt(question, default=default, type=type, err=True)
 
 
@@ -275,8 +275,6 @@ def pick(
 
 def confirm(question: str, *, default: bool = False) -> bool:
     """Yes/no prompt via typer (prompt text on stderr, stdout stays data)."""
-    import typer
-
     return typer.confirm(question, default=default, err=True)
 
 
@@ -289,10 +287,6 @@ def prompt_password(
     piped stdout. Raises PasswordMismatchError if require_confirmation=True
     and passwords don't match.
     """
-    import typer
-
-    from slipp.utils.errors import PasswordMismatchError
-
     password = typer.prompt(question, hide_input=True, err=True)
 
     if require_confirmation:

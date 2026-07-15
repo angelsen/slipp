@@ -148,11 +148,18 @@ def _spawn_ssh_tunnel(
             "ExitOnForwardFailure=yes",
             "-o",
             "ServerAliveInterval=30",
+            # This process runs unattended with no one to answer an unknown
+            # host key or password prompt -- without BatchMode, ssh would
+            # block on stdin forever and the poll loop below (which only
+            # checks proc.poll()) would misreport the hang as a live tunnel.
+            "-o",
+            "BatchMode=yes",
         ],
     )
 
     proc = subprocess.Popen(
         cmd,
+        stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.PIPE,
     )

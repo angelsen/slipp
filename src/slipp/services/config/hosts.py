@@ -16,7 +16,7 @@ from slipp.services.config.inventory import load_project_ansible_hosts
 from slipp.services.config.local import LocalConfigService
 from slipp.services.discovery import lookup_host_by_service
 from slipp.services.registry import ProjectRegistry
-from slipp.utils.errors import ConfigError, HostNotFoundError
+from slipp.utils.errors import ConfigError, HostNotFoundError, ProjectNotFoundError
 from slipp.utils.identifiers import parse_service_identifier
 
 
@@ -117,12 +117,13 @@ class HostResolver:
             First AnsibleHost from project's inventory
 
         Raises:
-            HostNotFoundError: If project not found or invalid
+            ProjectNotFoundError: If project not registered
+            HostNotFoundError: If the project's inventory is invalid
         """
         project_obj = self._registry.get(project)
 
         if project_obj is None:
-            raise HostNotFoundError(f"Project '{project}' not found in registry")
+            raise ProjectNotFoundError(f"Project '{project}' not found in registry")
 
         hosts = load_project_ansible_hosts(project_obj.project_path)
         return self._first_host(hosts, f"Project '{project}'")
@@ -192,6 +193,7 @@ class HostResolver:
 
         Raises:
             HostNotFoundError: If resolution fails
+            ProjectNotFoundError: If `project` isn't registered
             AmbiguousServiceError: If service is ambiguous
         """
         if service:

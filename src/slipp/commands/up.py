@@ -1,5 +1,6 @@
 """Orchestrated deploy - slipp up composes provision -> hub -> domain -> launch -> dns -> deploy."""
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated
 
@@ -16,15 +17,12 @@ from slipp.commands.provision import provision_or_exit
 from slipp.constants import (
     DEFAULT_ENV,
     DEFAULT_SERVICE_USER,
-    DEFAULT_SSH_PORT,
     DEFAULT_SSH_USER,
     DnsMode,
 )
-from slipp.models.deployment import DeploymentHostConfig, InventoryConfig
-from slipp.models.service import Runtime
 from slipp.services.config import LocalConfigService
 from slipp.services.deploy import DeployOverrides
-from slipp.services.launch import FullContext, run_full_pipeline
+from slipp.services.launch import build_context_for_provisioned_host, run_full_pipeline
 from slipp.services.providers import (
     GigahostClient,
     ProviderConfigService,
@@ -77,6 +75,75 @@ def _make_hub(step: _StepCounter, name: str, ip: str) -> None:
     output.success(f"{ip} is now a wg-manage hub")
 
 
+def _resolve_ip(
+    step: _StepCounter,
+    host: str | None,
+    name: str,
+    get_client: Callable[[], GigahostClient],
+) -> tuple[str, str]:
+    """Provision a new server, or use --host as-is. Returns (ip, ssh_user)."""
+    if host:
+        output.info(f"Using existing host: {host}")
+        output.hint(
+            f"Assuming SSH user '{DEFAULT_SSH_USER}' -- edit inventory if different"
+        )
+        return host, DEFAULT_SSH_USER
+
+    step("Provisioning server...")
+    ip = provision_or_exit(get_client(), name)
+    return ip, DEFAULT_SERVICE_USER
+
+
+def _resolve_domain(
+    step: _StepCounter, get_client: Callable[[], GigahostClient], domain: str | None
+) -> str:
+    """Register/verify --domain if given, else prompt for one."""
+    if not domain:
+        return output.prompt("App domain")
+
+    step(f"Checking domain {domain}...")
+    try:
+        ensure_domain_registered(get_client(), domain)
+    except ProviderError as e:
+        output.error(f"Domain registration failed: {e}")
+        raise typer.Exit(1) from e
+    return domain
+
+
+def _run_launch_and_dns(
+    step: _StepCounter,
+    ip: str,
+    ssh_user: str,
+    resolved_domain: str,
+    environment: str,
+    name: str,
+    dns: DnsMode,
+    get_client: Callable[[], GigahostClient],
+) -> None:
+    """Generate and run the launch pipeline, then sync (or skip) DNS."""
+    step("Generating Ansible project...")
+    context = build_context_for_provisioned_host(
+        output_dir=Path.cwd(),
+        environment=environment,
+        project_name=name,
+        ip=ip,
+        ssh_user=ssh_user,
+        resolved_domain=resolved_domain,
+    )
+    try:
+        run_full_pipeline(context)
+    except LaunchError as e:
+        output.error(f"Launch failed: {e}")
+        raise typer.Exit(1) from e
+
+    if dns == DnsMode.manual:
+        step("DNS sync skipped (--dns manual)")
+        output.hint(f"Point {resolved_domain} A record to {ip}")
+    else:
+        step(f"Syncing DNS for {resolved_domain}...")
+        sync_and_report(get_client(), resolved_domain, ip)
+
+
 def up_command(
     name: Annotated[str, typer.Argument(help="Project name")],
     host: Annotated[
@@ -114,66 +181,16 @@ def up_command(
     step = _StepCounter()
 
     try:
-        if host:
-            ip = host
-            output.info(f"Using existing host: {ip}")
-            ssh_user = DEFAULT_SSH_USER
-            output.hint(
-                f"Assuming SSH user '{DEFAULT_SSH_USER}' -- edit inventory if different"
-            )
-        else:
-            step("Provisioning server...")
-            ip = provision_or_exit(get_client(), name)
-            ssh_user = DEFAULT_SERVICE_USER
+        ip, ssh_user = _resolve_ip(step, host, name, get_client)
 
         if hub:
             _make_hub(step, name, ip)
 
-        resolved_domain = domain
-        if resolved_domain:
-            step(f"Checking domain {resolved_domain}...")
-            try:
-                ensure_domain_registered(get_client(), resolved_domain)
-            except ProviderError as e:
-                output.error(f"Domain registration failed: {e}")
-                raise typer.Exit(1)
+        resolved_domain = _resolve_domain(step, get_client, domain)
 
-        if not resolved_domain:
-            resolved_domain = output.prompt("App domain")
-
-        step("Generating Ansible project...")
-        context = FullContext(
-            output_dir=Path.cwd(),
-            dry_run=False,
-            environment=environment,
-            project_dirs=[Path.cwd()],
-            project_name=name,
-            inventory_config=InventoryConfig(
-                hosts={
-                    environment: DeploymentHostConfig(
-                        inventory_hostname=environment,
-                        ansible_host=ip,
-                        ansible_user=ssh_user,
-                        ansible_port=DEFAULT_SSH_PORT,
-                        app_domain=resolved_domain,
-                        admin_email=f"admin@{resolved_domain}",
-                        runtime=Runtime.DOCKER,
-                    )
-                }
-            ),
+        _run_launch_and_dns(
+            step, ip, ssh_user, resolved_domain, environment, name, dns, get_client
         )
-        try:
-            run_full_pipeline(context)
-        except LaunchError as e:
-            output.error(f"Launch failed: {e}")
-            raise typer.Exit(1)
-
-        if dns == DnsMode.manual:
-            step("DNS sync skipped (--dns manual)")
-            output.hint(f"Point {resolved_domain} A record to {ip}")
-        else:
-            step(f"Syncing DNS for {resolved_domain}...")
-            sync_and_report(get_client(), resolved_domain, ip)
     finally:
         if _client is not None:
             _client.close()

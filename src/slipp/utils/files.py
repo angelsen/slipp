@@ -18,7 +18,7 @@ def read_json_file(path: Path) -> dict[str, Any] | None:
         return None
     try:
         return json.loads(path.read_text())
-    except (json.JSONDecodeError, OSError):
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError):
         return None
 
 

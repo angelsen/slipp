@@ -15,6 +15,10 @@ def host_command(
     port_only: Annotated[bool, typer.Option("--port", help="Output port only")] = False,
 ) -> None:
     """Output host connection info (pipeable)."""
+    if sum([ip_only, user_only, port_only]) > 1:
+        output.error("Use only one of --ip, --user, --port at a time")
+        raise typer.Exit(1)
+
     host = resolve_host_or_exit(project=project, command="host")
 
     if ip_only:

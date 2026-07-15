@@ -12,6 +12,7 @@ from slipp.constants import ProxyType
 from slipp.models.local_config import ExposeEntry
 from slipp.models.service import Runtime
 from slipp.scanner.routing import default_expose
+from slipp.services.config import LocalConfigService
 from slipp.services.launch.context import (
     BaseContext,
     DockerfileContext,
@@ -98,9 +99,6 @@ def resolve_expose(context: FullContext, domain: str) -> dict[str, ExposeEntry]:
     result back to slipp.yaml.
     """
     if context.expose is None:
-        # Lazy: services.config.local imports other launch-adjacent modules.
-        from slipp.services.config import LocalConfigService
-
         existing = LocalConfigService.load(context.output_dir)
         if existing and existing.expose:
             # A seeded block is indistinguishable from a hand-edited one,
@@ -311,4 +309,12 @@ class ValidationStage:
                 raise LaunchError(
                     f"Invalid container runtime: {context.container_runtime}\n"
                     f"Valid options: {', '.join(valid_runtimes)}"
+                )
+
+        # Only FullContext carries this field (Dockerfile-only pipeline has
+        # no health-check/rollback concept).
+        if isinstance(context, FullContext) and context.health_check:
+            if not context.health_check.startswith("/"):
+                raise LaunchError(
+                    f"--health-check must start with '/', got '{context.health_check}'"
                 )

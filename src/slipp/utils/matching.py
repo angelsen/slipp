@@ -57,7 +57,7 @@ def fuzzy_match(
     return best_match
 
 
-def get_suggestions(
+def fuzzy_suggestions(
     query: str,
     candidates: list[str],
     max_results: int = 3,
@@ -77,7 +77,7 @@ def get_suggestions(
         List of suggestions, best match first
 
     Example:
-        >>> get_suggestions("synapze", ["matrix-synapse", "caddy", "postgres"])
+        >>> fuzzy_suggestions("synapze", ["matrix-synapse", "caddy", "postgres"])
         ['matrix-synapse']
     """
     query_clean = query.lower()

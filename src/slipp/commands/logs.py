@@ -16,9 +16,7 @@ def logs_command(
     service: Annotated[
         str, typer.Argument(help="Service name (e.g., synapse or synapse@matrix)")
     ],
-    follow: Annotated[
-        bool, typer.Option("--follow", "-f", help="Follow log output")
-    ] = False,
+    follow: Annotated[bool, typer.Option("--follow", help="Follow log output")] = False,
     lines: Annotated[
         int, typer.Option("--lines", "-n", help="Number of lines to show")
     ] = 50,

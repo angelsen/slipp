@@ -34,7 +34,7 @@ class ScaffoldContext(BaseContext):
     playbook_path: Path | None = None
     inventory_path: Path | None = None
     requirements_path: Path | None = None
-    galaxy_roles_path: str | None = None
+    galaxy_roles_path: Path | None = None
     hostname: str = ""
     host_ip: str = ""
     inventory_dir: Path | None = None

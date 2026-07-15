@@ -30,6 +30,17 @@ DEFAULT_PYTHON_PORT = 8080
 DEFAULT_NODE_PORT = 3000
 
 
+def _read_text(path: Path) -> str | None:
+    """Read a text file, or None (logged) if it doesn't exist or can't be decoded."""
+    if not path.exists():
+        return None
+    try:
+        return path.read_text()
+    except (OSError, UnicodeDecodeError):
+        logger.debug("Failed to read %s", path, exc_info=True)
+        return None
+
+
 @functools.lru_cache
 def load_pyproject(source_dir: Path) -> dict | None:
     """Parse pyproject.toml once per source_dir, memoized across detectors.
@@ -319,12 +330,13 @@ def parse_environment_yml_dependencies(source_dir: Path) -> list[str]:
         True
     """
     env_file = source_dir / "environment.yml"
-    if not env_file.exists():
+    content = _read_text(env_file)
+    if content is None:
         return []
 
     try:
-        data = yaml.safe_load(env_file.read_text())
-    except (yaml.YAMLError, OSError, UnicodeDecodeError):
+        data = yaml.safe_load(content)
+    except yaml.YAMLError:
         logger.debug("Failed to parse %s", env_file, exc_info=True)
         return []
 
@@ -374,25 +386,20 @@ def extract_python_dependencies(source_dir: Path) -> list[str]:
         >>> deps = extract_python_dependencies(Path("/path/to/flask-app"))
         >>> "flask" in deps
         True
-        >>> "uvicorn" in deps
-        True
     """
     dependencies = set()
 
     dependencies.update(parse_pyproject_dependencies(source_dir))
 
     requirements_file = source_dir / "requirements.txt"
-    if requirements_file.exists():
-        try:
-            content = requirements_file.read_text()
-            for line in content.splitlines():
-                line = line.strip()
-                if line and not line.startswith("#"):
-                    package = parse_dependency(line)
-                    if package:
-                        dependencies.add(package)
-        except (IOError, UnicodeDecodeError):
-            pass
+    content = _read_text(requirements_file)
+    if content is not None:
+        for line in content.splitlines():
+            line = line.strip()
+            if line and not line.startswith("#"):
+                package = parse_dependency(line)
+                if package:
+                    dependencies.add(package)
 
     dependencies.update(parse_pipfile_dependencies(source_dir))
     dependencies.update(parse_setup_cfg_dependencies(source_dir))

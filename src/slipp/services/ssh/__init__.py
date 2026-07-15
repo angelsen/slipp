@@ -3,7 +3,8 @@
 This package provides services for SSH connections, tunnels, and remote execution.
 """
 
-from slipp.services.ssh.client import SSHResult, SSHService, hint_ssh_log
+from slipp.services.ssh.client import SSHResult, SSHService
+from slipp.services.ssh.log import hint_ssh_log
 from slipp.services.ssh.command import (
     build_container_command,
     build_logs_command,
@@ -17,7 +18,7 @@ from slipp.services.ssh.tunnel import (
     parse_tunnel_in,
     parse_tunnel_out,
 )
-from slipp.services.ssh.user import UserResolver
+from slipp.services.ssh.user import UserResolver, resolve_user
 
 __all__ = [
     "SSHResult",
@@ -33,5 +34,6 @@ __all__ = [
     "build_ssh_command",
     "build_vps_command",
     "UserResolver",
+    "resolve_user",
     "hint_ssh_log",
 ]

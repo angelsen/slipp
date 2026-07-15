@@ -15,7 +15,6 @@ from slipp.constants import SecretEncoding
 from slipp.models.deployment import DeploymentHostConfig
 from slipp.models.host import AnsibleHost
 from slipp.models.service import Runtime, Service
-from slipp.output import format_path
 from slipp.scanner.workspaces import detect_workspace_members
 from slipp.services import wg_manage
 from slipp.services.config import (
@@ -32,7 +31,7 @@ from slipp.services.registry import ProjectRegistry
 from slipp.services.vault import generate_jwk, generate_secret
 from slipp.utils.errors import AmbiguousServiceError, DeployError, WgManageError
 from slipp.utils.identifiers import parse_service_identifier
-from slipp.utils.matching import get_suggestions
+from slipp.utils.matching import fuzzy_suggestions
 
 DryRunOption = Annotated[
     bool,
@@ -226,6 +225,21 @@ def resolve_declared_dirs(project_root: Path) -> list[Path] | None:
     return [project_root / d for d in local_config.project_dirs]
 
 
+def resolve_wg_manage_host(root: Path | None = None) -> DeploymentHostConfig | None:
+    """Best-effort: the current project's host, if it's a wg-manage hub.
+
+    None whenever there's no project here, no inventory, or the host isn't
+    a wg-manage hub -- callers fall back to non-wg-manage behavior in that
+    case.
+
+    Args:
+        root: Project root, if already resolved (avoids a second
+            resolve_root() filesystem walk). Defaults to resolving from cwd.
+    """
+    host = load_first_host(root or LocalConfigService.resolve_root())
+    return host if is_wg_manage_host(host) else None
+
+
 def sync_wg_manage_project(
     project_root: Path,
     project_name: str,
@@ -270,8 +284,8 @@ def sync_wg_manage_after_deploy(project_root: Path, project_name: str) -> None:
     failure mode (SSH, scanning, missing config) to WgManageError, so
     catching that one type here is actually exhaustive.
     """
-    host = load_first_host(project_root)
-    if host is None or not is_wg_manage_host(host):
+    host = resolve_wg_manage_host(project_root)
+    if host is None:
         return
 
     try:
@@ -319,11 +333,11 @@ def run_deploy_or_exit(
     except DeployError as e:
         output.error(str(e))
         if e.log_dir:
-            output.hint(f"See log: {format_path(e.log_dir, project_root)}")
+            output.hint(f"See log: {output.format_path(e.log_dir, project_root)}")
         raise typer.Exit(1)
 
     if result.exit_code != 0:
-        output.hint(f"Review log: {format_path(result.log_dir, project_root)}")
+        output.hint(f"Review log: {output.format_path(result.log_dir, project_root)}")
         raise typer.Exit(result.exit_code)
 
     return result
@@ -425,40 +439,6 @@ def find_service_or_exit(
     return service
 
 
-def _get_project_root(project_name: str) -> Path:
-    """Get project root path from registry, falling back to discovery.
-
-    Args:
-        project_name: Name of the project to look up
-
-    Returns:
-        Project root path from registry, or the enclosing project found by
-        walking up from cwd (or cwd itself) if not found
-    """
-    project = ProjectRegistry().get(project_name)
-    if project:
-        return project.project_path
-    return LocalConfigService.resolve_root()
-
-
-def _resolve_runtime(project: str | None) -> Runtime:
-    """Resolve project root and detect its runtime.
-
-    Args:
-        project: Optional project name (defaults to cwd if not given)
-
-    Returns:
-        The detected Runtime
-
-    Raises:
-        RuntimeDetectionError: If runtime detection fails
-    """
-    project_root = (
-        _get_project_root(project) if project else LocalConfigService.resolve_root()
-    )
-    return RuntimeDetector(project_root).detect()
-
-
 def require_container_runtime(project: str | None, *, action: str) -> Runtime:
     """Resolve the project's runtime, exiting with an error if it's not a container.
 
@@ -472,7 +452,15 @@ def require_container_runtime(project: str | None, *, action: str) -> Runtime:
     Raises:
         typer.Exit: If the project runtime isn't a container runtime
     """
-    runtime = _resolve_runtime(project)
+    if project:
+        registered = ProjectRegistry().get(project)
+        project_root = (
+            registered.project_path if registered else LocalConfigService.resolve_root()
+        )
+    else:
+        project_root = LocalConfigService.resolve_root()
+
+    runtime = RuntimeDetector(project_root).detect()
     if not runtime.is_container():
         output.error(
             f"Project runtime is '{runtime}' -- no container images to {action}"
@@ -495,21 +483,12 @@ def _show_service_not_found_error(
         service_identifier: Service identifier that was not found
         host: Host where the service was searched
         available_services: List of available services on the host
-
-    Example:
-        >>> _show_service_not_found_error("synapze", "83.143.80.248", services)
-        # Displays:
-        # ✗ Service 'synapze' not found on 83.143.80.248
-        # ℹ Did you mean: matrix-synapse?
-        # ⚠ Available services:
-        #   • matrix-synapse (active)
-        #   ...
     """
     service_name, _, _ = parse_service_identifier(service_identifier)
     output.error(f"Service '{service_name}' not found on {host}")
 
     service_names = [s.name for s in available_services]
-    suggestions = get_suggestions(service_name, service_names)
+    suggestions = fuzzy_suggestions(service_name, service_names)
     if suggestions:
         output.hint(f"Did you mean: {', '.join(suggestions)}?")
 

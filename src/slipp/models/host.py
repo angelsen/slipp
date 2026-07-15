@@ -2,6 +2,7 @@
 
 from pydantic import BaseModel, Field
 
+from slipp.constants import DEFAULT_SSH_PORT, DEFAULT_SSH_USER
 from slipp.models.types import OptionalPathStr
 
 
@@ -25,8 +26,10 @@ class AnsibleHost(BaseModel):
     ansible_host: str = Field(
         ..., min_length=1, description="IP or domain for SSH connection"
     )
-    ansible_user: str = Field(default="root", description="SSH user")
-    ansible_port: int = Field(default=22, ge=1, le=65535, description="SSH port")
+    ansible_user: str = Field(default=DEFAULT_SSH_USER, description="SSH user")
+    ansible_port: int = Field(
+        default=DEFAULT_SSH_PORT, ge=1, le=65535, description="SSH port"
+    )
     key_file: OptionalPathStr = Field(default=None, description="SSH private key path")
 
     @property
@@ -58,7 +61,7 @@ class AnsibleHost(BaseModel):
             f"ansible_host={self.ansible_host}",
             f"ansible_user={self.ansible_user}",
         ]
-        if self.ansible_port != 22:
+        if self.ansible_port != DEFAULT_SSH_PORT:
             parts.append(f"ansible_port={self.ansible_port}")
         if self.key_file:
             parts.append(f"ansible_ssh_private_key_file={self.key_file}")

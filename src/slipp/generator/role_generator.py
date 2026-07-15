@@ -26,7 +26,14 @@ _SLIPP_GENERATED_PATTERNS = [
     ".slipp",
 ]
 
-_SYSTEMD_TEMPLATE_DIRS = {"roles/app-systemd-python", "roles/app-systemd"}
+_CONTAINER_TEMPLATE_DIR = "roles/app-container"
+_SYSTEMD_PYTHON_TEMPLATE_DIR = "roles/app-systemd-python"
+_SYSTEMD_NODE_TEMPLATE_DIR = "roles/app-systemd"
+
+# Every systemd (non-container) template dir _template_dir() can return --
+# derived rather than re-listed, so a renamed/added systemd template dir
+# can't silently fall out of sync with the check in extract_systemd_vars().
+_SYSTEMD_TEMPLATE_DIRS = {_SYSTEMD_PYTHON_TEMPLATE_DIR, _SYSTEMD_NODE_TEMPLATE_DIR}
 
 
 def _template_dir(runtime: Runtime, service: DetectedService) -> str:
@@ -40,10 +47,10 @@ def _template_dir(runtime: Runtime, service: DetectedService) -> str:
     template, keep each shape readable.
     """
     if runtime != Runtime.SYSTEMD:
-        return "roles/app-container"
+        return _CONTAINER_TEMPLATE_DIR
     if service.framework in PYTHON_FRAMEWORKS:
-        return "roles/app-systemd-python"
-    return "roles/app-systemd"
+        return _SYSTEMD_PYTHON_TEMPLATE_DIR
+    return _SYSTEMD_NODE_TEMPLATE_DIR
 
 
 def _compute_sync_excludes(
@@ -162,9 +169,11 @@ def generate_app_role(
     template_dir = _template_dir(runtime, service)
     if systemd_vars is None:
         systemd_vars = extract_systemd_vars(runtime, service)
+    service_data = service.model_dump()
 
     files[Path(f"roles/{role_name}/tasks/main.yml")] = _render_tasks(
         service,
+        service_data,
         project_name,
         runtime,
         sync_excludes,
@@ -174,21 +183,35 @@ def generate_app_role(
         systemd_vars,
     )
     files[Path(f"roles/{role_name}/templates/systemd.service.j2")] = _render_systemd(
-        service, project_name, runtime, exec_args, template_dir, systemd_vars
+        service,
+        service_data,
+        project_name,
+        runtime,
+        exec_args,
+        template_dir,
+        systemd_vars,
     )
     # Systemd deploys handle restart/verification inline (see tasks/main.yml.j2's
     # block/rescue) rather than via notify, so only the container role -- whose
     # community.docker/podman tasks still notify a recreate handler -- needs one.
     if runtime != Runtime.SYSTEMD:
         files[Path(f"roles/{role_name}/handlers/main.yml")] = _render_handlers(
-            service, project_name
+            service, service_data, project_name
         )
 
     return files
 
 
+def _base_context(
+    service_data: dict[str, Any], project_name: str, **extra: Any
+) -> dict[str, Any]:
+    """Common render-context fields shared by every role template."""
+    return {"service": service_data, "project_name": project_name, **extra}
+
+
 def _render_tasks(
     service: DetectedService,
+    service_data: dict[str, Any],
     project_name: str,
     runtime: Runtime,
     sync_excludes: list[str],
@@ -200,7 +223,8 @@ def _render_tasks(
     """Render tasks/main.yml template.
 
     Args:
-        service: Service configuration
+        service: Service configuration (for its name, in the error label)
+        service_data: service.model_dump(), computed once by the caller
         project_name: Project name
         runtime: How the app runs (systemd, docker, or podman)
         sync_excludes: Extra rsync --exclude patterns (see
@@ -216,14 +240,14 @@ def _render_tasks(
     Returns:
         Rendered tasks YAML content
     """
-    context = {
-        "service": service.model_dump(),
-        "project_name": project_name,
-        "health_check": health_check,
-        "runtime": runtime.value,
-        "sync_excludes": sync_excludes,
-        "uv_extra": uv_extra,
-    }
+    context = _base_context(
+        service_data,
+        project_name,
+        health_check=health_check,
+        runtime=runtime.value,
+        sync_excludes=sync_excludes,
+        uv_extra=uv_extra,
+    )
     if systemd_vars:
         context.update(systemd_vars)
     return render_template(
@@ -235,6 +259,7 @@ def _render_tasks(
 
 def _render_systemd(
     service: DetectedService,
+    service_data: dict[str, Any],
     project_name: str,
     runtime: Runtime,
     exec_args: str | None,
@@ -244,7 +269,8 @@ def _render_systemd(
     """Render systemd.service.j2 template.
 
     Args:
-        service: Service configuration
+        service: Service configuration (for its name, in the error label)
+        service_data: service.model_dump(), computed once by the caller
         project_name: Project name
         runtime: How the app runs (systemd, docker, or podman)
         exec_args: Optional extra ExecStart arguments (Python systemd
@@ -256,12 +282,9 @@ def _render_systemd(
     Returns:
         Rendered systemd unit content
     """
-    context = {
-        "service": service.model_dump(),
-        "project_name": project_name,
-        "runtime": runtime.value,
-        "exec_args": exec_args,
-    }
+    context = _base_context(
+        service_data, project_name, runtime=runtime.value, exec_args=exec_args
+    )
     if systemd_vars:
         context.update(systemd_vars)
     return render_template(
@@ -300,11 +323,14 @@ def extract_systemd_vars(
     return extra
 
 
-def _render_handlers(service: DetectedService, project_name: str) -> str:
+def _render_handlers(
+    service: DetectedService, service_data: dict[str, Any], project_name: str
+) -> str:
     """Render handlers/main.yml template.
 
     Args:
-        service: Service configuration
+        service: Service configuration (for its name, in the error label)
+        service_data: service.model_dump(), computed once by the caller
         project_name: Project name
 
     Returns:
@@ -312,6 +338,6 @@ def _render_handlers(service: DetectedService, project_name: str) -> str:
     """
     return render_template(
         "roles/app-container/handlers/main.yml.j2",
-        {"service": service.model_dump(), "project_name": project_name},
+        _base_context(service_data, project_name),
         label=f"role for {service.name} (handlers)",
     )

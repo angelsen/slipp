@@ -8,16 +8,10 @@ from typing import Any
 from slipp import output
 from slipp.constants import PLAYBOOK_FILENAME
 from slipp.models.service import Runtime
-from slipp.output import format_path
 from slipp.services.config import LocalConfigService
 from slipp.services.config.detection import PLAYBOOK_PATTERNS, detect_path
 from slipp.services.registry import ProjectRegistry
 from slipp.utils.errors import ConfigError, ConfigParseError, SlippError
-
-
-def _parse_runtime(runtime: str) -> Runtime:
-    """Parse a CLI --runtime flag value into the Runtime enum."""
-    return Runtime(runtime.lower())
 
 
 @dataclass
@@ -85,7 +79,7 @@ def ensure_local_config(
 
     if not inventory_path.exists():
         raise ConfigError(
-            f"Inventory file not found: {format_path(inventory_path, project_root)}"
+            f"Inventory file not found: {output.format_path(inventory_path, project_root)}"
         )
 
     if playbook:
@@ -114,9 +108,9 @@ def ensure_local_config(
         if vault:
             changes["vault"] = vault
         if runtime:
-            changes["runtime"] = _parse_runtime(runtime)
+            changes["runtime"] = Runtime.parse(runtime)
 
-        _, created = LocalConfigService.create_or_update_with(
+        LocalConfigService.create_or_update_and_report(
             lambda: LocalConfigService.build(
                 name=name,
                 inventory_path=inventory,
@@ -129,11 +123,8 @@ def ensure_local_config(
             ),
             lambda c: changes,
             project_root=project_root,
+            name=name,
         )
-        if created:
-            output.info(f"Created slipp.yaml with name '{name}'")
-        else:
-            output.info(f"Updated slipp.yaml with name '{name}'")
     except (ValueError, OSError) as e:
         # ValueError: bad --runtime value (invalid Runtime enum member).
         # OSError: config file couldn't be written (permissions, disk).
@@ -215,7 +206,7 @@ def persist_config_updates(overrides: DeployOverrides, project_root: Path) -> No
     if overrides.vault:
         _set("vault", overrides.vault)
     if overrides.runtime:
-        changes["runtime"] = _parse_runtime(overrides.runtime)
+        changes["runtime"] = Runtime.parse(overrides.runtime)
 
     if not changes:
         return

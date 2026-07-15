@@ -13,6 +13,7 @@ from slipp.services.launch.context import (
     DockerfileContext,
     FullContext,
     ScaffoldContext,
+    build_context_for_provisioned_host,
 )
 from slipp.services.launch.stages import (
     AppRolesStage,
@@ -103,6 +104,7 @@ __all__ = [
     "DockerfileContext",
     "FullContext",
     "ScaffoldContext",
+    "build_context_for_provisioned_host",
     "run_dockerfile_pipeline",
     "run_full_pipeline",
     "run_scaffold_pipeline",

@@ -21,7 +21,7 @@ from slipp.commands.host import host_command
 from slipp.commands.image import image_app
 from slipp.commands.images import images_app
 from slipp.commands.launch import launch_command
-from slipp.commands.logo import logo_command
+from slipp.commands.logo import logo_app
 from slipp.commands.logs import logs_command
 from slipp.commands.projects import projects_app
 from slipp.commands.provision import provision_command
@@ -76,6 +76,7 @@ app.add_typer(domains_app, name="domains")
 app.add_typer(generate_app, name="generate")
 app.add_typer(image_app, name="image")
 app.add_typer(images_app, name="images")
+app.add_typer(logo_app, name="logo")
 app.add_typer(projects_app, name="projects")
 app.add_typer(providers_app, name="providers")
 app.add_typer(resources_app, name="resources")
@@ -90,7 +91,6 @@ app.command(name="deploy")(deploy_command)
 app.command(name="exec")(exec_command)
 app.command(name="host")(host_command)
 app.command(name="launch")(launch_command)
-app.command(name="logo")(logo_command)
 app.command(name="logs")(logs_command)
 app.command(name="provision")(provision_command)
 app.command(name="ps")(ps_command)

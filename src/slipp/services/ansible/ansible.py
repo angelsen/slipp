@@ -149,16 +149,20 @@ def get_host_group(playbook_path: Path, roles_path: list[str] | None = None) -> 
         roles_path: Optional list of role directories (sets ANSIBLE_ROLES_PATH)
 
     Returns:
-        Host group name (default: 'servers' if not detected)
+        Host group name (default: 'servers' if pattern not found in output)
+
+    Raises:
+        AnsibleError: If ansible-playbook --list-hosts fails
     """
     check_tool_installed("ansible-playbook", AnsibleNotFoundError)
 
     env = _subprocess_env(roles_path)
 
-    result = _run_uncertain(
+    result = run_checked(
         ["ansible-playbook", "--list-hosts", str(playbook_path)],
-        playbook_path.parent,
-        env,
+        AnsibleError,
+        cwd=playbook_path.parent,
+        env=env,
     )
 
     for line in result.stdout.splitlines():
@@ -193,7 +197,7 @@ def _requirements_have_collections(requirements_file: str) -> bool:
     try:
         with open(requirements_file) as f:
             data = yaml.safe_load(f)
-    except OSError:
+    except (OSError, yaml.YAMLError):
         return False
     return isinstance(data, dict) and bool(data.get("collections"))
 
@@ -252,7 +256,7 @@ def _run_galaxy_command(
 
 def _install_requirements(
     requirements_file: str,
-    install_dir: str = "roles",
+    install_dir: str,
     log_dir: Path | None = None,
     force: bool = False,
     on_progress: ProgressCallback | None = None,
@@ -266,7 +270,7 @@ def _install_requirements(
 
     Args:
         requirements_file: Path to requirements.yml file
-        install_dir: Directory to install roles (default: roles/)
+        install_dir: Directory to install roles
         log_dir: Directory for log file (optional)
         force: Force reinstall even if roles/collections exist
         on_progress: Optional callback for progress updates
@@ -358,10 +362,14 @@ def ensure_requirements_installed(
         output.success("Installing requirements")
         return
 
-    message = "Installing requirements failed"
+    raise AnsibleError(append_log_hint("Installing requirements failed", result))
+
+
+def append_log_hint(message: str, result: AnsibleResult) -> str:
+    """Append a 'See log: <path>' line to a failure message, if one was written."""
     if result.log_path:
-        message += f"\nSee log: {result.log_path}"
-    raise AnsibleError(message)
+        return f"{message}\nSee log: {result.log_path}"
+    return message
 
 
 @contextmanager
@@ -475,3 +483,45 @@ def run_playbook(
     finally:
         if log_handle:
             log_handle.close()
+
+
+def run_playbook_with_spinner(
+    playbook: str,
+    inventory: str,
+    *,
+    label: str,
+    spinner_type: str = "dots",
+    ask_become_pass: bool = False,
+    check: bool = False,
+    vault_file: str | None = None,
+    vault_password_file: Path | None = None,
+    tags: str | None = None,
+    skip_tags: str | None = None,
+    roles_path: list[str] | None = None,
+    log_dir: Path | None = None,
+    extra_vars: dict[str, Any] | None = None,
+) -> AnsibleResult:
+    """Run a playbook behind a spinner, prompting for the become password first.
+
+    Shared by every caller that runs a playbook interactively (deploy,
+    Caddy dev-proxy install): wires up the become-password ExitStack,
+    spinner, and progress callback so each caller only supplies the
+    playbook-specific args and a spinner label.
+    """
+    with ExitStack() as stack:
+        become_pw_file = maybe_become_password_file(stack, ask_become_pass)
+        with output.spinner(label, spinner_type=spinner_type) as update:
+            return run_playbook(
+                playbook,
+                inventory,
+                check=check,
+                vault_file=vault_file,
+                vault_password_file=vault_password_file,
+                become_pw_file=become_pw_file,
+                tags=tags,
+                skip_tags=skip_tags,
+                roles_path=roles_path,
+                log_dir=log_dir,
+                extra_vars=extra_vars,
+                on_progress=spinner_progress_callback(update),
+            )

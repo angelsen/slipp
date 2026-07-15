@@ -1,7 +1,8 @@
 """Provider management commands - slipp providers add/list/remove."""
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, NoReturn
 
 import typer
 
@@ -25,22 +26,24 @@ def add_provider(
     name: Annotated[Provider, typer.Argument(help="Provider name")],
 ) -> None:
     """Configure and verify an infrastructure provider."""
-    if name == Provider.pangolin:
-        _add_pangolin()
-        return
+    _PROVIDER_ADDERS[name]()
 
-    if name == Provider.wg_deploy:
-        _add_wg_deploy()
-        return
 
+def _fail_verification(error: ProviderError) -> NoReturn:
+    """Report a provider verification failure and exit."""
+    output.error(f"Verification failed: {error}")
+    raise typer.Exit(1)
+
+
+def _add_gigahost() -> None:
+    """Prompt for, verify, and save a Gigahost API key."""
     api_key = output.prompt_password("Gigahost API key (flux_live_...)")
 
     with GigahostClient(api_key) as client:
         try:
             account = client.get_account()
         except ProviderError as e:
-            output.error(f"Verification failed: {e}")
-            raise typer.Exit(1)
+            _fail_verification(e)
 
         account_name = account.get("cust_name")
 
@@ -77,8 +80,7 @@ def _add_pangolin() -> None:
         try:
             sites = client.list_sites()
         except ProviderError as e:
-            output.error(f"Verification failed: {e}")
-            raise typer.Exit(1)
+            _fail_verification(e)
 
     ProviderConfigService.set_pangolin(config)
 
@@ -108,6 +110,13 @@ def _add_wg_deploy() -> None:
     output.success(f"wg-deploy configured: {repo_path}")
 
 
+_PROVIDER_ADDERS: dict[Provider, Callable[[], None]] = {
+    Provider.gigahost: _add_gigahost,
+    Provider.pangolin: _add_pangolin,
+    Provider.wg_deploy: _add_wg_deploy,
+}
+
+
 @providers_app.command(name="list")
 def list_providers() -> None:
     """List configured infrastructure providers."""
@@ -132,6 +141,19 @@ def list_providers() -> None:
     )
 
 
+_PROVIDER_CONFIG_ATTR: dict[Provider, str] = {
+    Provider.gigahost: "gigahost",
+    Provider.pangolin: "pangolin",
+    Provider.wg_deploy: "wg_deploy",
+}
+
+_PROVIDER_REMOVERS: dict[Provider, Callable[[], None]] = {
+    Provider.gigahost: ProviderConfigService.remove_gigahost,
+    Provider.pangolin: ProviderConfigService.remove_pangolin,
+    Provider.wg_deploy: ProviderConfigService.remove_wg_deploy,
+}
+
+
 @providers_app.command(name="remove")
 def remove_provider(
     name: Annotated[Provider, typer.Argument(help="Provider name to remove")],
@@ -139,25 +161,9 @@ def remove_provider(
     """Remove a configured provider."""
     config = ProviderConfigService.load()
 
-    if name == Provider.pangolin:
-        if not config.pangolin:
-            output.warning("Pangolin is not configured")
-            return
-        ProviderConfigService.remove_pangolin()
-        output.success("Removed pangolin provider")
+    if not getattr(config, _PROVIDER_CONFIG_ATTR[name]):
+        output.warning(f"{name} is not configured")
         return
 
-    if name == Provider.wg_deploy:
-        if not config.wg_deploy:
-            output.warning("wg-deploy is not configured")
-            return
-        ProviderConfigService.remove_wg_deploy()
-        output.success("Removed wg-deploy provider")
-        return
-
-    if not config.gigahost:
-        output.warning("Gigahost is not configured")
-        return
-
-    ProviderConfigService.remove_gigahost()
-    output.success("Removed gigahost provider")
+    _PROVIDER_REMOVERS[name]()
+    output.success(f"Removed {name} provider")

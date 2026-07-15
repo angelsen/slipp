@@ -26,7 +26,13 @@ _EXEC_STARTS = {
     "sveltekit": "node build",
     "node": "node .",
 }
-assert _RUNTIME_NAMES.keys() == _EXEC_STARTS.keys() == NODE_FRAMEWORKS
+if (
+    _RUNTIME_NAMES.keys() != _EXEC_STARTS.keys()
+    or _RUNTIME_NAMES.keys() != NODE_FRAMEWORKS
+):
+    raise RuntimeError(
+        "_RUNTIME_NAMES, _EXEC_STARTS, and NODE_FRAMEWORKS have drifted apart"
+    )
 
 
 def extract_nodejs(service: DetectedService) -> dict[str, Any]:
@@ -101,10 +107,10 @@ def _detect_nodejs_version(service_path: Path, pkg: dict[str, Any] | None) -> st
     if nvmrc.exists():
         try:
             version = nvmrc.read_text().strip().lstrip("v")
-            parts = version.split(".")
-            if parts:
-                return parts[0]
-        except (IOError, ValueError):
+            major = version.split(".")[0]
+            if major.isdigit():
+                return major
+        except (OSError, UnicodeDecodeError, ValueError):
             pass
 
     if pkg:

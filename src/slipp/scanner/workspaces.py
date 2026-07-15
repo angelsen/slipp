@@ -111,7 +111,7 @@ def detect_workspace_members(root: Path) -> list[Path]:
 
     try:
         data = json.loads(package_json.read_text())
-    except (json.JSONDecodeError, OSError):
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError):
         return []
 
     patterns = data.get("workspaces")

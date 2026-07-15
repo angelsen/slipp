@@ -10,35 +10,48 @@ import typer
 
 from slipp import output
 from slipp.constants import OutputFormat
+from slipp.models.local_config import LocalConfig
 from slipp.services.config import ConfigResolver, LocalConfigService, load_project_hosts
 from slipp.services.registry import ProjectRegistry
+
+
+def _resolve_local_config_or_exit(project_root: Path) -> tuple[ConfigResolver, LocalConfig]:
+    """Resolve local config, reporting (in the active output format) and exiting if none exists."""
+    resolver = ConfigResolver(project_root)
+
+    if not resolver.has_local_config:
+        if output.get_output_format() == OutputFormat.json:
+            output.json(
+                {
+                    "error": "No slipp.yaml found in current directory or any parent",
+                    "has_local_config": False,
+                }
+            )
+        else:
+            output.warning("No slipp.yaml found in current directory or any parent")
+            output.hint("Run 'slipp projects add <name> -i <inventory>' to create config")
+            output.hint(
+                "Or 'slipp deploy --name <name> -i <inventory>' to deploy and save config"
+            )
+        raise typer.Exit(1)
+
+    assert resolver.local_config is not None
+    return resolver, resolver.local_config
 
 
 def config_command() -> None:
     """Show current project configuration."""
     project_root = LocalConfigService.resolve_root()
+    _, local_config = _resolve_local_config_or_exit(project_root)
 
     if output.get_output_format() == OutputFormat.json:
-        _show_json(project_root)
+        _show_json(project_root, local_config)
     else:
-        _show_table(project_root)
+        _show_table(project_root, local_config)
 
 
-def _show_table(project_root: Path) -> None:
+def _show_table(project_root: Path, local_config: LocalConfig) -> None:
     """Display config as formatted table."""
-    resolver = ConfigResolver(project_root)
-
-    if not resolver.has_local_config:
-        output.warning("No slipp.yaml found in current directory or any parent")
-        output.hint("Run 'slipp projects add <name> -i <inventory>' to create config")
-        output.hint(
-            "Or 'slipp deploy --name <name> -i <inventory>' to deploy and save config"
-        )
-        raise typer.Exit(1)
-
-    local_config = resolver.local_config
-    assert local_config is not None
-
     output.task("Project Configuration")
     output.blank()
 
@@ -84,23 +97,9 @@ def _show_table(project_root: Path) -> None:
         output.hint("Run 'slipp projects add' or 'slipp deploy' to register globally")
 
 
-def _show_json(project_root: Path) -> None:
+def _show_json(project_root: Path, local_config: LocalConfig) -> None:
     """Display config as JSON."""
-    resolver = ConfigResolver(project_root)
-
-    if not resolver.has_local_config:
-        output.json(
-            {
-                "error": "No slipp.yaml found in current directory or any parent",
-                "has_local_config": False,
-            }
-        )
-        raise typer.Exit(1)
-
     registry = ProjectRegistry()
-    local_config = resolver.local_config
-    assert local_config is not None
-
     project = registry.get(local_config.name)
 
     result = {

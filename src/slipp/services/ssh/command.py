@@ -6,6 +6,7 @@ Provides functions for building properly formatted shell commands.
 
 import shlex
 
+from slipp.constants import DEFAULT_SSH_PORT
 from slipp.models.host import AnsibleHost
 from slipp.models.service import Service
 
@@ -34,10 +35,10 @@ def build_ssh_command(
 
     Example:
         >>> build_ssh_command(host, flags=["-t"])
-        ['ssh', 'root@example.com', '-t']
+        ['ssh', '-t', 'root@example.com']
     """
     cmd = ["ssh"]
-    if host.ansible_port != 22:
+    if host.ansible_port != DEFAULT_SSH_PORT:
         cmd += ["-p", str(host.ansible_port)]
     if host.key_file:
         cmd += ["-i", str(host.key_file)]

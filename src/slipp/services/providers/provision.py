@@ -3,6 +3,7 @@
 import socket
 import subprocess
 import time
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -21,6 +22,17 @@ DEPLOY_TIMEOUT = 3600
 SSH_READY_TIMEOUT = 600
 SSH_READY_INTERVAL = 1
 STALE_THRESHOLD_HOURS = 24
+REINSTALL_DOWN_TIMEOUT = 300
+
+
+def _numbered(
+    items: list[dict[str, Any]], **fields: Callable[[dict[str, Any]], Any]
+) -> list[dict[str, Any]]:
+    """Build numbered output.pick() rows: '#' plus one named column per field getter."""
+    return [
+        {"#": i, **{name: getter(item) for name, getter in fields.items()}}
+        for i, item in enumerate(items, 1)
+    ]
 
 
 def resolve_server(client: GigahostClient, name_or_ip: str) -> tuple[int, str, str]:
@@ -101,22 +113,17 @@ def select_product(client: GigahostClient) -> tuple[int, int, int]:
     if not regions:
         raise ProvisionError("No regions available")
 
-    product_rows = [
-        {
-            "#": i,
-            "name": p.get("product_name"),
-            "cores": p.get("vm_cores"),
-            "ram_mb": p.get("vm_memory"),
-            "disk_gb": p.get("vm_storage"),
-            "monthly": p.get("rate_monthly"),
-        }
-        for i, p in enumerate(products, 1)
-    ]
+    product_rows = _numbered(
+        products,
+        name=lambda p: p.get("product_name"),
+        cores=lambda p: p.get("vm_cores"),
+        ram_mb=lambda p: p.get("vm_memory"),
+        disk_gb=lambda p: p.get("vm_storage"),
+        monthly=lambda p: p.get("rate_monthly"),
+    )
     product = output.pick(products, product_rows, "Available products")
 
-    region_rows = [
-        {"#": i, "region": r.get("region_name")} for i, r in enumerate(regions, 1)
-    ]
+    region_rows = _numbered(regions, region=lambda r: r.get("region_name"))
     region = output.pick(regions, region_rows, "Available regions")
 
     return product["product_id"], product["price_id"], region["region_id"]
@@ -137,9 +144,7 @@ def select_os(client: GigahostClient) -> int:
         0,
     )
 
-    distro_rows = [
-        {"#": i, "name": d.get("dist_name")} for i, d in enumerate(distros, 1)
-    ]
+    distro_rows = _numbered(distros, name=lambda d: d.get("dist_name"))
     chosen_distro = output.pick(
         distros, distro_rows, "Available distributions", default=debian_idx + 1
     )
@@ -150,10 +155,9 @@ def select_os(client: GigahostClient) -> int:
             f"No OS versions available for {chosen_distro.get('dist_name')}"
         )
 
-    version_rows = [
-        {"#": i, "name": v.get("os_name"), "arch": v.get("os_arch")}
-        for i, v in enumerate(versions, 1)
-    ]
+    version_rows = _numbered(
+        versions, name=lambda v: v.get("os_name"), arch=lambda v: v.get("os_arch")
+    )
     chosen_version = output.pick(
         versions, version_rows, "Available OS versions", default=len(versions)
     )
@@ -161,58 +165,120 @@ def select_os(client: GigahostClient) -> int:
     return chosen_version["os_id"]
 
 
+def _poll_until(
+    label: str,
+    timeout: float,
+    interval: float,
+    check: Callable[[Callable[[str], None], float], Any | None],
+    timeout_message: str,
+) -> Any:
+    """Poll under a spinner until `check` returns non-None or timeout elapses.
+
+    `check` receives the spinner's update() callback and elapsed seconds
+    since the poll started; it should call update() with a status string and
+    return None to keep polling or any non-None value to stop and return it.
+    """
+    t0 = time.monotonic()
+    with output.spinner(label) as update:
+        while time.monotonic() - t0 < timeout:
+            result = check(update, time.monotonic() - t0)
+            if result is not None:
+                return result
+            time.sleep(interval)
+
+    raise ProvisionError(timeout_message)
+
+
 def poll_deploy_status(client: GigahostClient, order_ids: list[int]) -> dict[str, Any]:
     """Poll GET /deploy/status until all servers are ready."""
     output.warning("Server installation can take up to 60 minutes")
     output.hint("Ctrl+C to cancel — re-run the same command to resume")
-    elapsed = 0
-    with output.spinner("Provisioning server...") as update:
-        while elapsed < DEPLOY_TIMEOUT:
-            status = client.get_deploy_status(order_ids)
-            servers = status.get("servers", [])
-            if servers:
-                update(servers[0].get("status", "waiting"))
-            if status.get("all_ready"):
-                return servers[0]
-            time.sleep(DEPLOY_POLL_INTERVAL)
-            elapsed += DEPLOY_POLL_INTERVAL
 
-    raise ProvisionError(
-        f"Deploy timed out after {DEPLOY_TIMEOUT}s -- check status in Gigahost panel"
+    def check(update: Callable[[str], None], _elapsed: float) -> dict[str, Any] | None:
+        status = client.get_deploy_status(order_ids)
+        servers = status.get("servers", [])
+        if servers:
+            update(servers[0].get("status", "waiting"))
+        return servers[0] if status.get("all_ready") else None
+
+    return _poll_until(
+        "Provisioning server...",
+        DEPLOY_TIMEOUT,
+        DEPLOY_POLL_INTERVAL,
+        check,
+        f"Deploy timed out after {DEPLOY_TIMEOUT}s -- check status in Gigahost panel",
     )
 
 
 def wait_for_ssh(host: str, *, started_at: datetime | None = None) -> None:
     """Poll until SSH accepts connections, adding host key to known_hosts."""
     output.hint("Ctrl+C to cancel — re-run the same command to resume")
-    t0 = time.monotonic()
     epoch = started_at or datetime.now()
-    with output.spinner("Waiting for SSH...") as update:
-        while time.monotonic() - t0 < SSH_READY_TIMEOUT:
-            elapsed = int((datetime.now() - epoch).total_seconds())
-            try:
-                with socket.create_connection((host, 22), timeout=3):
-                    pass
-                update("port open, scanning host key...")
-                subprocess.run(
-                    ["ssh-keygen", "-R", host],
-                    capture_output=True,
-                )
-                scan = subprocess.run(
-                    ["ssh-keyscan", "-H", host],
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
-                )
-                if scan.stdout.strip():
-                    with open(Path.home() / ".ssh" / "known_hosts", "a") as f:
-                        f.write(scan.stdout)
-                return
-            except (OSError, subprocess.TimeoutExpired):
-                update(f"waiting ({elapsed}s)")
-                time.sleep(SSH_READY_INTERVAL)
 
-    raise ProvisionError(f"SSH not reachable after {SSH_READY_TIMEOUT}s on {host}:22")
+    def check(update: Callable[[str], None], _elapsed: float) -> bool | None:
+        display_elapsed = int((datetime.now() - epoch).total_seconds())
+        try:
+            with socket.create_connection((host, 22), timeout=3):
+                pass
+            update("port open, scanning host key...")
+            subprocess.run(
+                ["ssh-keygen", "-R", host],
+                capture_output=True,
+            )
+            scan = subprocess.run(
+                ["ssh-keyscan", "-H", host],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if not scan.stdout.strip():
+                # Port is open but no host key yet (daemon still coming up) --
+                # retry rather than returning "ready" with nothing pinned.
+                update(f"port open, no host key yet ({display_elapsed}s)")
+                return None
+            with open(Path.home() / ".ssh" / "known_hosts", "a") as f:
+                f.write(scan.stdout)
+            return True
+        except (OSError, subprocess.TimeoutExpired):
+            update(f"waiting ({display_elapsed}s)")
+            return None
+
+    _poll_until(
+        "Waiting for SSH...",
+        SSH_READY_TIMEOUT,
+        SSH_READY_INTERVAL,
+        check,
+        f"SSH not reachable after {SSH_READY_TIMEOUT}s on {host}:22",
+    )
+
+
+def wait_for_reinstall_start(host: str) -> None:
+    """Poll until the server stops accepting SSH, confirming the reinstall began.
+
+    `reinstall_server()` returns as soon as the wipe is *ordered*, not once
+    it's actually happened -- the old OS keeps answering on port 22 for a
+    while after. Without this, `wait_for_ssh` immediately succeeds against
+    the doomed old install and `_bootstrap_user` configures a server that's
+    about to be destroyed.
+    """
+
+    def check(update: Callable[[str], None], elapsed: float) -> bool | None:
+        try:
+            with socket.create_connection((host, 22), timeout=3):
+                pass
+            update(f"still reachable, waiting to go down ({int(elapsed)}s)")
+            return None
+        except OSError:
+            return True
+
+    _poll_until(
+        "Waiting for reinstall to begin...",
+        REINSTALL_DOWN_TIMEOUT,
+        SSH_READY_INTERVAL,
+        check,
+        f"{host} is still reachable on :22 after {REINSTALL_DOWN_TIMEOUT}s -- "
+        "reinstall may not have started. Check the Gigahost panel before retrying.",
+    )
 
 
 def provision_server(client: GigahostClient, name: str) -> tuple[str, int]:
@@ -386,4 +452,5 @@ def install_server(
     output.info("Reinstalling server...")
     client.reinstall_server(srv_id, os_id, hostname=display, key_id=key_id)
 
+    wait_for_reinstall_start(ip)
     return _wait_and_bootstrap(ip, srv_id, display, started_at=now)

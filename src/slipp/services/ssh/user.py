@@ -4,8 +4,10 @@ Extracts and consolidates user resolution logic from exec.py and ssh.py.
 Provides a single source of truth for resolving which user to run commands as.
 """
 
+import shlex
 from dataclasses import dataclass
 
+from slipp import output
 from slipp.models.service import Service
 from slipp.services.ssh.client import SSHService
 from slipp.utils.errors import SudoPasswordError
@@ -60,16 +62,17 @@ class UserResolver:
         # Exit codes intentionally unchecked: detection is best-effort here;
         # any command failure or empty output falls through to None, and the
         # caller (resolve()) warns and falls back to default_user.
+        quoted_unit = shlex.quote(unit_name)
         try:
             result = self.ssh.execute(
-                f"sudo systemctl show -p User --value {unit_name}"
+                f"sudo systemctl show -p User --value {quoted_unit}"
             ).stdout.strip()
 
             if result:
                 return result
 
             pid = self.ssh.execute(
-                f"sudo systemctl show -p MainPID --value {unit_name}"
+                f"sudo systemctl show -p MainPID --value {quoted_unit}"
             ).stdout.strip()
 
             if pid and pid.isdigit() and pid != "0":
@@ -122,3 +125,20 @@ class UserResolver:
             )
 
         return UserResolution(user=default_user)
+
+
+def resolve_user(
+    ssh: SSHService,
+    service: Service | None,
+    explicit_user: str | None,
+    default_user: str,
+) -> str:
+    """Resolve target user via UserResolver, printing any warning, and return it.
+
+    Shared by exec.py and ssh.py, which both need the resolved user without
+    caring about the UserResolution wrapper.
+    """
+    resolution = UserResolver(ssh).resolve(service, explicit_user, default_user)
+    if resolution.warning:
+        output.warning(resolution.warning)
+    return resolution.user

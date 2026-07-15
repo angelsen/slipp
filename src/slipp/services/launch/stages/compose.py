@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from slipp.generator.compose_generator import generate_compose
+from slipp.generator.template_generators import generate_compose
 from slipp.models.compose import ComposeConfig
 from slipp.services.launch.context import FullContext
 from slipp.services.launch.stages.common import FileGenerationStage, is_systemd_runtime

@@ -17,18 +17,13 @@ Traffic flow:
 import json
 import re
 import shlex
-from contextlib import ExitStack
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
 from slipp import output
 from slipp.models.host import AnsibleHost
-from slipp.services.ansible import (
-    maybe_become_password_file,
-    run_playbook,
-    spinner_progress_callback,
-)
+from slipp.services.ansible import append_log_hint, run_playbook_with_spinner
 from slipp.services.ssh import SSHService
 from slipp.utils.errors import CaddyProxyError, SSHCommandError
 from slipp.utils.files import get_log_dir, temp_secret_file
@@ -267,17 +262,14 @@ class CaddyProxy:
             }
 
             log_dir = get_log_dir()
-            with ExitStack() as stack:
-                become_pw_file = maybe_become_password_file(stack, self.ask_become_pass)
-                with output.spinner("Installing Caddy dev proxy") as update:
-                    result = run_playbook(
-                        str(playbook_path),
-                        str(inventory_path),
-                        extra_vars=extra_vars,
-                        become_pw_file=become_pw_file,
-                        log_dir=log_dir,
-                        on_progress=spinner_progress_callback(update),
-                    )
+            result = run_playbook_with_spinner(
+                str(playbook_path),
+                str(inventory_path),
+                label="Installing Caddy dev proxy",
+                ask_become_pass=self.ask_become_pass,
+                extra_vars=extra_vars,
+                log_dir=log_dir,
+            )
 
             if result.exit_code != 0:
                 hint = (
@@ -285,9 +277,9 @@ class CaddyProxy:
                     if self.ask_become_pass
                     else "\nHint: retry with --ask-become-pass if the target host has no passwordless sudo"
                 )
-                message = f"Caddy installation failed (exit code {result.exit_code})"
-                if result.log_path:
-                    message += f"\nSee log: {result.log_path}"
+                message = append_log_hint(
+                    f"Caddy installation failed (exit code {result.exit_code})", result
+                )
                 raise CaddyProxyError(message + hint)
 
             return False

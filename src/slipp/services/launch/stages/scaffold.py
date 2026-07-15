@@ -4,7 +4,6 @@ from pathlib import Path
 
 
 from slipp import output
-from slipp.output import format_path
 from slipp.utils.files import get_log_dir
 from slipp.services.ansible import (
     ensure_requirements_installed,
@@ -39,7 +38,7 @@ class ScaffoldValidationStage:
 
             ensure_requirements_installed(
                 str(context.requirements_path),
-                context.galaxy_roles_path,
+                str(context.galaxy_roles_path),
                 log_dir=get_log_dir(context.output_dir),
             )
 
@@ -48,24 +47,24 @@ class ScaffoldValidationStage:
 
         if not context.playbook_path.exists():
             raise LaunchError(
-                f"Playbook not found: {format_path(context.playbook_path, context.output_dir)}"
+                f"Playbook not found: {output.format_path(context.playbook_path, context.output_dir)}"
             )
 
         output.info(
-            f"Validating {format_path(context.playbook_path, context.output_dir)}..."
+            f"Validating {output.format_path(context.playbook_path, context.output_dir)}..."
         )
 
-        roles = [context.galaxy_roles_path] if context.galaxy_roles_path else None
+        roles = [str(context.galaxy_roles_path)] if context.galaxy_roles_path else None
 
         if not syntax_check(context.playbook_path, roles_path=roles):
             raise LaunchError(
-                f"Playbook syntax check failed: {format_path(context.playbook_path, context.output_dir)}\n"
+                f"Playbook syntax check failed: {output.format_path(context.playbook_path, context.output_dir)}\n"
                 f"Run: ansible-playbook --syntax-check "
-                f"{format_path(context.playbook_path, context.output_dir)}"
+                f"{output.format_path(context.playbook_path, context.output_dir)}"
             )
 
         output.success(
-            f"Playbook valid: {format_path(context.playbook_path, context.output_dir)}"
+            f"Playbook valid: {output.format_path(context.playbook_path, context.output_dir)}"
         )
 
         context.host_group = get_host_group(context.playbook_path, roles_path=roles)
@@ -102,7 +101,7 @@ class ScaffoldPromptStage:
             )
 
         output.success(
-            f"Will create inventory at: {format_path(context.inventory_dir, context.output_dir)}"
+            f"Will create inventory at: {output.format_path(context.inventory_dir, context.output_dir)}"
         )
 
 
@@ -161,11 +160,10 @@ class ScaffoldRegistrationStage:
 
         galaxy_path: str | None = None
         if context.galaxy_roles_path:
-            roles_path_obj = Path(context.galaxy_roles_path)
             galaxy_path = (
-                relative_or_absolute(roles_path_obj, context.output_dir)
-                if roles_path_obj.is_absolute()
-                else str(roles_path_obj)
+                relative_or_absolute(context.galaxy_roles_path, context.output_dir)
+                if context.galaxy_roles_path.is_absolute()
+                else str(context.galaxy_roles_path)
             )
 
         register_project(

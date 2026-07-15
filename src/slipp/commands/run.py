@@ -4,7 +4,6 @@ Follows the design principle: singular command = action.
 Profile management is in runs.py.
 """
 
-import shlex
 from typing import Annotated
 
 import typer
@@ -13,6 +12,7 @@ from slipp import output
 from slipp.models.run import RunProfile
 from slipp.services.run import (
     RunProfileService,
+    append_extra_args,
     build_profile,
     execute_profile,
     merge_runtime_options,
@@ -64,7 +64,7 @@ def run_command(
             cmd, env, vault, tunnel_out, tunnel_in, proxy, tunnel_auth
         )
         _save_profile(service, name, profile)
-        _run_profile(_apply_extra_args(profile, ctx.args))
+        _run_profile(append_extra_args(profile, ctx.args))
 
     elif service.profile_exists(name):
         profile = service.get_profile(name)
@@ -72,22 +72,13 @@ def run_command(
             profile, env, vault, tunnel_out, tunnel_in, proxy, tunnel_auth
         )
 
-        _run_profile(_apply_extra_args(merged, ctx.args))
+        _run_profile(append_extra_args(merged, ctx.args))
 
     else:
         output.error(f"Profile '{name}' not found")
         output.hint("Use 'slipp runs list' to see saved profiles")
         output.hint('Or create with: slipp run <name> --cmd "..."')
         raise typer.Exit(1)
-
-
-def _apply_extra_args(profile: RunProfile, extra_args: list[str]) -> RunProfile:
-    """Append shell-quoted trailing CLI args to the profile's command."""
-    if not extra_args:
-        return profile
-    quoted_args = [shlex.quote(arg) for arg in extra_args]
-    extended_cmd = f"{profile.cmd} {' '.join(quoted_args)}"
-    return profile.model_copy(update={"cmd": extended_cmd})
 
 
 def _run_profile(profile: RunProfile) -> None:

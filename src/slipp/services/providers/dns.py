@@ -7,7 +7,7 @@ else provider-specific stays out of this module.
 
 from typing import Protocol
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from slipp import output
 
@@ -43,7 +43,7 @@ class DNSRecord(BaseModel):
     type: str
     value: str
     ttl: int = 3600
-    priority: int | None = Field(default=None)
+    priority: int | None = None
 
 
 class DNSProvider(Protocol):

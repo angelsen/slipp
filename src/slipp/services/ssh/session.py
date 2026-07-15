@@ -3,6 +3,11 @@
 Starts interactive shells with proper TTY handling using subprocess (not
 Paramiko). These functions do not produce output -- callers should display
 connection messages before calling them.
+
+Unlike services/ssh/tunnel.py's background tunnels, these inherit the
+caller's TTY and a human is present, so an unknown-host-key or password
+prompt from the `ssh` binary itself is expected, normal behavior rather
+than a silent hang -- no BatchMode here on purpose.
 """
 
 import subprocess

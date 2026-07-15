@@ -104,17 +104,17 @@ class PangolinClient(ApiClientMixin):
         Passes a large pageSize -- the endpoint defaults to 20 and silently
         truncates otherwise (confirmed against listSites.ts).
         """
-        result = self._request(
-            "GET", f"/org/{self.org}/sites", params={"pageSize": 1000}
+        data = self._request_data(
+            "GET", f"/org/{self.org}/sites", params={"pageSize": 1000}, default={}
         )
-        return result.get("data", {}).get("sites", [])
+        return data.get("sites", [])
 
     # --- Domains ---
 
     def list_domains(self) -> list[dict[str, Any]]:
         """GET /org/{org}/domains -- org domains. -> [{domainId, baseDomain, verified, type}]"""
-        result = self._request("GET", f"/org/{self.org}/domains")
-        return result.get("data", {}).get("domains", [])
+        data = self._request_data("GET", f"/org/{self.org}/domains", default={})
+        return data.get("domains", [])
 
     # --- Resources (public, Traefik-routed) ---
 
@@ -124,16 +124,16 @@ class PangolinClient(ApiClientMixin):
         Passes a large pageSize -- the endpoint defaults to 20 and silently
         truncates otherwise (confirmed against listResources.ts).
         """
-        result = self._request(
-            "GET", f"/org/{self.org}/resources", params={"pageSize": 1000}
+        data = self._request_data(
+            "GET", f"/org/{self.org}/resources", params={"pageSize": 1000}, default={}
         )
-        return result.get("data", {}).get("resources", [])
+        return data.get("resources", [])
 
     def create_resource(
         self, name: str, domain_id: str, subdomain: str | None = None
     ) -> dict[str, Any]:
         """PUT /org/{org}/resource -- create a public HTTP resource."""
-        result = self._request(
+        return self._request_data(
             "PUT",
             f"/org/{self.org}/resource",
             json={
@@ -143,19 +143,19 @@ class PangolinClient(ApiClientMixin):
                 "protocol": "tcp",
                 "subdomain": subdomain,
             },
+            default={},
         )
-        return result.get("data", {})
 
     def add_target(
         self, resource_id: int, site_id: int, ip: str, port: int, method: str = "http"
     ) -> dict[str, Any]:
         """PUT /resource/{id}/target -- attach a backend target to a resource."""
-        result = self._request(
+        return self._request_data(
             "PUT",
             f"/resource/{resource_id}/target",
             json={"siteId": site_id, "ip": ip, "port": port, "method": method},
+            default={},
         )
-        return result.get("data", {})
 
     def delete_resource(self, resource_id: int) -> None:
         """DELETE /resource/{id} -- cascades its targets."""

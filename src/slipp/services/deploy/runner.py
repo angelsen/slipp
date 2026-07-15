@@ -5,13 +5,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from slipp import output
-from slipp.output import format_path
 from slipp.services.ansible import (
     AnsibleResult,
     ensure_requirements_installed,
-    maybe_become_password_file,
-    run_playbook,
-    spinner_progress_callback,
+    run_playbook_with_spinner,
 )
 from slipp.services.config import (
     ConfigResolver,
@@ -59,17 +56,15 @@ def validate_deploy_files(
 
     if not cli_inventory and config.inventory_source == "local":
         output.info(
-            f"Using inventory from slipp.yaml: {format_path(inventory_file, project_root)}"
+            f"Using inventory from slipp.yaml: {output.format_path(inventory_file, project_root)}"
         )
     if not cli_playbook and config.playbook_source == "local":
         output.info(
-            f"Using playbook from slipp.yaml: {format_path(playbook_file, project_root)}"
+            f"Using playbook from slipp.yaml: {output.format_path(playbook_file, project_root)}"
         )
 
     if not Path(inventory_file).exists():
-        message = (
-            f"Inventory file not found: {format_path(inventory_file, project_root)}"
-        )
+        message = f"Inventory file not found: {output.format_path(inventory_file, project_root)}"
         if not resolver.has_local_config:
             message += (
                 "\nRun 'slipp projects add <name> -i <inventory>' to configure project"
@@ -78,7 +73,7 @@ def validate_deploy_files(
 
     if not Path(playbook_file).exists():
         raise ConfigError(
-            f"Playbook file not found: {format_path(playbook_file, project_root)}"
+            f"Playbook file not found: {output.format_path(playbook_file, project_root)}"
         )
 
     try:
@@ -94,7 +89,7 @@ def validate_deploy_files(
 
     if parsed_inventory is not None and not parsed_inventory.hosts:
         raise ConfigError(
-            f"Inventory contains no hosts: {format_path(inventory_file, project_root)}\n"
+            f"Inventory contains no hosts: {output.format_path(inventory_file, project_root)}\n"
             f"The file may be malformed. Check: ansible-inventory -i {inventory_file} --list"
         )
 
@@ -109,7 +104,7 @@ def validate_deploy_files(
             needs_vault_password = True
         else:
             output.warning(
-                f"Vault file not found: {format_path(vault_path, project_root)}"
+                f"Vault file not found: {output.format_path(vault_path, project_root)}"
             )
 
     return needs_vault_password, vault_file
@@ -183,22 +178,20 @@ def execute_playbook(
             if needs_vault_password
             else None
         )
-        become_pw_file = maybe_become_password_file(stack, ask_become_pass)
-
-        with output.spinner("Running playbook", spinner_type="earth") as update:
-            result = run_playbook(
-                playbook_file,
-                inventory_file,
-                check=dry_run,
-                vault_file=vault_file,
-                vault_password_file=vault_pw_file,
-                become_pw_file=become_pw_file,
-                tags=tags,
-                skip_tags=skip_tags,
-                roles_path=roles_paths if roles_paths else None,
-                log_dir=log_dir,
-                on_progress=spinner_progress_callback(update),
-            )
+        result = run_playbook_with_spinner(
+            playbook_file,
+            inventory_file,
+            label="Running playbook",
+            spinner_type="earth",
+            ask_become_pass=ask_become_pass,
+            check=dry_run,
+            vault_file=vault_file,
+            vault_password_file=vault_pw_file,
+            tags=tags,
+            skip_tags=skip_tags,
+            roles_path=roles_paths if roles_paths else None,
+            log_dir=log_dir,
+        )
 
     if result.exit_code != 0:
         output.error("Running playbook failed")

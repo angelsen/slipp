@@ -20,10 +20,15 @@ class Runtime(StrEnum):
         """Check if this is a container runtime."""
         return self in (Runtime.DOCKER, Runtime.PODMAN)
 
+    @classmethod
+    def parse(cls, value: str) -> "Runtime":
+        """Parse a CLI flag or hand-edited YAML runtime value, tolerating mixed case."""
+        return cls(value.lower())
+
 
 def _lowercase_runtime(value: object) -> object:
     """Tolerate hand-edited YAML (slipp.yaml, inventory host_vars) with mixed-case runtime values."""
-    return value.lower() if isinstance(value, str) else value
+    return Runtime.parse(value) if isinstance(value, str) else value
 
 
 LenientRuntime = Annotated[Runtime, BeforeValidator(_lowercase_runtime)]
@@ -72,5 +77,4 @@ class Service(BaseModel):
 
     uptime: str | None = None
 
-    # NOTE: Do NOT use use_enum_values=True - breaks Runtime.is_container()
-    model_config = {}
+    # NOTE: Do NOT set model_config = {"use_enum_values": True} - breaks Runtime.is_container()

@@ -16,7 +16,6 @@ Two backends, dispatched on the project's inventory `proxy_owner` host var:
   converge-from-declared-config shape applies.
 """
 
-from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -26,16 +25,12 @@ from slipp.commands.common import (
     DryRunOption,
     ForceOption,
     confirm_or_exit,
+    resolve_wg_manage_host,
     sync_wg_manage_project,
 )
 from slipp.models.deployment import DeploymentHostConfig
 from slipp.services import wg_manage
-from slipp.services.config import (
-    LocalConfigService,
-    is_wg_manage_host,
-    load_first_host,
-    resolve_project_name,
-)
+from slipp.services.config import LocalConfigService, resolve_project_name
 from slipp.services.providers import get_pangolin_client
 from slipp.services.resources import (
     find_resource,
@@ -61,22 +56,6 @@ resources_app = typer.Typer(
 # The SSH orchestration and converge logic itself lives in
 # services/wg_manage.py -- these are thin args -> service -> output
 # wrappers; errors propagate to the top-level SlippError handler.
-
-
-def _wg_manage_host_for_cwd(root: Path | None = None) -> DeploymentHostConfig | None:
-    """Best-effort: the current project's host, if it's a wg-manage hub.
-
-    None whenever there's no project here, no inventory, or the host isn't
-    a wg-manage hub -- callers fall back to the (unscoped, project-free)
-    Pangolin behavior in that case.
-
-    Args:
-        root: Project root, if already resolved (e.g. sync_resource, which
-            needs it for other things too) -- avoids a second
-            resolve_root() filesystem walk. Defaults to resolving from cwd.
-    """
-    host = load_first_host(root or LocalConfigService.resolve_root())
-    return host if is_wg_manage_host(host) else None
 
 
 def _list_wg_manage(host: DeploymentHostConfig) -> None:
@@ -111,7 +90,7 @@ def sync_resource(
     project_root = LocalConfigService.resolve_root()
     project_name = resolve_project_name()
 
-    wg_host = _wg_manage_host_for_cwd(project_root)
+    wg_host = resolve_wg_manage_host(project_root)
     if wg_host:
         if site:
             output.hint("--site is ignored for wg-manage sync (Pangolin projects only)")
@@ -147,7 +126,7 @@ def sync_resource(
 @resources_app.command(name="list")
 def list_resources() -> None:
     """List exposed services: wg-manage services (if this project is on a hub) or public Pangolin resources."""
-    wg_host = _wg_manage_host_for_cwd()
+    wg_host = resolve_wg_manage_host()
     if wg_host:
         _list_wg_manage(wg_host)
         return
@@ -177,7 +156,7 @@ def remove_resource(
     force: ForceOption = False,
 ) -> None:
     """Remove an exposed service: a wg-manage service labeled to this project, or a public Pangolin resource."""
-    wg_host = _wg_manage_host_for_cwd()
+    wg_host = resolve_wg_manage_host()
     if wg_host:
         confirm_or_exit(f"Remove service '{name}'?", force=force)
         # remove_service refuses entries not labeled to this project.

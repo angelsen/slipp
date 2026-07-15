@@ -74,7 +74,7 @@ def register_project(
             "playbook": playbook_path,
         }
         if runtime is not None:
-            changes["runtime"] = Runtime(runtime.lower())
+            changes["runtime"] = Runtime.parse(runtime)
         if roles_path is not None:
             changes["roles_path"] = roles_path
         if galaxy_path is not None:
@@ -88,13 +88,9 @@ def register_project(
         return changes
 
     try:
-        _config, created = LocalConfigService.create_or_update_with(
-            build_new, mutate, project_root=project_root
+        LocalConfigService.create_or_update_and_report(
+            build_new, mutate, project_root=project_root, name=name
         )
-        if created:
-            output.success(f"Created slipp.yaml with name '{name}'")
-        else:
-            output.success(f"Updated slipp.yaml with name '{name}'")
     except Exception as e:
         raise LaunchError(f"Failed to create local config: {e}") from e
 

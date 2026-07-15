@@ -228,7 +228,7 @@ class DiscoveryService:
 
     Example:
         >>> from slipp.models.host import AnsibleHost
-        >>> host = AnsibleHost(ansible_host='46.251.249.252', ansible_user='root')
+        >>> host = AnsibleHost(ansible_host='192.0.2.1', ansible_user='root')
         >>> discovery = DiscoveryService()
         >>> services = discovery.discover(host)
         >>> for service in services:
@@ -266,7 +266,7 @@ class DiscoveryService:
         services = None
         if not force:
             cached = self.cache.get(cache_key)
-            if cached:
+            if cached is not None:
                 services = [Service.model_validate(svc) for svc in cached]
 
         if services is None:

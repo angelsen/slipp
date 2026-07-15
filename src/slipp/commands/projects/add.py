@@ -12,17 +12,14 @@ import typer
 
 from slipp import output
 from slipp.commands.common import RuntimeOption
-from slipp.output import format_path
 from slipp.services.config import LocalConfigService
 from slipp.services.config.detection import (
     INVENTORY_PATTERNS,
     PLAYBOOK_PATTERNS,
     ROLES_PATTERNS,
     detect_path,
-    path_exists,
 )
 from slipp.services.launch.registration import register_project
-from slipp.utils.errors import ConfigError, LaunchError
 
 
 def _validate_exists(
@@ -42,9 +39,10 @@ def _validate_exists(
     Raises:
         typer.Exit: If the path doesn't exist.
     """
-    if not path_exists(path, is_dir=is_dir):
+    exists = path.is_dir() if is_dir else path.exists()
+    if not exists:
         output.error(
-            f"{kind.capitalize()} not found: {format_path(path, project_root)}"
+            f"{kind.capitalize()} not found: {output.format_path(path, project_root)}"
         )
         raise typer.Exit(1)
 
@@ -165,19 +163,16 @@ def add_command(
     if galaxy_path and galaxy_path not in roles_rel:
         roles_rel.append(galaxy_path)
 
-    try:
-        register_project(
-            name=name,
-            project_root=project_root,
-            inventory_path=inventory_rel,
-            playbook_path=playbook_rel,
-            roles_path=roles_rel,
-            galaxy_path=galaxy_path,
-            vault_path=vault,
-            runtime=runtime,
-        )
-    except LaunchError as e:
-        raise ConfigError(str(e)) from e
+    register_project(
+        name=name,
+        project_root=project_root,
+        inventory_path=inventory_rel,
+        playbook_path=playbook_rel,
+        roles_path=roles_rel,
+        galaxy_path=galaxy_path,
+        vault_path=vault,
+        runtime=runtime,
+    )
 
     output.kv("inventory", inventory_rel, indent=1)
     output.kv("playbook", playbook_rel, indent=1)

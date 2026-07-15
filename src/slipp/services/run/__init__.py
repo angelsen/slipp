@@ -7,6 +7,7 @@ from slipp.services.run.caddy import CaddyProxy
 from slipp.services.run.executor import execute_profile, resolve_tunnel_host
 from slipp.services.run.profiles import (
     RunProfileService,
+    append_extra_args,
     build_profile,
     merge_runtime_options,
 )
@@ -14,6 +15,7 @@ from slipp.services.run.profiles import (
 __all__ = [
     "CaddyProxy",
     "RunProfileService",
+    "append_extra_args",
     "build_profile",
     "execute_profile",
     "merge_runtime_options",

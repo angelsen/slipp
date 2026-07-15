@@ -1,9 +1,8 @@
 """Vault secret management commands."""
 
 import asyncio
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, assert_never
 
 import typer
 
@@ -18,15 +17,16 @@ from slipp.commands.common import (
     validate_num_bytes_encoding,
 )
 from slipp.constants import OutputFormat, SecretEncoding
-from slipp.output import format_path
 from slipp.services.config import ConfigResolver, resolve_vault_target
-from slipp.services.secrets import get_source, pull
-from slipp.services.secrets.nor_auth import NorAuthSource
+from slipp.services.secrets import NorAuthSource
+from slipp.services.secrets import pull_secrets as pull_secrets_to_vault
 from slipp.services.vault import (
     SecretSynchronizer,
+    VaultLookup,
     encrypt_secrets,
     list_keys,
     list_project_vaults,
+    lookup_vault_keys,
     write_missing_secrets,
 )
 from slipp.utils.errors import (
@@ -34,10 +34,8 @@ from slipp.utils.errors import (
     ProjectNotFoundError,
     PullError,
     PullTimeoutError,
-    SourceNotFoundError,
     VaultDecryptError,
     VaultError,
-    VaultFileNotFoundError,
     VaultSyncError,
 )
 
@@ -66,46 +64,6 @@ def _resolve_vault_or_exit(target: str | None) -> tuple[ConfigResolver, Path | N
         output.error(f"Project '{target}' not found")
         output.hint("Use 'slipp projects' to list registered projects")
         raise typer.Exit(1)
-
-
-_VaultLookupError = Literal[
-    "no vault configured", "vault file not found", "vault fully encrypted"
-]
-
-
-@dataclass
-class _VaultLookup:
-    """Result of resolving a target and listing its vault keys, if any."""
-
-    target: str
-    resolver: ConfigResolver
-    vault_path: Path | None
-    keys: list[str] | None
-    error: _VaultLookupError | None
-
-
-def _lookup_vault_keys(target: str) -> _VaultLookup:
-    """Resolve a target to its vault and list keys, capturing any error.
-
-    Args:
-        target: Project name, path to vault file
-
-    Returns:
-        _VaultLookup with keys populated on success, error set otherwise
-    """
-    resolver, vault_path = _resolve_vault_or_exit(target)
-
-    if not vault_path:
-        return _VaultLookup(target, resolver, None, None, "no vault configured")
-
-    try:
-        keys = list_keys(vault_path)
-    except VaultFileNotFoundError:
-        return _VaultLookup(target, resolver, vault_path, None, "vault file not found")
-    except VaultDecryptError:
-        return _VaultLookup(target, resolver, vault_path, None, "vault fully encrypted")
-
-    return _VaultLookup(target, resolver, vault_path, keys, None)
 
 
 def _list_available_vaults() -> None:
@@ -146,7 +104,7 @@ def _list_available_vaults() -> None:
     )
 
 
-def _show_json(lookups: list[_VaultLookup], secret_name: str | None) -> None:
+def _show_json(lookups: list[VaultLookup], secret_name: str | None) -> None:
     """Display vault lookup results as JSON."""
     results: list[dict[str, object]] = []
     for lookup in lookups:
@@ -171,30 +129,44 @@ def _show_json(lookups: list[_VaultLookup], secret_name: str | None) -> None:
     output.json(results)
 
 
-def _show_table(lookups: list[_VaultLookup], secret_name: str | None) -> None:
+def _show_table(lookups: list[VaultLookup], secret_name: str | None) -> None:
     """Display vault lookup results as formatted text."""
     for i, lookup in enumerate(lookups):
         if i > 0:
             output.blank()
 
-        if lookup.error == "no vault configured":
-            output.warning(f"No vault configured for '{lookup.target}'")
-            continue
-        if lookup.error == "vault file not found":
-            assert lookup.vault_path is not None
-            output.error(
-                f"Vault file not found: {format_path(lookup.vault_path, lookup.resolver.project_root)}"
-            )
-            continue
-        if lookup.error == "vault fully encrypted":
-            assert lookup.vault_path is not None
-            output.error(
-                f"Vault is fully encrypted: {format_path(lookup.vault_path, lookup.resolver.project_root)}"
-            )
-            output.hint(
-                f"Decrypt to inspect keys: ansible-vault decrypt {format_path(lookup.vault_path, lookup.resolver.project_root)}"
-            )
-            continue
+        match lookup.error:
+            case "no vault configured":
+                output.warning(f"No vault configured for '{lookup.target}'")
+                continue
+            case "project not found":
+                output.error(f"Project '{lookup.target}' not found")
+                continue
+            case "vault file not found":
+                assert lookup.vault_path is not None
+                output.error(
+                    f"Vault file not found: {output.format_path(lookup.vault_path, lookup.resolver.project_root)}"
+                )
+                continue
+            case "vault fully encrypted":
+                assert lookup.vault_path is not None
+                output.error(
+                    f"Vault is fully encrypted: {output.format_path(lookup.vault_path, lookup.resolver.project_root)}"
+                )
+                output.hint(
+                    f"Decrypt to inspect keys: ansible-vault decrypt {output.format_path(lookup.vault_path, lookup.resolver.project_root)}"
+                )
+                continue
+            case "vault invalid":
+                assert lookup.vault_path is not None
+                output.error(
+                    f"Invalid vault file: {output.format_path(lookup.vault_path, lookup.resolver.project_root)}"
+                )
+                continue
+            case None:
+                pass
+            case unreachable:
+                assert_never(unreachable)
 
         assert lookup.vault_path is not None and lookup.keys is not None
         keys = lookup.keys
@@ -211,7 +183,7 @@ def _show_table(lookups: list[_VaultLookup], secret_name: str | None) -> None:
             continue
 
         output.info(
-            f"Secrets in {format_path(lookup.vault_path, lookup.resolver.project_root)}:"
+            f"Secrets in {output.format_path(lookup.vault_path, lookup.resolver.project_root)}:"
         )
         for key in keys:
             output.bullet(key, indent=1)
@@ -235,7 +207,7 @@ def list_secrets(
         _list_available_vaults()
         return
 
-    lookups = [_lookup_vault_keys(target) for target in targets]
+    lookups = [lookup_vault_keys(target) for target in targets]
 
     if output.get_output_format() == OutputFormat.json:
         _show_json(lookups, secret_name)
@@ -268,7 +240,7 @@ def add_secret(
 
     if not vault_path.exists():
         output.error(
-            f"Vault file not found: {format_path(vault_path, resolver.project_root)}"
+            f"Vault file not found: {output.format_path(vault_path, resolver.project_root)}"
         )
         raise typer.Exit(1)
 
@@ -276,16 +248,16 @@ def add_secret(
         existing_keys = list_keys(vault_path)
     except VaultDecryptError:
         output.error(
-            f"Vault is fully encrypted: {format_path(vault_path, resolver.project_root)}"
+            f"Vault is fully encrypted: {output.format_path(vault_path, resolver.project_root)}"
         )
         output.hint(
-            f"Decrypt first: ansible-vault decrypt {format_path(vault_path, resolver.project_root)}"
+            f"Decrypt first: ansible-vault decrypt {output.format_path(vault_path, resolver.project_root)}"
         )
         raise typer.Exit(1)
 
     if name in existing_keys:
         output.error(
-            f"'{name}' already exists in {format_path(vault_path, resolver.project_root)}"
+            f"'{name}' already exists in {output.format_path(vault_path, resolver.project_root)}"
         )
         raise typer.Exit(1)
 
@@ -304,12 +276,12 @@ def add_secret(
 
     if not write_missing_secrets(vault_path, {name: encrypted}):
         output.error(
-            f"'{name}' already exists in {format_path(vault_path, resolver.project_root)}"
+            f"'{name}' already exists in {output.format_path(vault_path, resolver.project_root)}"
         )
         raise typer.Exit(1)
 
     output.success(
-        f"Added '{name}' to {format_path(vault_path, resolver.project_root)}"
+        f"Added '{name}' to {output.format_path(vault_path, resolver.project_root)}"
     )
     output.hint(describe_secret(secret, encoding, num_bytes, jwk=jwk, bits=bits))
     output.hint(f"Use {{{{ {name} }}}} in templates")
@@ -320,11 +292,10 @@ def sync_secrets(
     path: Annotated[Path, typer.Argument(help="Path to vars.yml file")],
     num_bytes: NumBytesOption = 32,
     encoding: EncodingOption = SecretEncoding.hex,
-    force: Annotated[
+    force_existing: Annotated[
         bool,
         typer.Option(
             "--force-existing",
-            "-f",
             help="Add missing secrets to an existing vault.yml",
         ),
     ] = False,
@@ -340,7 +311,7 @@ def sync_secrets(
     try:
         refs = synchronizer.scan(path)
     except OSError as e:
-        output.error(f"Cannot read {format_path(path, project_root)}: {e}")
+        output.error(f"Cannot read {output.format_path(path, project_root)}: {e}")
         raise typer.Exit(1)
 
     if not refs:
@@ -353,7 +324,7 @@ def sync_secrets(
         output.bullet(ref, indent=1)
 
     try:
-        generated = synchronizer.sync(vault_path, refs, force=force)
+        generated = synchronizer.sync(vault_path, refs, force=force_existing)
     except VaultSyncError as e:
         output.error(str(e))
         if vault_path.exists():
@@ -361,18 +332,18 @@ def sync_secrets(
         raise typer.Exit(1)
 
     if not vault_existed:
-        output.success(f"Created {format_path(vault_path, project_root)}")
+        output.success(f"Created {output.format_path(vault_path, project_root)}")
     elif generated:
         output.success(
             f"Added {len(generated)} secret(s) to "
-            f"{format_path(vault_path, project_root)}"
+            f"{output.format_path(vault_path, project_root)}"
         )
     else:
         output.info("All vault references already present, nothing to add")
         return
 
     output.hint(
-        f"Encrypt with: ansible-vault encrypt {format_path(vault_path, project_root)}"
+        f"Encrypt with: ansible-vault encrypt {output.format_path(vault_path, project_root)}"
     )
 
 
@@ -390,16 +361,15 @@ def pull_secrets(
     ] = 300,
 ) -> None:
     """Pull credentials from external source to vault."""
-    try:
-        secret_source = get_source(source)
-    except SourceNotFoundError as e:
-        output.error(str(e))
+    if source != NorAuthSource.name:
+        output.error(f"Unknown source '{source}'. Available: {NorAuthSource.name}")
         output.hint("Use 'slipp secrets list' to see available sources")
         raise typer.Exit(1)
+    secret_source = NorAuthSource()
 
     try:
         credentials = asyncio.run(
-            pull.pull_secrets(secret_source, target=target, timeout=timeout)
+            pull_secrets_to_vault(secret_source, target=target, timeout=timeout)
         )
         output.success("Credentials stored in vault")
         output.blank()

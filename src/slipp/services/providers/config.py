@@ -14,7 +14,12 @@ from slipp.models.provider import (
     ProvidersConfig,
     WgDeployConfig,
 )
-from slipp.utils.config_store import load_model, save_model, slipp_config_dir
+from slipp.utils.config_store import (
+    config_store_lock,
+    load_model,
+    save_model,
+    slipp_config_dir,
+)
 
 CONFIG_FILENAME = "providers.yaml"
 
@@ -46,9 +51,10 @@ class ProviderConfigService:
     def _update(
         attr: str, value: GigahostConfig | PangolinConfig | WgDeployConfig | None
     ) -> None:
-        config = ProviderConfigService.load()
-        setattr(config, attr, value)
-        ProviderConfigService.save(config)
+        with config_store_lock(ProviderConfigService._get_config_path()):
+            config = ProviderConfigService.load()
+            setattr(config, attr, value)
+            ProviderConfigService.save(config)
 
     @staticmethod
     def get_gigahost() -> GigahostConfig | None:

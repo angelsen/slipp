@@ -10,7 +10,7 @@ import typer
 
 from slipp import output
 from slipp.commands.common import find_service_or_exit, resolve_host_or_exit
-from slipp.services.ssh import SSHService, UserResolver, container_shell, ssh_as_user
+from slipp.services.ssh import SSHService, container_shell, resolve_user, ssh_as_user
 
 
 def ssh_command(
@@ -34,11 +34,7 @@ def ssh_command(
     with SSHService(ssh_config) as ssh:
         svc = find_service_or_exit(ssh_config, service, include_system=False)
 
-        user_resolver = UserResolver(ssh)
-        resolution = user_resolver.resolve(svc, user, ssh_config.ansible_user)
-
-        if resolution.warning:
-            output.warning(resolution.warning)
+        resolved_user = resolve_user(ssh, svc, user, ssh_config.ansible_user)
 
         if svc.runtime.is_container():
             output.info(
@@ -48,14 +44,14 @@ def ssh_command(
             exit_code = container_shell(
                 ssh_config,
                 svc.name,
-                resolution.user,
+                resolved_user,
                 svc.runtime,
             )
         else:
             output.info(
-                f"Connecting to {ssh_config.ansible_host} as {resolution.user}..."
+                f"Connecting to {ssh_config.ansible_host} as {resolved_user}..."
             )
             output.blank()
-            exit_code = ssh_as_user(ssh_config, resolution.user)
+            exit_code = ssh_as_user(ssh_config, resolved_user)
 
         raise typer.Exit(exit_code)

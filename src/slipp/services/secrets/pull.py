@@ -60,7 +60,9 @@ async def pull_secrets(
     try:
         await server.start()
     except OSError as e:
-        raise PullError(f"Failed to start callback server on port {session.port}: {e}") from e
+        raise PullError(
+            f"Failed to start callback server on port {session.port}: {e}"
+        ) from e
 
     try:
         with output.spinner("Waiting for approval"):
@@ -68,8 +70,8 @@ async def pull_secrets(
                 webbrowser.open(auth_url)
             try:
                 raw_credentials = await server.wait_for_credentials(timeout)
-            except TimeoutError:
-                raise PullTimeoutError("Timed out waiting for credentials")
+            except TimeoutError as e:
+                raise PullTimeoutError("Timed out waiting for credentials") from e
 
         if not raw_credentials:
             raise PullError("No resources were selected for export")
@@ -108,8 +110,8 @@ def _resolve_vault_path(target: str | None) -> Path:
     """Resolve vault path (existing file → project vault → cwd config vault)."""
     try:
         _, vault_path = resolve_vault_target(target)
-    except ProjectNotFoundError:
-        raise VaultError(f"Project '{target}' not found")
+    except ProjectNotFoundError as e:
+        raise VaultError(f"Project '{target}' not found") from e
 
     if not vault_path:
         raise VaultError("No vault configured")

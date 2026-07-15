@@ -1,4 +1,4 @@
-"""Logo display and export command."""
+"""Logo display and export commands (singular = action)."""
 
 from pathlib import Path
 from typing import Annotated
@@ -15,8 +15,12 @@ from slipp.services.logo import (
     show_logo,
 )
 
+logo_app = typer.Typer(name="logo", help="Display the slipp ASCII logo")
 
+
+@logo_app.callback(invoke_without_command=True)
 def logo_command(
+    ctx: typer.Context,
     save: Annotated[
         Path | None, typer.Option("--save", "-s", help="Export to HTML file")
     ] = None,
@@ -27,9 +31,7 @@ def logo_command(
         ),
     ] = None,
     text: Annotated[str, typer.Option("--text", "-t", help="Logo text")] = DEFAULT_TEXT,
-    font: Annotated[
-        str, typer.Option("--font", "-f", help="Figlet font")
-    ] = DEFAULT_FONT,
+    font: Annotated[str, typer.Option("--font", help="Figlet font")] = DEFAULT_FONT,
     colors: Annotated[
         str | None,
         typer.Option("--colors", "-c", help="Colors (comma-sep or palette name)"),
@@ -37,35 +39,9 @@ def logo_command(
     animate: Annotated[
         bool, typer.Option("--animate", "-a", help="Animate gradient")
     ] = False,
-    list_fonts: Annotated[
-        bool, typer.Option("--list-fonts", help="List recommended fonts")
-    ] = False,
-    list_colors: Annotated[
-        bool, typer.Option("--list-colors", help="List color palettes")
-    ] = False,
-    list_themes: Annotated[
-        bool, typer.Option("--list-themes", help="List available themes")
-    ] = False,
 ) -> None:
     """Display the slipp ASCII logo with customizable colors, fonts, and themes."""
-    if list_fonts:
-        output.info("Recommended fonts (use with --font):")
-        for font_name in RECOMMENDED_FONTS:
-            output.stdout(f"  {font_name}")
-        output.hint("Run 'pyfiglet --list_fonts' for all 500+ fonts")
-        return
-
-    if list_colors:
-        output.info("Color palettes (use with --colors):")
-        for name, palette in COLOR_PALETTES.items():
-            output.stdout(f"  {name}: {', '.join(palette)}")
-        output.hint("Or use custom: --colors '#ff0000,#00ff00'")
-        return
-
-    if list_themes:
-        output.info("Available themes (use with --theme):")
-        for name, values in THEMES.items():
-            output.stdout(f"  {name}: {values[0]} ... {values[-1]}")
+    if ctx.invoked_subcommand is not None:
         return
 
     if animate and save:
@@ -74,7 +50,7 @@ def logo_command(
 
     if theme and theme not in THEMES and theme != "none":
         output.error(
-            f"Unknown theme: {theme}. Use --list-themes to see available themes"
+            f"Unknown theme: {theme}. Use 'slipp logo themes' to see available themes"
         )
         raise typer.Exit(1)
 
@@ -86,3 +62,29 @@ def logo_command(
         text=text,
         theme=theme,
     )
+
+
+@logo_app.command(name="fonts")
+def fonts_command() -> None:
+    """List recommended figlet fonts."""
+    output.info("Recommended fonts (use with --font):")
+    for font_name in RECOMMENDED_FONTS:
+        output.stdout(f"  {font_name}")
+    output.hint("Run 'pyfiglet --list_fonts' for all 500+ fonts")
+
+
+@logo_app.command(name="colors")
+def colors_command() -> None:
+    """List available color palettes."""
+    output.info("Color palettes (use with --colors):")
+    for name, palette in COLOR_PALETTES.items():
+        output.stdout(f"  {name}: {', '.join(palette)}")
+    output.hint("Or use custom: --colors '#ff0000,#00ff00'")
+
+
+@logo_app.command(name="themes")
+def themes_command() -> None:
+    """List available themes."""
+    output.info("Available themes (use with --theme):")
+    for name, values in THEMES.items():
+        output.stdout(f"  {name}: {values[0]} ... {values[-1]}")

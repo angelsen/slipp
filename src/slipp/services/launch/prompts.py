@@ -1,7 +1,5 @@
 """Interactive prompt utilities for launch command."""
 
-import socket
-
 import typer
 
 from slipp import output
@@ -29,17 +27,17 @@ def _test_ssh_connectivity(host: str, user: str, port: int) -> bool:
         True if connection succeeds, False otherwise
 
     Example:
-        >>> if _test_ssh_connectivity("46.251.249.252", "root", 22):
+        >>> if _test_ssh_connectivity("192.0.2.1", "root", 22):
         ...     print("Connection successful!")
     """
-    try:
-        host_config = AnsibleHost(
-            inventory_hostname="connectivity-test",
-            ansible_host=host,
-            ansible_user=user,
-            ansible_port=port,
-        )
+    host_config = AnsibleHost(
+        inventory_hostname="connectivity-test",
+        ansible_host=host,
+        ansible_user=user,
+        ansible_port=port,
+    )
 
+    try:
         with SSHService(host_config):
             pass
 
@@ -53,15 +51,6 @@ def _test_ssh_connectivity(host: str, user: str, port: int) -> bool:
     except SSHConnectionError as e:
         output.warning(f"SSH connection failed: {e}")
         output.hint("Ensure SSH is enabled and host is reachable")
-        return False
-
-    except socket.gaierror as e:
-        output.warning(f"DNS resolution failed: {e}")
-        output.hint("Check hostname is correct and DNS is working")
-        return False
-
-    except Exception as e:
-        output.warning(f"Unexpected error: {e}")
         return False
 
 
@@ -88,7 +77,7 @@ def get_inventory_config(environment: str = DEFAULT_ENV) -> InventoryConfig:
     Example:
         >>> config = get_inventory_config("production")
         >>> print(config.hosts["production"].ansible_host)
-        46.251.249.252
+        192.0.2.1
     """
     output.task("Inventory Configuration")
     output.info("Configure deployment target")
@@ -131,7 +120,7 @@ def get_inventory_config(environment: str = DEFAULT_ENV) -> InventoryConfig:
             ansible_port=ansible_port,
             app_domain=app_domain,
             admin_email=admin_email,
-            runtime=Runtime(runtime),
+            runtime=Runtime.parse(runtime),
         )
     except Exception as e:
         output.error(f"Invalid configuration: {e}")

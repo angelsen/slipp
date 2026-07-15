@@ -14,7 +14,7 @@ from slipp import output
 from slipp.models.local_config import ExposeEntry, LocalConfig
 from slipp.models.service import Runtime
 from slipp.services.registry import ProjectRegistry
-from slipp.utils.config_store import config_store_lock
+from slipp.utils.config_store import backup_corrupt_file, config_store_lock
 from slipp.utils.errors import ConfigParseError
 from slipp.utils.files import atomic_write_text, scan_roles_from_directories
 
@@ -114,6 +114,9 @@ class LocalConfigService:
                 for key in sorted(unknown):
                     output.warning(f"Unknown key in slipp.yaml: {key}")
             return LocalConfig(**data)
+        except yaml.YAMLError as e:
+            backup_corrupt_file(config_path, "slipp.yaml", e)
+            return None
         except Exception as e:
             output.warning(f"Ignoring invalid {config_path}: {e}")
             return None
@@ -150,7 +153,7 @@ class LocalConfigService:
             roles_path=roles_list,
             galaxy_path=galaxy_path,
             vault=vault_path,
-            runtime=Runtime(runtime.lower()) if runtime else None,
+            runtime=Runtime.parse(runtime) if runtime else None,
             managed_roles=managed_roles,
             project_dirs=project_dirs,
             expose=expose,
@@ -262,11 +265,32 @@ class LocalConfigService:
             config = LocalConfigService.load(root)
 
             if config is None:
+                if config_path.exists():
+                    raise ConfigParseError(f"Invalid slipp.yaml at {config_path}")
                 new_config = create()
                 LocalConfigService.save(new_config, root)
                 return new_config, True
 
             return LocalConfigService._apply_changes(config, mutator, root), False
+
+    @staticmethod
+    def create_or_update_and_report(
+        create: Callable[[], LocalConfig],
+        mutator: Callable[[LocalConfig], dict[str, Any]],
+        project_root: Path,
+        name: str,
+    ) -> tuple[LocalConfig, bool]:
+        """create_or_update_with, plus the "Created/Updated slipp.yaml" message every caller prints.
+
+        Shared by the deploy and launch/scaffold registration paths so the
+        two can't drift on wording or message severity.
+        """
+        config, created = LocalConfigService.create_or_update_with(
+            create, mutator, project_root=project_root
+        )
+        verb = "Created" if created else "Updated"
+        output.success(f"{verb} slipp.yaml with name '{name}'")
+        return config, created
 
     @staticmethod
     def save(config: LocalConfig, project_root: Path | None = None) -> Path:

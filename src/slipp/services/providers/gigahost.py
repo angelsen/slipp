@@ -36,34 +36,37 @@ class GigahostClient(ApiClientMixin):
 
     def get_account(self) -> dict[str, Any]:
         """GET /account -- the authenticated account, including sshkeys[]."""
-        result = self._request("GET", "/account")
-        return result.get("data", {})
+        return self._request_data("GET", "/account", default={})
 
     def add_ssh_key(self, name: str, public_key: str) -> dict[str, Any]:
         """POST /account/sshkey -- add an SSH public key to the account."""
-        result = self._request(
-            "POST", "/account/sshkey", json={"name": name, "data": public_key}
+        return self._request_data(
+            "POST",
+            "/account/sshkey",
+            json={"name": name, "data": public_key},
+            default={},
         )
-        return result.get("data", {})
 
     # --- DNS (implements DNSProvider protocol) ---
 
     def list_zones(self) -> list[DNSZone]:
         """GET /dns/zones."""
-        result = self._request("GET", "/dns/zones")
-        return [self._zone_from_dict(z) for z in result.get("data", [])]
+        data = self._request_data("GET", "/dns/zones", default=[])
+        return [self._zone_from_dict(z) for z in data]
 
     def list_records(self, zone_id: str) -> list[DNSRecord]:
         """GET /dns/zones/{zone_id}/records."""
-        result = self._request("GET", f"/dns/zones/{zone_id}/records")
-        return [self._record_from_dict(r) for r in result.get("data", [])]
+        data = self._request_data("GET", f"/dns/zones/{zone_id}/records", default=[])
+        return [self._record_from_dict(r) for r in data]
 
     def create_record(self, zone_id: str, record: DNSRecord) -> DNSRecord:
         """POST /dns/zones/{zone_id}/records."""
-        result = self._request(
-            "POST", f"/dns/zones/{zone_id}/records", json=self._record_payload(record)
+        data = self._request_data(
+            "POST",
+            f"/dns/zones/{zone_id}/records",
+            json=self._record_payload(record),
+            default={},
         )
-        data = result.get("data", {})
         record_id = data.get("record_id", record.record_id)
         return record.model_copy(update={"record_id": str(record_id)})
 
@@ -86,12 +89,13 @@ class GigahostClient(ApiClientMixin):
 
     def create_zone(self, domain: str) -> DNSZone:
         """POST /dns/zones -- create a new (unregistered) DNS zone."""
-        result = self._request(
+        data = self._request_data(
             "POST",
             "/dns/zones",
             json={"zone_name": domain, "create_default_records": False},
+            default={},
         )
-        zone_id = result.get("data", {}).get("zone_id")
+        zone_id = data.get("zone_id")
         return DNSZone(zone_id=str(zone_id), name=domain, record_count=0)
 
     @staticmethod
@@ -129,8 +133,7 @@ class GigahostClient(ApiClientMixin):
 
     def check_domain(self, domain: str) -> tuple[bool, str]:
         """GET /dns/domains/check/{domain} -- .no availability check."""
-        result = self._request("GET", f"/dns/domains/check/{domain}")
-        data = result.get("data", {})
+        data = self._request_data("GET", f"/dns/domains/check/{domain}", default={})
         return bool(data.get("available", False)), data.get("reason", "")
 
     def register_domain(
@@ -172,20 +175,21 @@ class GigahostClient(ApiClientMixin):
             payload["first_name"] = first_name
             payload["last_name"] = last_name
 
-        result = self._request("POST", "/dns/domains/register", json=payload)
-        return result.get("data", {})
+        return self._request_data(
+            "POST", "/dns/domains/register", json=payload, default={}
+        )
 
     def lookup_organization(self, org_number: str) -> dict[str, Any]:
         """GET /dns/lookup/organization/{org_number}."""
-        result = self._request("GET", f"/dns/lookup/organization/{org_number}")
-        return result.get("data", {})
+        return self._request_data(
+            "GET", f"/dns/lookup/organization/{org_number}", default={}
+        )
 
     # --- Servers ---
 
     def list_servers(self) -> list[dict[str, Any]]:
         """GET /servers."""
-        result = self._request("GET", "/servers")
-        return result.get("data", [])
+        return self._request_data("GET", "/servers", default=[])
 
     def get_powerstate(self, server_id: int) -> bool:
         """GET /servers/{id}/powerstate -- powerstate lives in `meta`, not `data`."""
@@ -229,8 +233,7 @@ class GigahostClient(ApiClientMixin):
 
     def get_catalog(self) -> dict[str, Any]:
         """GET /deploy/servers -- the deployable product/region catalog."""
-        result = self._request("GET", "/deploy/servers")
-        return result.get("data", {})
+        return self._request_data("GET", "/deploy/servers", default={})
 
     def deploy_server(
         self,
@@ -263,8 +266,8 @@ class GigahostClient(ApiClientMixin):
         if ssh_keys:
             payload["ssh_keys"] = ssh_keys
 
-        result = self._request("POST", "/deploy/servers", json=payload)
-        return result.get("data", {}).get("order_ids", [])
+        data = self._request_data("POST", "/deploy/servers", json=payload, default={})
+        return data.get("order_ids", [])
 
     def get_deploy_status(self, order_ids: list[int]) -> dict[str, Any]:
         """GET /deploy/status?ids=1,2,3.
@@ -273,15 +276,14 @@ class GigahostClient(ApiClientMixin):
             Dict with `servers` (list) and `all_ready` (bool).
         """
         ids = ",".join(str(i) for i in order_ids)
-        result = self._request("GET", "/deploy/status", params={"ids": ids})
-        return result.get("data", {})
+        return self._request_data(
+            "GET", "/deploy/status", params={"ids": ids}, default={}
+        )
 
     def list_distros(self) -> list[dict[str, Any]]:
         """GET /reinstall/distro."""
-        result = self._request("GET", "/reinstall/distro")
-        return result.get("data", [])
+        return self._request_data("GET", "/reinstall/distro", default=[])
 
     def list_os_versions(self, distro_id: int) -> list[dict[str, Any]]:
         """GET /reinstall/distro/{id}."""
-        result = self._request("GET", f"/reinstall/distro/{distro_id}")
-        return result.get("data", [])
+        return self._request_data("GET", f"/reinstall/distro/{distro_id}", default=[])

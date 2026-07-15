@@ -73,7 +73,7 @@ def scaffold_command(
         playbook_path=playbook,
         inventory_path=inventory,
         requirements_path=reqs_path,
-        galaxy_roles_path=roles_path,
+        galaxy_roles_path=Path(roles_path) if roles_path else None,
         project_name=project_name,
     )
 

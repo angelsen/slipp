@@ -16,15 +16,16 @@ def _fuzzy_match_roles(
     """Check if service name fuzzy-matches any role name.
 
     Args:
-        service_name: Name of the service (e.g., 'poc-backend')
+        service_name: Name of the service (e.g., 'poc-backend'). Service.name
+            is always already stripped of the '.service' suffix (see
+            discovery.py), so no normalization is needed here.
         roles: List of role names from playbook (e.g., ['caddy', 'app-backend'])
         threshold: Minimum similarity ratio (0.0 to 1.0, default: 0.6)
 
     Returns:
         True if service name matches any role with similarity >= threshold
     """
-    service_clean = service_name.lower().replace(".service", "")
-    return fuzzy_match(service_clean, roles, threshold=threshold) is not None
+    return fuzzy_match(service_name.lower(), roles, threshold=threshold) is not None
 
 
 def filter_services(
@@ -58,13 +59,13 @@ def filter_services(
 
     Example:
         >>> # Show only services belonging to a specific project
-        >>> filtered = filter_services(services, project="PoC", show_all=False)
+        >>> filtered = filter_services(services, project="myapp", show_all=False)
         >>>
         >>> # Show all services including unregistered ones
         >>> all_svcs = filter_services(services, show_all=True)
         >>>
         >>> # Hybrid filter: containers + fuzzy-matched roles
-        >>> filtered = filter_services(services, project="PoC", managed_roles=['caddy', 'app-backend'])
+        >>> filtered = filter_services(services, project="myapp", managed_roles=['caddy', 'app-backend'])
     """
     result = services
 
@@ -105,13 +106,13 @@ def find_service(
 
     Example:
         >>> # Simple lookup
-        >>> svc = find_service(services, "poc-backend")
+        >>> svc = find_service(services, "myapp-backend")
         >>>
         >>> # Host-qualified lookup
-        >>> svc = find_service(services, "poc-backend@production")
+        >>> svc = find_service(services, "myapp-backend@production")
         >>>
         >>> # Project-qualified lookup (checks if project is in service.projects)
-        >>> svc = find_service(services, "PoC:poc-backend")
+        >>> svc = find_service(services, "myapp:myapp-backend")
     """
     service_name, host_filter, project_filter = parse_service_identifier(
         service_identifier

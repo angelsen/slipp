@@ -5,8 +5,7 @@ from typing import Annotated
 import typer
 
 from slipp import output
-from slipp.services.config import PresetResolver
-from slipp.utils.errors import PresetNotFoundError
+from slipp.services.config import PresetResolver, parse_preset_args
 
 
 def tag_command(
@@ -19,18 +18,16 @@ def tag_command(
         output.hint("Use 'slipp tag <preset>' to show a preset's tags")
         return
 
-    resolver = PresetResolver()
+    available = PresetResolver().list_presets()
 
-    try:
-        tags, skip_tags = resolver.resolve(preset)
-    except PresetNotFoundError:
+    if preset not in available:
         output.error(f"Preset '{preset}' not found")
-        available = resolver.list_presets()
         if available:
             output.hint(f"Available presets: {', '.join(available.keys())}")
         raise typer.Exit(1)
 
-    args = resolver.list_presets()[preset]
+    args = available[preset]
+    tags, skip_tags = parse_preset_args(args)
     output.info(f"Preset '{preset}':")
     output.stdout(f"  {args}")
     output.blank()

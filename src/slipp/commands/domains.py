@@ -16,6 +16,11 @@ domains_app = typer.Typer(
 )
 
 
+def _not_available_message(domain: str, reason: str | None) -> str:
+    """Format the "domain is not available" message, with an optional reason suffix."""
+    return f"{domain} is not available" + (f": {reason}" if reason else "")
+
+
 @domains_app.command(name="check")
 def check_domain(
     domain: Annotated[str, typer.Argument(help="Domain to check (.no only)")],
@@ -27,7 +32,7 @@ def check_domain(
     if available:
         output.success(f"{domain} is available")
     else:
-        output.warning(f"{domain} is not available" + (f": {reason}" if reason else ""))
+        output.warning(_not_available_message(domain, reason))
 
 
 @domains_app.command(name="register")
@@ -39,9 +44,7 @@ def register_domain(
         available, reason = client.check_domain(domain)
 
         if not available:
-            output.error(
-                f"{domain} is not available" + (f": {reason}" if reason else "")
-            )
+            output.error(_not_available_message(domain, reason))
             raise typer.Exit(1)
 
         output.info(f"{domain} is available")

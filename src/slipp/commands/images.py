@@ -19,7 +19,7 @@ images_app = typer.Typer(name="images", help="Manage container images on VPS")
 def list_command(
     project: ProjectOption = None,
     filter_pattern: Annotated[
-        str | None, typer.Option("--filter", "-f", help="Filter by name pattern")
+        str | None, typer.Option("--filter", help="Filter by name pattern")
     ] = None,
 ) -> None:
     """List container images on VPS."""

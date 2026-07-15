@@ -26,8 +26,8 @@ from slipp.services.vault import (
 )
 from slipp.utils.errors import (
     ConfigError,
-    HostNotFoundError,
     ProfileExecutionError,
+    ProjectNotFoundError,
     SSHAuthenticationError,
     SSHConnectionError,
     TunnelError,
@@ -51,7 +51,7 @@ def resolve_tunnel_host(host_spec: str) -> AnsibleHost:
 
     try:
         return resolver.by_project(host_spec)
-    except (ConfigError, HostNotFoundError):
+    except (ConfigError, ProjectNotFoundError):
         pass
 
     output.warning(
@@ -122,7 +122,7 @@ class CaddyCheckResult:
 def run_shell_command(
     cmd: str, cwd: Path | None = None, env: dict[str, str] | None = None
 ) -> int:
-    """Run command, letting Ctrl+C propagate naturally.
+    """Run command, killing the child if Ctrl+C interrupts the wait.
 
     Args:
         cmd: Shell command to execute
@@ -136,8 +136,10 @@ def run_shell_command(
     # shell=True is deliberate: `cmd` is the user's own dev command from their
     # local run profile (e.g. "npm run dev"), run locally as themselves --
     # same trust boundary as typing it at a shell prompt.
-    process = subprocess.Popen(cmd, shell=True, cwd=cwd, env=full_env)
-    return process.wait()
+    # subprocess.run (unlike Popen().wait()) kills the child before
+    # re-raising on KeyboardInterrupt, so Ctrl+C can't leave the dev server
+    # orphaned and still bound to its port.
+    return subprocess.run(cmd, shell=True, cwd=cwd, env=full_env).returncode
 
 
 def _check_caddy_requirements(

@@ -41,6 +41,13 @@ def config_store_lock(path: Path) -> Iterator[None]:
             fcntl.flock(lock_file, fcntl.LOCK_UN)
 
 
+def backup_corrupt_file(path: Path, label: str, error: Exception) -> None:
+    """Copy a corrupted config file aside and warn, so discarding it doesn't lose data."""
+    backup_path = path.with_suffix(path.suffix + ".backup")
+    shutil.copy(path, backup_path)
+    output.warning(f"{label} corrupted: {error}. Backed up to: {backup_path}")
+
+
 def slipp_config_dir(subdir: str | None = None) -> Path:
     """~/.config/slipp (or $XDG_CONFIG_HOME/slipp), created with mode 0o700.
 
@@ -88,9 +95,7 @@ def load_model(
             data = yaml.safe_load(text) or {}
         return model_cls.model_validate(data)
     except (json.JSONDecodeError, yaml.YAMLError) as e:
-        backup_path = path.with_suffix(path.suffix + ".backup")
-        shutil.copy(path, backup_path)
-        output.warning(f"{label} corrupted: {e}. Backed up to: {backup_path}")
+        backup_corrupt_file(path, label, e)
         return default
     except Exception as e:
         output.warning(f"Failed to load {label}: {e}")

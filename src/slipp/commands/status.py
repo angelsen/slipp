@@ -23,11 +23,16 @@ from slipp.services.status import (
 
 def status_command(
     service: Annotated[str, typer.Argument(help="Service name to show status for")],
+    all_services: Annotated[
+        bool, typer.Option("--all", help="Include system services in discovery")
+    ] = False,
 ) -> None:
     """Display detailed service status (like systemctl status)."""
     ssh_config = resolve_host_or_exit(service=service, command="status")
 
-    target_service = find_service_or_exit(ssh_config, service, include_system=True)
+    target_service = find_service_or_exit(
+        ssh_config, service, include_system=all_services
+    )
 
     output.task(f"Status for {target_service.name}@{target_service.host}")
 

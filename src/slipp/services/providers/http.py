@@ -68,6 +68,23 @@ class ApiClientMixin:
         except ValueError:
             return {}
 
+    def _request_data(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        json: dict[str, Any] | None = None,
+        default: Any,
+    ) -> Any:
+        """`_request` plus unwrapping the `{"data": ...}` envelope every endpoint here uses.
+
+        Collapses the `result = self._request(...); return result.get("data", default)`
+        pair repeated at nearly every provider client call site into one line.
+        """
+        result = self._request(method, path, params=params, json=json)
+        return result.get("data", default)
+
 
 def _extract_error_message(response: httpx.Response) -> str:
     """Pull a human-readable message out of an error response body."""

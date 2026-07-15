@@ -8,6 +8,7 @@ from pathlib import Path
 
 import yaml
 
+from slipp.constants import DEFAULT_SERVICE_USER, DEFAULT_SSH_PORT
 from slipp.models.deployment import DeploymentHostConfig, InventoryConfig
 from slipp.models.host import AnsibleHost
 from slipp.services.ansible import run_inventory
@@ -71,6 +72,10 @@ def load_first_host(project_root: Path) -> DeploymentHostConfig | None:
     try:
         return _load_first_host_raw(project_root)
     except Exception:
+        # Deliberately broad: unlike load_project_ansible_hosts(), nothing
+        # upstream funnels malformed-YAML/pydantic-validation failures into
+        # a specific type here, and this is a best-effort peek that must
+        # never raise - see docstring.
         return None
 
 
@@ -108,8 +113,8 @@ def write_minimal_inventory(path: Path, environment: str, ip: str) -> None:
     host_config = DeploymentHostConfig(
         inventory_hostname=environment,
         ansible_host=ip,
-        ansible_user="slipp",
-        ansible_port=22,
+        ansible_user=DEFAULT_SERVICE_USER,
+        ansible_port=DEFAULT_SSH_PORT,
     )
     inventory = InventoryConfig(hosts={environment: host_config})
     atomic_write_text(

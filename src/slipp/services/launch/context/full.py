@@ -1,11 +1,18 @@
 """Full launch context for complete Ansible project generation."""
 
 from dataclasses import dataclass
+from pathlib import Path
 
-from slipp.constants import DEFAULT_ENV
-from slipp.models.deployment import ProvisionConfig
+from slipp.constants import DEFAULT_ENV, DEFAULT_SSH_PORT
+from slipp.models.deployment import (
+    DeploymentHostConfig,
+    InventoryConfig,
+    ProvisionConfig,
+)
 from slipp.models.local_config import ExposeEntry
+from slipp.models.service import Runtime
 from slipp.services.launch.context.scan import ScanContext
+from slipp.utils.network import is_ip_address
 
 
 @dataclass
@@ -38,3 +45,42 @@ class FullContext(ScanContext):
     health_check: str | None = None
     public: bool = False
     skip_caddy: bool = False
+
+
+def build_context_for_provisioned_host(
+    *,
+    output_dir: Path,
+    environment: str,
+    project_name: str,
+    ip: str,
+    ssh_user: str,
+    resolved_domain: str,
+) -> "FullContext":
+    """FullContext for a host whose IP/domain slipp already resolved (`slipp up`).
+
+    Skips the interactive inventory prompt that a bare `slipp launch` would
+    otherwise need -- the caller has already provisioned or been given the
+    host, and confirmed/registered the domain.
+    """
+    return FullContext(
+        output_dir=output_dir,
+        dry_run=False,
+        environment=environment,
+        project_dirs=[output_dir],
+        project_name=project_name,
+        inventory_config=InventoryConfig(
+            hosts={
+                environment: DeploymentHostConfig(
+                    inventory_hostname=environment,
+                    ansible_host=ip,
+                    ansible_user=ssh_user,
+                    ansible_port=DEFAULT_SSH_PORT,
+                    app_domain=resolved_domain,
+                    admin_email=None
+                    if is_ip_address(resolved_domain)
+                    else f"admin@{resolved_domain}",
+                    runtime=Runtime.DOCKER,
+                )
+            }
+        ),
+    )

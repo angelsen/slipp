@@ -8,8 +8,7 @@ from pathlib import Path
 
 from slipp import output
 from slipp.constants import PLAYBOOK_FILENAME
-from slipp.generator.env import render_template
-from slipp.generator.playbook_generator import generate_playbook
+from slipp.generator.template_generators import generate_group_vars, generate_playbook
 from slipp.generator.role_generator import extract_systemd_vars, generate_app_role
 from slipp.models.service import Runtime
 from slipp.scanner.models import PYTHON_FRAMEWORKS
@@ -44,11 +43,7 @@ class GroupVarsStage(FileGenerationStage[FullContext]):
     def generate_content(self, context: FullContext) -> dict[Path, str]:
         provision_config = require(context.provision_config, "provision config")
 
-        group_vars_content = render_template(
-            "group_vars/all.yml.j2",
-            provision_config.to_dict(),
-            label="group_vars/all.yml",
-        )
+        group_vars_content = generate_group_vars(provision_config)
 
         group_vars_dir = context.output_dir / "group_vars"
         group_vars_path = group_vars_dir / "all.yml"

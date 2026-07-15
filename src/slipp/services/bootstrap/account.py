@@ -128,6 +128,7 @@ SUDOERS_EOF
 
     validation = ssh.execute(f"visudo -c -f /tmp/sudoers-{username}")
     if not validation.ok:
+        ssh.execute(f"rm -f /tmp/sudoers-{username}")
         raise BootstrapError(f"Sudoers file has syntax errors\n  {validation.text}")
 
     ssh.execute(f"mv /tmp/sudoers-{username} /etc/sudoers.d/{username}").check(
@@ -173,16 +174,12 @@ def _verify_setup(host: str, port: int, username: str, ssh_key: Path | None) -> 
             version_line = systemctl.stdout.split("\n")[0]
             output.success(f"Sudo access verified ({version_line})")
 
-            user_switch = ssh.execute("sudo -u root whoami")
-            if user_switch.ok:
-                output.success(
-                    f"User switching verified (sudo -u root: {user_switch.stdout.strip()})"
-                )
-            else:
-                output.warning(
-                    f"User switching test failed: {user_switch.text.strip()}"
-                )
-                output.hint("  (This is expected with read-only sudoers)")
+            user_switch = ssh.execute("sudo -u root whoami").check(
+                "User switching test failed -- sudoers config didn't take effect"
+            )
+            output.success(
+                f"User switching verified (sudo -u root: {user_switch.stdout.strip()})"
+            )
 
     except SSHConnectionError as e:
         raise BootstrapError(f"Failed to connect as slipp user: {e}") from e
@@ -213,15 +210,16 @@ def provision_account(
 
     Raises:
         SSHConnectionError: If the initial root SSH connection fails.
-        BootstrapError: If a provisioning step fails, or slipp_user isn't a
-            valid Unix username (it's interpolated unquoted into useradd/
-            chown/sudoers commands and a sudoers file path).
+        BootstrapError: If a provisioning step fails, or root_user/slipp_user
+            isn't a valid Unix username (both are interpolated unquoted into
+            useradd/cp/chown/sudoers commands and a sudoers file path).
     """
-    if not re.match(r"^[a-z_][a-z0-9_-]*$", slipp_user):
-        raise BootstrapError(
-            f"Invalid service account name '{slipp_user}' -- must be a "
-            "plain Unix username (lowercase letters, digits, '_', '-')"
-        )
+    for role, username in (("root", root_user), ("service account", slipp_user)):
+        if not re.match(r"^[a-z_][a-z0-9_-]*$", username):
+            raise BootstrapError(
+                f"Invalid {role} name '{username}' -- must be a plain Unix "
+                "username (lowercase letters, digits, '_', '-')"
+            )
 
     root_config = AnsibleHost(
         inventory_hostname="bootstrap-root",  # Temporary host for bootstrap

@@ -5,8 +5,13 @@ from pathlib import Path
 import yaml
 
 from slipp import output
-from slipp.constants import ProxyType, get_inventory_filename
-from slipp.generator.inventory_generator import generate_inventory
+from slipp.constants import (
+    DEFAULT_SSH_PORT,
+    DEFAULT_SSH_USER,
+    ProxyType,
+    get_inventory_filename,
+)
+from slipp.generator.template_generators import generate_inventory
 from slipp.models.deployment import DeploymentHostConfig, InventoryConfig
 from slipp.utils.network import is_ip_address
 from slipp.models.service import Runtime
@@ -59,8 +64,8 @@ class InventoryLoadStage:
                     context.environment: DeploymentHostConfig(
                         inventory_hostname=context.environment,
                         ansible_host="example.com",
-                        ansible_user="root",
-                        ansible_port=22,
+                        ansible_user=DEFAULT_SSH_USER,
+                        ansible_port=DEFAULT_SSH_PORT,
                         app_domain="example.com",
                         admin_email="admin@example.com",
                         runtime=Runtime.DOCKER,
@@ -69,20 +74,31 @@ class InventoryLoadStage:
             )
             output.info(f"Dry run: Using dummy {context.environment} inventory config")
 
-        # first_host.app_port is the user-confirmed deploy port and may
-        # differ from the scanner's port guess (e.g. a hand-edited/
-        # pre-existing inventory.yml). Reconcile context.services[0] here,
+        # first_host.app_port and context.services[0].port need to agree
         # before any downstream stage (Caddy, wg-manage, compose, app
-        # roles) reads the port, so they all see the authoritative value.
-        # Only the primary service (index 0, the one app_port maps to) is
-        # eligible - applying it to every service would clobber a
-        # secondary service's own distinct port.
+        # roles, InventoryFileStage) reads either one. Only the primary
+        # service (index 0, the one app_port maps to) is eligible for this
+        # - applying it to every service would clobber a secondary
+        # service's own distinct port.
         first_host = context.inventory_config.first_host
-        if (
-            context.services
-            and first_host.app_port
-            and first_host.app_port != context.services[0].port
-        ):
+        if not context.services:
+            pass
+        elif first_host.app_port is None:
+            # No app_port yet (e.g. freshly scanned project) - adopt the
+            # scanner's port guess.
+            first_host.app_port = context.services[0].port
+        elif first_host.app_port != context.services[0].port:
+            # app_port is user-confirmed (or came from a hand-edited/
+            # pre-existing inventory.yml) - it's authoritative.
+            output.warning(
+                f"Detected {context.services[0].name} now listening on "
+                f"port {context.services[0].port}, but inventory.yml has "
+                f"app_port={first_host.app_port} - keeping the persisted port"
+            )
+            output.hint(
+                f"If the new port is correct, update app_port in inventory.yml "
+                f"to {context.services[0].port}"
+            )
             context.services[0] = context.services[0].model_copy(
                 update={"port": first_host.app_port}
             )
@@ -155,10 +171,6 @@ class InventoryFileStage(FileGenerationStage[FullContext]):
             Dictionary mapping file path to inventory YAML content.
         """
         inventory_config = require(context.inventory_config, "inventory config")
-
-        first_host = inventory_config.first_host
-        if first_host.app_port is None and context.services:
-            first_host.app_port = context.services[0].port
 
         inventory_filename = get_inventory_filename(context.environment)
         inventory_content = generate_inventory(inventory_config)

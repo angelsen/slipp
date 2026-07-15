@@ -45,13 +45,6 @@ class CallbackServer:
         if self._runner:
             await self._runner.cleanup()
 
-    async def __aenter__(self) -> "CallbackServer":
-        await self.start()
-        return self
-
-    async def __aexit__(self, *args: object) -> None:
-        await self.stop()
-
     async def _handle_callback(self, request: web.Request) -> web.Response:
         """Handle credential callback from nor-auth.
 
@@ -68,14 +61,18 @@ class CallbackServer:
 
         try:
             raw_credentials = self._decrypt(encrypted)
-            self.credentials = raw_credentials.get("resources")
-            self._received.set()
-            raise web.HTTPFound(location=raw_credentials["successUrl"])
-        except web.HTTPFound:
-            raise
         except Exception as e:
             output.warning(f"Credential decryption failed: {e}")
             return web.Response(text="Decryption failed", status=400)
+
+        self.credentials = raw_credentials.get("resources")
+        self._received.set()
+        try:
+            success_url = raw_credentials["successUrl"]
+        except KeyError:
+            output.warning("Decrypted payload is missing 'successUrl'")
+            return web.Response(text="Malformed payload", status=400)
+        raise web.HTTPFound(location=success_url)
 
     def _decrypt(self, encrypted: str) -> dict:
         """Decrypt credentials using AES-256-GCM.

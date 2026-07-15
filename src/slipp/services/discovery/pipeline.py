@@ -39,7 +39,7 @@ def enrich_with_projects(
     """Enrich services with project names based on host ownership.
 
     All services on a host belong to ALL projects that own that host.
-    This supports multi-project hosts (e.g., same VPS as 'PoC' and 'staging').
+    This supports multi-project hosts (e.g., same VPS shared by 'myapp' and 'staging').
 
     Args:
         services: List of discovered services

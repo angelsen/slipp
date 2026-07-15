@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from slipp.generator.requirements_generator import generate_requirements
+from slipp.generator.template_generators import generate_requirements
 from slipp.services.launch.context import FullContext
 from slipp.services.launch.stages.common import FileGenerationStage, require
 

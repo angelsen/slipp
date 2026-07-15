@@ -8,7 +8,7 @@ All models use Pydantic v2 for validation and serialization.
 
 from pydantic import BaseModel, Field, field_validator
 
-from slipp.constants import ProxyType
+from slipp.constants import DEFAULT_SSH_PORT, DEFAULT_SSH_USER, ProxyType
 from slipp.models.caddy import CaddyConfig
 from slipp.models.host import AnsibleHost
 from slipp.models.service import LenientRuntime, Runtime
@@ -184,13 +184,17 @@ class InventoryConfig(BaseModel):
         hosts = {}
         for hostname in hostnames:
             vars = hostvars.get(hostname, {})
-            user = vars.get("ansible_user") or vars.get("ansible_ssh_user") or "root"
+            user = (
+                vars.get("ansible_user")
+                or vars.get("ansible_ssh_user")
+                or DEFAULT_SSH_USER
+            )
 
             hosts[hostname] = DeploymentHostConfig(
                 inventory_hostname=hostname,
                 ansible_host=vars.get("ansible_host", hostname),
                 ansible_user=user,
-                ansible_port=vars.get("ansible_port", 22),
+                ansible_port=vars.get("ansible_port", DEFAULT_SSH_PORT),
                 app_domain=None,
                 admin_email=None,
             )
@@ -263,10 +267,8 @@ class ProvisionConfig(BaseModel):
 
         return {
             "services": [s.model_dump() for s in self.services],
-            "inventory": self.inventory.to_ansible_format(),
             "project_name": self.project_name,
             "project_root": str(self.project_root),
-            "caddy_sites": [site.model_dump() for site in self.caddy_config.sites],
             "caddy_auto_https": self.caddy_config.auto_https,
             "caddy_sites_dir": self.caddy_config.sites_dir,
             "skip_caddy": self.skip_caddy,

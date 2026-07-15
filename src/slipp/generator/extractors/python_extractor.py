@@ -65,7 +65,7 @@ def _detect_python_version(service_path: Path) -> str:
             parts = version.split(".")
             if len(parts) >= 2:
                 return f"{parts[0]}.{parts[1]}"
-        except (IOError, ValueError):
+        except (OSError, UnicodeDecodeError, ValueError):
             pass
 
     # Default to 3.12

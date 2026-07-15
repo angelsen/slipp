@@ -19,6 +19,7 @@ from slipp.utils.errors import (
     VaultDecryptError,
     VaultError,
     VaultFileNotFoundError,
+    VaultFullyEncryptedError,
 )
 from slipp.utils.files import atomic_write_text, prompted_secret_file, temp_secret_file
 
@@ -123,9 +124,13 @@ def encrypt_secrets(
         }
 
 
-def _require_mapping(data: object, path: Path) -> dict[str, Any]:
+def _require_mapping(
+    data: object, path: Path, *, fully_encrypted: bool
+) -> dict[str, Any]:
     """Raise VaultDecryptError unless a loaded YAML document is a mapping."""
     if not isinstance(data, dict):
+        if fully_encrypted:
+            raise VaultFullyEncryptedError(f"Vault is fully encrypted: {path}")
         raise VaultDecryptError(
             f"Expected YAML mapping in {path}, got {type(data).__name__}"
         )
@@ -146,17 +151,25 @@ def list_keys(vault_path: Path) -> list[str]:
 
     Raises:
         VaultFileNotFoundError: If vault file doesn't exist
+        VaultDecryptError: If the file isn't valid YAML or isn't a mapping
     """
     if not vault_path.is_file():
         raise VaultFileNotFoundError(f"Vault file not found: {vault_path}")
 
-    with open(vault_path) as f:
-        data = yaml.load(f, Loader=_VaultLoader)
+    content = vault_path.read_text()
+    fully_encrypted = content.strip().startswith("$ANSIBLE_VAULT")
+
+    try:
+        data = yaml.load(content, Loader=_VaultLoader)
+    except yaml.YAMLError as e:
+        raise VaultDecryptError(f"Invalid YAML in vault: {e}") from e
 
     if data is None:
         return []
 
-    return list(_require_mapping(data, vault_path).keys())
+    return list(
+        _require_mapping(data, vault_path, fully_encrypted=fully_encrypted).keys()
+    )
 
 
 def write_missing_secrets(vault_path: Path, secrets: dict[str, str]) -> list[str]:
@@ -316,7 +329,12 @@ def decrypt_vault(vault_path: Path, password_file: Path) -> dict[str, str]:
             secrets = yaml.safe_load(result.stdout)
             if secrets is None:
                 return {}
-            return {k: str(v) for k, v in _require_mapping(secrets, vault_path).items()}
+            return {
+                k: str(v)
+                for k, v in _require_mapping(
+                    secrets, vault_path, fully_encrypted=False
+                ).items()
+            }
         except yaml.YAMLError as e:
             raise VaultDecryptError(f"Invalid YAML in vault: {e}") from e
 
@@ -325,7 +343,7 @@ def decrypt_vault(vault_path: Path, password_file: Path) -> dict[str, str]:
             data = yaml.load(content, Loader=_VaultLoader)
             if data is None:
                 return {}
-            data = _require_mapping(data, vault_path)
+            data = _require_mapping(data, vault_path, fully_encrypted=False)
 
             encrypted = {
                 key: value

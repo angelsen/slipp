@@ -38,13 +38,13 @@ def deploy_command(
     name: Annotated[
         str | None,
         typer.Option(
-            "-n", "--name", help="Project name (creates/updates local config)"
+            "--name", "-n", help="Project name (creates/updates local config)"
         ),
     ] = None,
     dry_run: DryRunOption = False,
     inventory: Annotated[
         str | None,
-        typer.Option("-i", "--inventory", help="Custom inventory file path"),
+        typer.Option("--inventory", "-i", help="Custom inventory file path"),
     ] = None,
     playbook: Annotated[
         str | None, typer.Option("--playbook", help="Custom playbook file path")

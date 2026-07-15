@@ -5,6 +5,7 @@ personal overrides in `.slipp/runs.local.yaml` (untracked, not created
 automatically).
 """
 
+import shlex
 from pathlib import Path
 from typing import Any
 
@@ -21,21 +22,27 @@ from slipp.services.ssh import (
     parse_tunnel_in,
     parse_tunnel_out,
 )
+from slipp.utils.config_store import backup_corrupt_file
 from slipp.utils.errors import ConfigError, ProfileNotFoundError, ProxyRouteError
 
 LOCAL_RUNS_FILENAME = ".slipp/runs.local.yaml"
 
 
 def _load_raw_yaml(path: Path) -> dict[str, Any]:
-    """Load a YAML file as a raw dict, tolerating a missing or invalid file."""
+    """Load a YAML file as a raw dict, tolerating a missing, invalid, or malformed file."""
     if not path.exists():
         return {}
     try:
         with open(path) as f:
-            return yaml.safe_load(f) or {}
+            data = yaml.safe_load(f) or {}
     except yaml.YAMLError as e:
-        output.warning(f"Ignoring invalid YAML in {path}: {e}")
+        backup_corrupt_file(path, str(path), e)
         return {}
+
+    if not isinstance(data, dict):
+        output.warning(f"Ignoring invalid {path}: expected a mapping of profile names")
+        return {}
+    return data
 
 
 class RunProfileService:
@@ -277,6 +284,15 @@ def build_profile(
     return RunProfile(
         cmd=cmd, env=env, vaults=vaults, tunnels=tunnels, proxy=proxy_routes
     )
+
+
+def append_extra_args(profile: RunProfile, extra_args: list[str]) -> RunProfile:
+    """Append shell-quoted trailing CLI args to the profile's command."""
+    if not extra_args:
+        return profile
+    quoted_args = [shlex.quote(arg) for arg in extra_args]
+    extended_cmd = f"{profile.cmd} {' '.join(quoted_args)}"
+    return profile.model_copy(update={"cmd": extended_cmd})
 
 
 def merge_runtime_options(

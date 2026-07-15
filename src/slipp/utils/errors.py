@@ -61,6 +61,12 @@ class VaultDecryptError(VaultError):
     pass
 
 
+class VaultFullyEncryptedError(VaultDecryptError):
+    """Vault content is fully encrypted (not inline-per-value format)."""
+
+    pass
+
+
 class VaultFileNotFoundError(VaultError):
     """Vault file does not exist on disk."""
 
@@ -221,12 +227,6 @@ class CaddyProxyError(SlippError):
 
 class ProxyRouteError(SlippError):
     """Proxy route operation failed."""
-
-    pass
-
-
-class SourceNotFoundError(SlippError):
-    """Secret source not found."""
 
     pass
 
