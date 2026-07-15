@@ -29,8 +29,13 @@
 
 - name: Install uv
   become: false
-  ansible.builtin.shell: curl -LsSf https://astral.sh/uv/install.sh | sh
+  # pipefail: without it, a failed curl (missing binary, network blip) feeds
+  # empty stdin to `sh`, which exits 0 -- Ansible would report "changed" for
+  # a step that installed nothing, and the next task fails on a confusing
+  # "no such file" instead of this one failing with the real cause.
+  ansible.builtin.shell: set -euo pipefail; curl -LsSf https://astral.sh/uv/install.sh | sh
   args:
+    executable: /bin/bash
     creates: "/home/{{ '{{ ansible_user }}' }}/.local/bin/uv"
 
 - name: Install Python {{ pythonVersion }} (uv-managed)

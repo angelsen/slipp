@@ -10,18 +10,28 @@ from slipp.utils.errors import BootstrapError, SSHCommandError, SSHConnectionErr
 
 
 def _install_prerequisites(ssh: SSHService, dry_run: bool) -> None:
-    """Install packages Ansible requires (python3, rsync) if missing."""
+    """Install packages Ansible and app roles require if missing.
+
+    python3/rsync are for Ansible itself; curl/ca-certificates are for
+    later role tasks that shell out to installer scripts (e.g. uv) -
+    without them here, a minimal base image can silently no-op an
+    install step instead of failing it (curl missing -> empty stdin ->
+    the piped-to shell exits 0).
+    """
     output.info("1. Installing prerequisites...")
 
     if dry_run:
-        output.hint("Would run: apt-get update && apt-get install -y python3 rsync")
+        output.hint(
+            "Would run: apt-get update && apt-get install -y "
+            "python3 rsync curl ca-certificates"
+        )
         return
 
     ssh.execute("apt-get update -qq").check("Failed to update package lists")
-    ssh.execute("apt-get install -y python3 rsync").check(
+    ssh.execute("apt-get install -y python3 rsync curl ca-certificates").check(
         "Failed to install prerequisites"
     )
-    output.success("Prerequisites installed (python3, rsync)")
+    output.success("Prerequisites installed (python3, rsync, curl, ca-certificates)")
 
 
 def _create_user(ssh: SSHService, username: str, dry_run: bool) -> None:
