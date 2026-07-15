@@ -261,9 +261,10 @@ class CaddyProxy:
         with temp_secret_file(
             inventory_content, prefix="slipp-inventory-", suffix=".ini"
         ) as inventory_path:
-            extra_vars: dict[str, str] = {"fallback_port": str(self.fallback_port)}
-            if self.acme_email:
-                extra_vars["acme_email"] = self.acme_email
+            extra_vars: dict[str, str] = {
+                "fallback_port": str(self.fallback_port),
+                "acme_email": self.acme_email or "",
+            }
 
             log_dir = get_log_dir()
             with ExitStack() as stack:
