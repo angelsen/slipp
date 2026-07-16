@@ -97,23 +97,21 @@ def discover_and_enrich(
 
 
 def _discover_on_host(
-    project: str,
     host: AnsibleHost,
     include_system: bool,
     force: bool,
     host_to_projects: dict[str, list[str]],
-) -> tuple[str, list[Service], str | None]:
+) -> tuple[list[Service], str | None]:
     """Discover services on a single host.
 
     Args:
-        project: Project name
         host: Host to query
         include_system: Include system services
         force: Force re-discovery
         host_to_projects: Pre-built ansible_host → [project_names] map
 
     Returns:
-        Tuple of (project_name, services, error_message)
+        Tuple of (services, error_message)
     """
     try:
         services = discover_and_enrich(
@@ -122,10 +120,10 @@ def _discover_on_host(
             force=force,
             host_to_projects=host_to_projects,
         )
-        return (project, services, None)
+        return (services, None)
     except Exception as e:
         # One unreachable host shouldn't abort discovery of the others.
-        return (project, [], str(e))
+        return ([], str(e))
 
 
 def discover_across_hosts(
@@ -138,7 +136,11 @@ def discover_across_hosts(
     """Discover services across multiple hosts in parallel.
 
     Args:
-        hosts: List of (project_name, AnsibleHost) tuples
+        hosts: List of (project_name, AnsibleHost) tuples. Multiple
+            projects can share the same physical host (ansible_host) --
+            each such host is only actually queried once, not once per
+            project pointing to it, to avoid discovering (and returning)
+            its services multiple times.
         include_system: Include system services
         force: Force re-discovery
         max_workers: Maximum parallel connections
@@ -155,20 +157,26 @@ def discover_across_hosts(
     for project, host in hosts:
         host_to_projects.setdefault(host.ansible_host, []).append(project)
 
+    # Dedupe by ansible_host: two projects sharing one VPS must not trigger
+    # two separate SSH discovery runs (and thus duplicate Service entries)
+    # against that same box.
+    unique_hosts: dict[str, AnsibleHost] = {}
+    for _, host in hosts:
+        unique_hosts.setdefault(host.ansible_host, host)
+
     executor = ThreadPoolExecutor(max_workers=max_workers)
     futures = {
         executor.submit(
             _discover_on_host,
-            project,
             host,
             include_system,
             force,
             host_to_projects,
         ): (
-            project,
+            ansible_host,
             host,
         )
-        for project, host in hosts
+        for ansible_host, host in unique_hosts.items()
     }
 
     try:
@@ -177,20 +185,22 @@ def discover_across_hosts(
         # the timeout has to be on as_completed() itself to bound the total
         # wall-clock time for the batch.
         for future in as_completed(futures, timeout=30):
-            project, host = futures[future]
+            ansible_host, host = futures[future]
+            label = ", ".join(host_to_projects[ansible_host])
             try:
-                _, services, error = future.result()
+                services, error = future.result()
                 if error:
-                    errors.append(f"{project} ({host.ansible_host}): {error}")
+                    errors.append(f"{label} ({host.ansible_host}): {error}")
                 else:
                     all_services.extend(services)
             except Exception as e:
                 # One host's failure shouldn't abort discovery of the others.
-                errors.append(f"{project} ({host.ansible_host}): {e}")
+                errors.append(f"{label} ({host.ansible_host}): {e}")
     except TimeoutError:
-        for future, (project, host) in futures.items():
+        for future, (ansible_host, host) in futures.items():
             if not future.done():
-                errors.append(f"{project} ({host.ansible_host}): discovery timed out")
+                label = ", ".join(host_to_projects[ansible_host])
+                errors.append(f"{label} ({host.ansible_host}): discovery timed out")
     finally:
         # wait=False so we don't block returning on threads still stuck in a
         # blocking SSH call; cancel_futures drops any not yet started.
