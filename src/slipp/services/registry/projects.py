@@ -10,6 +10,7 @@ from pathlib import Path
 
 from slipp.models.registry import RegisteredProject
 from slipp.services.registry.io import RegistryService
+from slipp.utils.errors import RegistryCollisionError
 
 
 class ProjectRegistry:
@@ -30,20 +31,40 @@ class ProjectRegistry:
         Creates a name → path mapping. All configuration is stored
         in the project's local slipp.yaml file.
 
+        A name is an identity binding, not a version to overwrite - if it's
+        already registered to a different directory, that's almost always
+        either a stale leftover or two checkouts accidentally sharing a
+        name, and every other command (logs/ssh/secrets/vault) would then
+        silently target the wrong one. Callers that genuinely want to
+        re-point a name must say so explicitly via `slipp projects remove`
+        first, same as `git remote`/`docker run --name` refuse to silently
+        rebind an existing name.
+
         Args:
             name: Project identifier (matches name in slipp.yaml)
             project_path: Absolute path to project directory
 
         Returns:
             RegisteredProject
+
+        Raises:
+            RegistryCollisionError: If `name` is already registered to a
+                different directory.
         """
         with RegistryService.lock():
             registry = RegistryService.load()
             existing = registry.projects.get(name)
+            resolved = project_path.resolve()
+
+            if existing and existing.project_path != resolved:
+                raise RegistryCollisionError(
+                    f"'{name}' is already registered at {existing.project_path}. "
+                    f"Run 'slipp projects remove {name}' first to re-point it."
+                )
 
             project = RegisteredProject(
                 name=name,
-                project_path=project_path.resolve(),
+                project_path=resolved,
                 registered_at=existing.registered_at if existing else datetime.now(),
             )
 

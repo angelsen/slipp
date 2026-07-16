@@ -35,22 +35,25 @@
     src: Caddyfile.j2
     dest: /etc/caddy/Caddyfile
     mode: '0644'
-  notify: Reload caddy
 
 - name: Deploy site configuration
   ansible.builtin.template:
     src: site.caddy.j2
     dest: {{ (caddy_sites_dir ~ "/" ~ project_name ~ ".caddy") | tojson }}
     mode: '0644'
-  notify: Reload caddy
 
 - name: Validate complete Caddy configuration
   ansible.builtin.command:
     cmd: caddy validate --adapter caddyfile --config /etc/caddy/Caddyfile
   changed_when: false
 
-- name: Enable and start Caddy
+# Reloaded unconditionally (not notify-triggered) so a config write that
+# lands on disk during a play that later fails elsewhere still takes
+# effect -- notify handlers only flush at the end of a successful play,
+# and a subsequent retry with no further diff would never re-notify,
+# silently leaving the running Caddy process out of sync with disk.
+- name: Enable and reload Caddy
   ansible.builtin.systemd:
     name: caddy
     enabled: true
-    state: started
+    state: reloaded

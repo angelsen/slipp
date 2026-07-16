@@ -23,6 +23,7 @@ from slipp.services.deploy.config import (
     ensure_project_registered,
     persist_config_updates,
 )
+from slipp.services.deploy.dev_proxy_guard import guard_against_dev_proxy_collision
 from slipp.services.vault import has_vault_content
 from slipp.services.vault import vault_password_file as get_vault_password_file
 from slipp.utils.errors import ConfigError, DeployError, InventoryParseError
@@ -260,7 +261,9 @@ def run_deploy(
     Raises:
         ConfigError: If the resolved inventory/playbook doesn't exist.
         DeployError: If the playbook matched no hosts (exit 0 is otherwise
-            indistinguishable from a real, effective deploy).
+            indistinguishable from a real, effective deploy), or if this is
+            a Caddy-fronted project and the target host already runs the
+            dev proxy (see guard_against_dev_proxy_collision).
     """
     resolver = ConfigResolver(project_root)
     config = resolver.resolve(
@@ -283,6 +286,9 @@ def run_deploy(
     needs_vault_password, vault_file = validate_deploy_files(
         config, resolver, overrides.inventory, overrides.playbook
     )
+
+    host = load_first_host(project_root)
+    guard_against_dev_proxy_collision(project_root, host)
 
     log_dir = get_log_dir(project_root)
     install_galaxy_requirements(
@@ -313,7 +319,6 @@ def run_deploy(
         return DeployResult(exit_code=result.exit_code, log_dir=log_dir, app_url=None)
 
     app_url = None
-    host = load_first_host(project_root)
     if host and host.app_domain:
         # app_port only matters for --proxy none deploys; a Caddy-fronted
         # domain already implies :80/:443.

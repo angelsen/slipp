@@ -10,6 +10,7 @@ from typing import Protocol
 from pydantic import BaseModel
 
 from slipp import output
+from slipp.utils.errors import ProviderError
 
 
 class DNSZone(BaseModel):
@@ -101,6 +102,19 @@ def sync_dns(provider: DNSProvider, domain: str, target_ip: str) -> list[str]:
             zone.zone_id, DNSRecord(name="@", type="A", value=target_ip)
         )
         return [f"Created A record: {domain} -> {target_ip}"]
+
+    if len(existing_a) > 1:
+        # Only ever compared existing_a[0] below -- if the first happened
+        # to already match target_ip, this silently reported "already
+        # correct" while stale duplicate(s) kept resolving elsewhere. DNS
+        # records slipp didn't necessarily create shouldn't be auto-deleted,
+        # so surface the conflict instead of guessing which one to keep.
+        conflicts = ", ".join(f"{r.value} (id={r.record_id})" for r in existing_a)
+        raise ProviderError(
+            f"{domain} has {len(existing_a)} '@' A records, expected at "
+            f"most one: {conflicts}. Remove the stray record(s) manually "
+            f"before syncing."
+        )
 
     current = existing_a[0]
     if current.value != target_ip:

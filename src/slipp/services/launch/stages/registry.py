@@ -85,7 +85,7 @@ class SummaryStage:
                 "group_vars/all.yml",
             ]
             if not context.skip_caddy:
-                summary_items.append("roles/caddy/ (5 files)")
+                summary_items.append("roles/caddy/ (4 files)")
             elif context.proxy == ProxyType.wg_manage:
                 summary_items.append("roles/wg-manage-exposure/ (1 file)")
             first_role_dir = f"roles/app-{context.services[0].name}/"

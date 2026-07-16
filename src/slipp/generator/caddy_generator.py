@@ -15,7 +15,6 @@ def generate_caddy_role(
     - roles/caddy/tasks/main.yml (install Caddy, setup sites directory)
     - roles/caddy/templates/Caddyfile.j2 (main config with global options)
     - roles/caddy/templates/site.caddy.j2 (per-app config)
-    - roles/caddy/handlers/main.yml (reload handler)
     - roles/caddy/defaults/main.yml (Caddy variables)
 
     Args:
@@ -42,7 +41,6 @@ def generate_caddy_role(
         Path("roles/caddy/templates/site.caddy.j2"): _render_site_template(
             config, project_name
         ),
-        Path("roles/caddy/handlers/main.yml"): _render_handlers(),
         Path("roles/caddy/defaults/main.yml"): _render_defaults(config),
     }
 
@@ -81,13 +79,6 @@ def _render_site_template(config: CaddyConfig, project_name: str) -> str:
             "project_name": project_name,
         },
         label="site.caddy.j2",
-    )
-
-
-def _render_handlers() -> str:
-    """Render handlers/main.yml template."""
-    return render_template(
-        "roles/caddy/handlers/main.yml.j2", {}, label="Caddy handlers/main.yml"
     )
 
 

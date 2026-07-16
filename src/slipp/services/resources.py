@@ -104,10 +104,20 @@ def sync_pangolin_resource(
     # siteName), so match on siteName instead; it's populated from the
     # same sites.name column siteId would resolve to. No resource yet
     # (dry-run, nothing created above) means no target either.
+    # str()-normalize port: matched against unverified API JSON, and a
+    # string/int mismatch there would make this always-False, silently
+    # re-adding a duplicate target on every sync instead of recognizing
+    # the one already present. NOTE: `method` is deliberately NOT compared
+    # here -- list_resources()'s targets don't carry it at all (confirmed
+    # against listResources.ts: only targetId/ip/port/enabled/healthStatus/
+    # siteName), so comparing it would always be `None == method`, always
+    # False, and re-add a target on every single sync instead of fixing
+    # anything. A stale wrong-method target is a real gap this can't catch
+    # from the read side; it isn't something this fix can safely close.
     has_target = resource is not None and any(
         t.get("siteName") == site_match.get("name")
         and t.get("ip") == ip
-        and t.get("port") == port
+        and str(t.get("port")) == str(port)
         for t in resource.get("targets", [])
     )
     if has_target:

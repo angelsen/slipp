@@ -95,13 +95,6 @@ def register_project(
         raise LaunchError(f"Failed to create local config: {e}") from e
 
     registry = ProjectRegistry()
-    existing = registry.get(name)
-    if existing and existing.project_path != project_root.resolve():
-        output.warning(
-            f"'{name}' was registered at {existing.project_path}; "
-            f"re-pointing to {project_root}"
-        )
-
     try:
         registry.register(name=name, project_path=project_root)
         output.info(f"Registered '{name}' in global registry")

@@ -94,7 +94,13 @@ class LocalConfig(BaseModel):
         default_factory=dict, description="Run profiles (name -> profile dict)"
     )
 
-    model_config = {"extra": "ignore"}
+    # "allow", not "ignore": a hand-added key services/config/local.py
+    # doesn't recognize would otherwise silently vanish from slipp.yaml the
+    # next time anything calls save() -- warned about on load, but still
+    # destroyed data the user typed in on purpose. save()'s model_dump()
+    # round-trips __pydantic_extra__ automatically, so allowing it here is
+    # enough to make unknown keys durable instead of one-save-away from lost.
+    model_config = {"extra": "allow"}
 
     @field_validator("name")
     @classmethod

@@ -142,9 +142,17 @@ def fetch_services(host: DeploymentHostConfig) -> list[dict[str, Any]]:
         )
 
     try:
-        return json.loads(result.stdout).get("services", [])
+        parsed = json.loads(result.stdout)
     except json.JSONDecodeError as e:
         raise WgManageError(f"Failed to parse wg-manage output: {e}") from e
+
+    if not isinstance(parsed, dict):
+        raise WgManageError(
+            f"wg-manage service list --json returned {type(parsed).__name__}, "
+            "expected an object with a 'services' key"
+        )
+
+    return parsed.get("services", [])
 
 
 def remove_service(host: DeploymentHostConfig, project_name: str, name: str) -> None:
@@ -206,10 +214,10 @@ def sync(
             reported regardless of this flag.
 
     Raises:
-        WgManageError: If app_domain is missing, scanning fails, no
-            services are detected, or the SSH round-trip fails. Callers
-            that must not let this abort their own flow (the deploy hook)
-            catch it.
+        WgManageError: If app_domain is missing, scanning fails or leaves
+            any directory undetected, no services are detected, or the SSH
+            round-trip fails. Callers that must not let this abort their
+            own flow (the deploy hook) catch it.
     """
     app_domain = host.app_domain
     if not app_domain:
@@ -218,10 +226,25 @@ def sync(
         )
 
     try:
-        services = [s for s in (scan(d) for d in dirs) if s]
+        scanned = [(d, scan(d)) for d in dirs]
     except Exception as e:
         raise WgManageError(f"Failed to scan project: {e}") from e
 
+    # A dir scan() can't detect a service in must abort the whole sync, not
+    # just drop silently -- a directory this project still declares (e.g.
+    # a transient detector gap, a renamed manifest) would otherwise look
+    # unowned, and its already-live wg-manage entry would be pruned below
+    # as a "stray" instead of kept.
+    undetected = [d for d, s in scanned if s is None]
+    if undetected:
+        raise WgManageError(
+            "Could not detect a service in: "
+            + ", ".join(str(d) for d in undetected)
+            + " -- refusing to sync (a live entry for it could be wrongly "
+            "pruned as a stray)."
+        )
+
+    services = [s for _, s in scanned if s is not None]
     if not services:
         raise WgManageError("No services detected -- nothing to converge")
 

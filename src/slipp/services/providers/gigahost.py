@@ -61,15 +61,30 @@ class GigahostClient(ApiClientMixin):
         return [self._record_from_dict(r) for r in data]
 
     def create_record(self, zone_id: str, record: DNSRecord) -> DNSRecord:
-        """POST /dns/zones/{zone_id}/records."""
-        data = self._request_data(
+        """POST /dns/zones/{zone_id}/records.
+
+        Unlike create_zone(), the create response never echoes the created
+        record back at all -- confirmed live: `data: []` on every call,
+        regardless of success. The only way to get its record_id is a
+        follow-up list_records() call matched by name/type/value.
+        """
+        self._request(
             "POST",
             f"/dns/zones/{zone_id}/records",
             json=self._record_payload(record),
-            default={},
         )
-        record_id = data.get("record_id", record.record_id)
-        return record.model_copy(update={"record_id": str(record_id)})
+        for entry in self.list_records(zone_id):
+            if (
+                entry.name == record.name
+                and entry.type == record.type
+                and entry.value == record.value
+            ):
+                return entry
+
+        raise ProviderError(
+            f"{self.PROVIDER_NAME} did not return the created record for "
+            f"{record.name} ({record.type})"
+        )
 
     def update_record(self, zone_id: str, record: DNSRecord) -> DNSRecord:
         """PUT /dns/zones/{zone_id}/records/{record_id}."""

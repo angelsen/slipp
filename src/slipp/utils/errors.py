@@ -183,6 +183,12 @@ class ProjectNotFoundError(SlippError):
     pass
 
 
+class RegistryCollisionError(SlippError):
+    """Project name already registered to a different directory."""
+
+    pass
+
+
 class ProfileNotFoundError(SlippError):
     """Run profile not found."""
 

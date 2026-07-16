@@ -61,11 +61,23 @@
         dest: /etc/caddy/Caddyfile
         mode: "0644"
         backup: true
-      notify: Restart Caddy
 
     - name: Validate Caddyfile syntax
       ansible.builtin.command: caddy validate --config /etc/caddy/Caddyfile
       changed_when: false
+
+    # Restarted unconditionally (not notify-triggered) so a Caddyfile write
+    # that lands on disk during a play that later fails elsewhere (e.g. the
+    # iptables task below) still takes effect -- notify handlers only flush
+    # at the end of a successful play, and a subsequent retry with no
+    # further diff would never re-notify, silently leaving Caddy running
+    # its old config indefinitely. Same fix already applied to the
+    # app-facing Caddy role (generator/templates/roles/caddy/tasks/main.yml.j2).
+    - name: Enable and restart Caddy
+      ansible.builtin.systemd:
+        name: caddy
+        state: restarted
+        enabled: true
 
     - name: Add iptables PREROUTING rule (redirect :443 to :8443)
       # in_interface scopes this to genuinely inbound traffic on the public
@@ -84,23 +96,14 @@
         jump: REDIRECT
         to_ports: "8443"
         comment: slipp dev proxy
-      notify: Save iptables
 
-    - name: Ensure Caddy is running and enabled
-      ansible.builtin.systemd:
-        name: caddy
-        state: started
-        enabled: true
-
-  handlers:
-    - name: Restart Caddy
-      ansible.builtin.systemd:
-        name: caddy
-        state: restarted
-
-    - name: Save iptables
-      ansible.builtin.shell: |
-        iptables-save > /etc/iptables/rules.v4
+    # Persisted unconditionally (not notify-triggered) for the same reason
+    # as the Caddy restart above -- a later task failing would otherwise
+    # leave this rule active in the live kernel table but never written to
+    # rules.v4, silently dropping the dev proxy's :443 redirect on the
+    # next reboot with no error at install time.
+    - name: Persist iptables rules
+      ansible.builtin.shell: iptables-save > /etc/iptables/rules.v4
       args:
         executable: /bin/bash
       changed_when: false

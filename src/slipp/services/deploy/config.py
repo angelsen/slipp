@@ -11,7 +11,12 @@ from slipp.models.service import Runtime
 from slipp.services.config import LocalConfigService
 from slipp.services.config.detection import PLAYBOOK_PATTERNS, detect_path
 from slipp.services.registry import ProjectRegistry
-from slipp.utils.errors import ConfigError, ConfigParseError, SlippError
+from slipp.utils.errors import (
+    ConfigError,
+    ConfigParseError,
+    RegistryCollisionError,
+    SlippError,
+)
 
 
 @dataclass
@@ -222,14 +227,25 @@ def persist_config_updates(overrides: DeployOverrides, project_root: Path) -> No
 
 
 def ensure_project_registered(project_name: str, project_root: Path) -> None:
-    """Best-effort registration of the project in the global registry.
+    """Register the project in the global registry.
+
+    Best-effort for most registry failures, but a name collision (this name
+    already registered to a different directory) must not be swallowed into
+    a warning -- every other command (logs/ssh/secrets/vault) trusts the
+    registry to resolve this name to the right checkout.
 
     Args:
         project_name: Name to register the project under.
         project_root: Root the deploy resolved against (cwd or a discovered
             enclosing project) -- registers this, not necessarily cwd.
+
+    Raises:
+        RegistryCollisionError: If project_name is already registered to a
+            different directory.
     """
     try:
         ProjectRegistry().register(name=project_name, project_path=project_root)
+    except RegistryCollisionError:
+        raise
     except SlippError:
         output.warning("Could not register project in global registry")
