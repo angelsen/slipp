@@ -68,11 +68,19 @@
       changed_when: false
 
     - name: Add iptables PREROUTING rule (redirect :443 to :8443)
+      # in_interface scopes this to genuinely inbound traffic on the public
+      # NIC only - without it, PREROUTING (which every packet crosses before
+      # routing, including a local container's outbound connection that
+      # happens to target port 443 on some unrelated remote host) redirects
+      # ALL port-443 traffic system-wide to Caddy, silently hijacking every
+      # HTTPS connection a docker/podman deploy tries to make (pip/apt/image
+      # pulls, etc.) on this host.
       ansible.builtin.iptables:
         table: nat
         chain: PREROUTING
         protocol: tcp
         destination_port: "443"
+        in_interface: "{{ ansible_default_ipv4.interface }}"
         jump: REDIRECT
         to_ports: "8443"
         comment: slipp dev proxy

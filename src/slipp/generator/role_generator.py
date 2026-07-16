@@ -119,8 +119,9 @@ def generate_app_role(
     Creates role directory structure:
     - roles/{service-name}/tasks/main.yml
     - roles/{service-name}/templates/systemd.service.j2
-    - roles/{service-name}/handlers/main.yml (container runtimes only --
-      systemd deploys restart/verify inline via block/rescue)
+
+    Every runtime (systemd, docker, podman) restarts/verifies inline via
+    block/rescue in tasks/main.yml.j2 - no notify/handlers indirection.
 
     Args:
         service: Detected service configuration
@@ -154,10 +155,9 @@ def generate_app_role(
     Example:
         >>> service = DetectedService(name="backend", framework="flask", ...)
         >>> files = generate_app_role(service, "my-app", Runtime.PODMAN)
-        >>> # files contains 3 entries:
+        >>> # files contains 2 entries:
         >>> # - roles/app-backend/tasks/main.yml
         >>> # - roles/app-backend/templates/systemd.service.j2
-        >>> # - roles/app-backend/handlers/main.yml
     """
     role_name = f"app-{service.name}"
     files = {}
@@ -191,14 +191,6 @@ def generate_app_role(
         template_dir,
         systemd_vars,
     )
-    # Systemd deploys handle restart/verification inline (see tasks/main.yml.j2's
-    # block/rescue) rather than via notify, so only the container role -- whose
-    # community.docker/podman tasks still notify a recreate handler -- needs one.
-    if runtime != Runtime.SYSTEMD:
-        files[Path(f"roles/{role_name}/handlers/main.yml")] = _render_handlers(
-            service, service_data, project_name
-        )
-
     return files
 
 
@@ -323,21 +315,3 @@ def extract_systemd_vars(
     return extra
 
 
-def _render_handlers(
-    service: DetectedService, service_data: dict[str, Any], project_name: str
-) -> str:
-    """Render handlers/main.yml template.
-
-    Args:
-        service: Service configuration (for its name, in the error label)
-        service_data: service.model_dump(), computed once by the caller
-        project_name: Project name
-
-    Returns:
-        Rendered handlers YAML content
-    """
-    return render_template(
-        "roles/app-container/handlers/main.yml.j2",
-        _base_context(service_data, project_name),
-        label=f"role for {service.name} (handlers)",
-    )

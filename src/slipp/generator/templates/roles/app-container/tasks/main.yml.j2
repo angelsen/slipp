@@ -34,7 +34,8 @@
     name: "{{ project_name }}-{{ service.name }}"
     path: "/tmp/{{ project_name }}-{{ service.name }}"
     force: true
-    force_rm: true
+    build:
+      force_rm: true
     state: build
 {% else %}
   community.docker.docker_image:
@@ -44,20 +45,49 @@
     source: build
     force_source: true
 {% endif %}
-  notify: Restart {{ project_name }}-{{ service.name }}
 
 - name: Deploy systemd service
   ansible.builtin.template:
     src: systemd.service.j2
     dest: "/etc/systemd/system/{{ project_name }}-{{ service.name }}.service"
     mode: '0644'
-  notify:
-    - Reload systemd
-    - Restart {{ project_name }}-{{ service.name }}
 
-- name: Enable and start service
-  ansible.builtin.systemd:
-    name: "{{ project_name }}-{{ service.name }}.service"
-    enabled: true
-    state: started
-    daemon_reload: true
+- name: Deploy and verify {{ project_name }}-{{ service.name }}
+  block:
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Enable and restart service
+      ansible.builtin.systemd:
+        name: "{{ project_name }}-{{ service.name }}.service"
+        enabled: true
+        state: restarted
+
+    - name: Wait for service to stabilize
+      ansible.builtin.pause:
+        seconds: 3
+
+    - name: Verify service is active
+      become: false
+      ansible.builtin.command: "systemctl is-active {{ project_name }}-{{ service.name }}.service"
+      changed_when: false
+
+  rescue:
+    - name: Get recent service logs
+      ansible.builtin.command: "journalctl -u {{ project_name }}-{{ service.name }}.service --no-pager -n 30"
+      register: _journal
+      changed_when: false
+      failed_when: false
+
+    - name: Show recent service logs
+      # ExecStart runs `{{ runtime }} run --rm` in the foreground (Type=simple),
+      # so the container's own stdout/stderr already flows into this same
+      # journal entry via conmon - no separate `{{ runtime }} logs` call needed,
+      # and --rm would have already removed the container by the time we could.
+      ansible.builtin.debug:
+        var: _journal.stdout_lines
+
+    - name: Fail - service did not start
+      ansible.builtin.fail:
+        msg: "{{ project_name }}-{{ service.name }} did not start successfully. See logs above."
