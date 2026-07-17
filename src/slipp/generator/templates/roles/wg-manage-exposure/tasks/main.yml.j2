@@ -24,12 +24,38 @@
       --hub`, to make it one before deploying.
   when: wg_manage_version_result.rc != 0
 
+{% if not public %}
+# --internal-tls (wg-manage >=1.1) replaced --https with no back-compat
+# alias -- a hub still on 1.0 doesn't recognize the new flag at all, so
+# this must fail loud here rather than let `wg-manage service add`
+# itself reject an unrecognized option deeper in the role.
+- name: Fail if wg-manage predates the --internal-tls rename
+  ansible.builtin.fail:
+    # This whole main.yml.j2 file is rendered once by slipp's own Jinja2
+    # (using launch-time context: wg_services/public/label), producing
+    # static YAML that Ansible then renders *again* at play time.
+    # wg_manage_version_result only exists in Ansible's runtime facts,
+    # not slipp's render context -- the raw-block markers below tell
+    # slipp's renderer to leave that one expression untouched, verbatim,
+    # for Ansible to resolve later (confirmed by rendering this template
+    # directly: without them, slipp's own renderer fails with
+    # "'wg_manage_version_result' is undefined").
+    msg: >-
+      This host is running {% raw -%}
+      {{ wg_manage_version_result.stdout | trim }}
+      {%- endraw %},
+      but slipp's internal-TLS service exposure requires wg-manage
+      >=1.1 (the --internal-tls rename of the old --https flag).
+      Update wg-manage on this hub before deploying.
+  when: wg_manage_version_result.stdout.split()[-1] is version('1.1', '<')
+
+{% endif %}
 {% for svc in wg_services %}
 - name: Expose {{ svc.name }} via wg-manage
   ansible.builtin.command:
     cmd: >-
       wg-manage service add {{ svc.fqdn_quoted }} {{ svc.target_host }}:{{ svc.port }}
-      {{ '--public' if public else '--https' }}
+      {{ '--public' if public else '--internal-tls' }}
       --label {{ label }}{{ ' ' + svc.route_flags if svc.route_flags else '' }}
   register: wg_manage_{{ loop.index }}_result
   changed_when: "'unchanged' not in wg_manage_{{ loop.index }}_result.stdout"
