@@ -424,7 +424,9 @@ def run_playbook(
         skip_tags: Optional comma-separated tags to skip
         roles_path: Optional list of role directories (sets ANSIBLE_ROLES_PATH)
         log_dir: Directory for log file (optional)
-        extra_vars: Optional dict of extra variables to pass (-e key=value)
+        extra_vars: Optional dict of extra variables to pass, as one JSON
+            object (-e '{"key": "value"}') -- preserves non-scalar
+            values (lists, dicts), unlike one -e per key
         on_progress: Optional callback for progress updates
 
     Returns:
@@ -446,8 +448,15 @@ def run_playbook(
     if skip_tags:
         cmd.extend(["--skip-tags", skip_tags])
     if extra_vars:
-        for key, value in extra_vars.items():
-            cmd.extend(["-e", f"{key}={json.dumps(value)}"])
+        # One -e per key with a JSON-encoded value (`-e key=[1,2]`) only
+        # round-trips scalars -- ansible-playbook's key=value extra-vars
+        # parser doesn't deeply parse each value as JSON, so a list/dict
+        # value arrives on the play side as the literal string "[1,2]",
+        # not a real list (confirmed live: a Jinja `loop:` over such a
+        # value fails with "must resolve to a 'list', not 'str'"). Passing
+        # the whole dict as one JSON object is the documented way to keep
+        # non-scalar values intact, and is equivalent for scalars too.
+        cmd.extend(["-e", json.dumps(extra_vars)])
 
     log_path, log_handle = open_log(log_dir, "ansible-playbook")
     env = _subprocess_env(roles_path, unbuffered=True)

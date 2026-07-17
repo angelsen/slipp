@@ -5,11 +5,11 @@ from typing import Annotated
 import typer
 
 from slipp import output
-from slipp.commands.common import ProjectOption, resolve_host_or_exit
+from slipp.commands.common import ProjectOption
 from slipp.models.service import Service
 from slipp.services.config import HostResolver, collect_managed_roles
 from slipp.services.discovery import filter_services
-from slipp.services.discovery.pipeline import discover_across_hosts, discover_and_enrich
+from slipp.services.discovery.pipeline import discover_across_hosts
 from slipp.services.ssh import hint_ssh_log
 
 
@@ -43,14 +43,21 @@ def ps_command(
     resolver = HostResolver()
 
     if project:
-        ssh_config = resolve_host_or_exit(project=project, command="ps")
+        # Every host the project owns, not just its primary -- a
+        # multi-host project's services live on more than one machine,
+        # and resolving to a single connection target here (as exec/ssh/
+        # logs correctly do) would silently omit every secondary host's
+        # services from the listing.
+        project_hosts = [(project, h) for h in resolver.all_hosts_for_project(project)]
         managed_roles = collect_managed_roles(project)
 
         if refresh:
-            output.info(f"Re-discovering services on {ssh_config.ansible_host}...")
+            output.info(
+                f"Re-discovering services across {len(project_hosts)} host(s)..."
+            )
 
-        services = discover_and_enrich(
-            ssh_config,
+        services, errors = discover_across_hosts(
+            project_hosts,
             include_system=all_services,
             force=refresh,
         )
@@ -61,7 +68,6 @@ def ps_command(
             show_all=all_services,
             managed_roles=managed_roles,
         )
-        errors: list[str] = []
 
     else:
         hosts = resolver.all_hosts()

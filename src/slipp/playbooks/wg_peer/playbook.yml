@@ -4,9 +4,11 @@
 # Installs WireGuard on a secondary deploy host and brings up a tunnel to
 # an already-existing wg-manage hub, then opens a firewall exception
 # scoped to just the hub's WireGuard IP and the one service port being
-# exposed through it -- nothing broader (no default policy changes, no
-# `ufw enable`, which could lock this host out of unrelated traffic it
-# already depends on).
+# exposed through it. Enables ufw (an inactive ufw shows no rules in `ufw
+# status` at all, which both makes the "exception" unenforced and breaks
+# is_bootstrapped()'s live probe, which greps that same output) -- always
+# allowing SSH first, in the same play, before enabling, so this can never
+# lock the connecting user out.
 #
 # Mirrors, now automated, the manual steps done by hand this session:
 # peer add on the hub -> nmcli/wg-quick on the peer -> a scoped firewall
@@ -80,3 +82,27 @@
         route: false
         comment: "slipp wg-manage peer exposure"
       loop: "{{ service_ports }}"
+
+    # Allowed before enabling, in the same task list, unconditionally --
+    # ufw's default policy on enable is deny-incoming, so an enable with
+    # no SSH exception in place yet would cut off the very connection
+    # running this playbook. ansible_port is only set as a fact when the
+    # inventory line overrides the default (see AnsibleHost.to_ini_line())
+    # -- undefined, not 22, on the common default-port case -- so this
+    # must default it explicitly rather than assume it's always present.
+    - name: Allow SSH so enabling ufw can't lock out the connecting user
+      community.general.ufw:
+        rule: allow
+        port: "{{ ansible_port | default(22) }}"
+        proto: tcp
+        comment: "slipp wg-manage peer bootstrap: preserve SSH access"
+
+    # An inactive ufw enforces nothing (the rules above exist but aren't
+    # applied) and, worse, `ufw status` prints no rule lines at all while
+    # inactive -- is_bootstrapped()'s live probe greps that exact output,
+    # so a never-enabled ufw would make it report "not bootstrapped"
+    # forever, breaking idempotency on every subsequent deploy. Enabling
+    # is itself idempotent (a no-op if already active).
+    - name: Enable ufw
+      community.general.ufw:
+        state: enabled

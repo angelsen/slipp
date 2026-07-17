@@ -12,6 +12,7 @@ from pathlib import Path
 
 from slipp import output
 from slipp.models.host import AnsibleHost
+from slipp.models.registry import RegisteredProject
 from slipp.services.config.inventory import (
     load_full_inventory,
     load_project_ansible_hosts,
@@ -37,6 +38,17 @@ class HostResolver:
 
     def __init__(self) -> None:
         self._registry = ProjectRegistry()
+
+    def _get_project(self, project: str) -> RegisteredProject:
+        """Look up `project` in the registry.
+
+        Raises:
+            ProjectNotFoundError: If project not registered
+        """
+        project_obj = self._registry.get(project)
+        if project_obj is None:
+            raise ProjectNotFoundError(f"Project '{project}' not found in registry")
+        return project_obj
 
     def all_hosts(self) -> list[tuple[str, AnsibleHost]]:
         """Get all registered hosts across all projects.
@@ -139,29 +151,42 @@ class HostResolver:
         return self._first_host(hosts, context_label)
 
     def by_project(self, project: str) -> AnsibleHost:
-        """Resolve project name to host.
+        """Resolve project name to its primary host.
 
-        Loads host from project's local config and inventory.
+        Loads host from project's local config and inventory. For a
+        multi-host project this is the one host suitable as a single
+        connection target (exec/ssh/logs) -- see all_hosts_for_project()
+        for callers that need every host a project owns instead (ps).
 
         Args:
             project: Project name
 
         Returns:
-            First AnsibleHost from project's inventory
+            Primary AnsibleHost from project's inventory
 
         Raises:
             ProjectNotFoundError: If project not registered
             HostNotFoundError: If the project's inventory is invalid
         """
-        project_obj = self._registry.get(project)
-
-        if project_obj is None:
-            raise ProjectNotFoundError(f"Project '{project}' not found in registry")
-
+        project_obj = self._get_project(project)
         hosts = load_project_ansible_hosts(project_obj.project_path)
         return self._resolve_primary(
             project_obj.project_path, hosts, f"Project '{project}'"
         )
+
+    def all_hosts_for_project(self, project: str) -> list[AnsibleHost]:
+        """Every host belonging to `project`, not just its primary.
+
+        For callers that aggregate across a project's whole deploy
+        topology (ps listing every service on every host) rather than
+        needing one connection target -- see by_project() for that case.
+
+        Raises:
+            ProjectNotFoundError: If project not registered
+            HostNotFoundError: If the project's inventory is invalid
+        """
+        project_obj = self._get_project(project)
+        return load_project_ansible_hosts(project_obj.project_path)
 
     def _try_load_from(self, path: Path) -> AnsibleHost | None:
         """Load the primary host from `path`'s inventory, or None if not found."""

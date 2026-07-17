@@ -25,6 +25,23 @@ from slipp.utils.errors import LaunchError
 from slipp.services.launch.prompts import get_inventory_config
 
 
+def _load_inventory_config(inventory_path: Path) -> InventoryConfig:
+    """Parse an existing inventory.yml into an InventoryConfig.
+
+    Shared by both InventoryLoadStage branches that read the file --
+    plain load-existing, and --reconfigure's load-then-patch-primary.
+
+    Raises:
+        LaunchError: If the file can't be read or parsed.
+    """
+    try:
+        with open(inventory_path) as f:
+            inventory_data = yaml.safe_load(f)
+        return InventoryConfig.from_ansible_format(inventory_data)
+    except Exception as e:
+        raise LaunchError(f"Failed to load {inventory_path}: {e}") from e
+
+
 class InventoryLoadStage:
     """Load or prompt for inventory configuration."""
 
@@ -52,14 +69,23 @@ class InventoryLoadStage:
                 output.success(
                     f"Using existing {get_inventory_filename(context.environment)}"
                 )
-                try:
-                    with open(inventory_path) as f:
-                        inventory_data = yaml.safe_load(f)
-                    context.inventory_config = InventoryConfig.from_ansible_format(
-                        inventory_data
-                    )
-                except Exception as e:
-                    raise LaunchError(f"Failed to load {inventory_path}: {e}") from e
+                context.inventory_config = _load_inventory_config(inventory_path)
+            elif inventory_path.exists():
+                # --reconfigure re-prompts for the primary host only --
+                # get_inventory_config() has no notion of secondary hosts,
+                # so a bare `context.inventory_config = get_inventory_config(...)`
+                # would silently drop every host `slipp hosts add` ever
+                # wrote, discarding it the moment someone follows the
+                # documented "hosts add, then launch --reconfigure"
+                # workflow (see commands/hosts.py's hosts_add_command
+                # hint). Load the existing inventory first so secondary
+                # hosts survive, and replace only the primary host's own
+                # entry with the freshly-prompted one.
+                existing_config = _load_inventory_config(inventory_path)
+                prompted = get_inventory_config(context.environment)
+                new_primary = prompted.hosts[context.environment]
+                existing_config.hosts[context.environment] = new_primary
+                context.inventory_config = existing_config
             else:
                 context.inventory_config = get_inventory_config(context.environment)
         else:

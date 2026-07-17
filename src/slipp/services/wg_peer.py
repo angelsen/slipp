@@ -181,6 +181,16 @@ def ensure_peer(
         )
     hub_wg_ip = hub_wg_ip_match.group(1)
 
+    # wg-quick invokes resolvconf(8)/openresolv for any [Interface] DNS=
+    # line -- not installed by default on a fresh peer host, and wg-quick
+    # rolls the whole interface back on any script step failing, so a
+    # missing resolvconf binary silently kills the entire tunnel instead
+    # of just DNS. This peer only needs tunnel routing to reach the hub,
+    # not the hub's DNS server for its own resolution -- strip the line
+    # rather than adding a resolvconf dependency purely to satisfy
+    # something this bootstrap doesn't actually need.
+    iface_config = re.sub(r"^DNS\s*=.*\n?", "", peer_config, flags=re.MULTILINE)
+
     playbook_path = _get_playbook_path()
     inventory_content = f"[all]\n{peer.to_ini_line()}\n"
 
@@ -194,7 +204,7 @@ def ensure_peer(
         # would land in the ansible-playbook argv and be visible to any
         # local user via `ps`.
         temp_secret_file(
-            peer_config, prefix="slipp-wgpeer-conf-", suffix=".conf"
+            iface_config, prefix="slipp-wgpeer-conf-", suffix=".conf"
         ) as config_path,
     ):
         extra_vars = {

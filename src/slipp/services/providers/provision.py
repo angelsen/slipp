@@ -194,11 +194,11 @@ def poll_deploy_status(client: GigahostClient, order_ids: list[int]) -> dict[str
     output.warning("Server installation can take up to 60 minutes")
     output.hint("Ctrl+C to cancel — re-run the same command to resume")
 
-    def check(update: Callable[[str], None], _elapsed: float) -> dict[str, Any] | None:
+    def check(update: Callable[[str], None], elapsed: float) -> dict[str, Any] | None:
         status = client.get_deploy_status(order_ids)
         servers = status.get("servers", [])
         if servers:
-            update(servers[0].get("status", "waiting"))
+            update(f"{servers[0].get('status', 'waiting')} ({int(elapsed)}s)")
         return servers[0] if status.get("all_ready") else None
 
     return _poll_until(
