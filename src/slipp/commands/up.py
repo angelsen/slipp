@@ -119,6 +119,7 @@ def _run_launch_and_dns(
     name: str,
     dns: DnsMode,
     get_client: Callable[[], GigahostClient],
+    public: bool,
 ) -> None:
     """Generate and run the launch pipeline, then sync (or skip) DNS."""
     step("Generating Ansible project...")
@@ -129,6 +130,7 @@ def _run_launch_and_dns(
         ip=ip,
         ssh_user=ssh_user,
         resolved_domain=resolved_domain,
+        public=public,
     )
     try:
         run_full_pipeline(context)
@@ -168,6 +170,14 @@ def up_command(
             "checkout) before launch, so --proxy auto finds it",
         ),
     ] = False,
+    public: Annotated[
+        bool,
+        typer.Option(
+            "--public",
+            help="Expose via Let's Encrypt instead of internal CA "
+            "(--proxy wg-manage only)",
+        ),
+    ] = False,
 ) -> None:
     """Provision, register domain, launch, sync DNS, and deploy -- in one command."""
     _client: GigahostClient | None = None
@@ -189,7 +199,15 @@ def up_command(
         resolved_domain = _resolve_domain(step, get_client, domain)
 
         _run_launch_and_dns(
-            step, ip, ssh_user, resolved_domain, environment, name, dns, get_client
+            step,
+            ip,
+            ssh_user,
+            resolved_domain,
+            environment,
+            name,
+            dns,
+            get_client,
+            public,
         )
     finally:
         if _client is not None:

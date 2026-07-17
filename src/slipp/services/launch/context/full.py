@@ -55,6 +55,7 @@ def build_context_for_provisioned_host(
     ip: str,
     ssh_user: str,
     resolved_domain: str,
+    public: bool = False,
 ) -> "FullContext":
     """FullContext for a host whose IP/domain slipp already resolved (`slipp up`).
 
@@ -68,6 +69,7 @@ def build_context_for_provisioned_host(
         environment=environment,
         project_dirs=[output_dir],
         project_name=project_name,
+        public=public,
         inventory_config=InventoryConfig(
             hosts={
                 environment: DeploymentHostConfig(

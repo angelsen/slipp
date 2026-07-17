@@ -41,3 +41,8 @@ def has_caddy_role(project_root: Path) -> bool:
     (:443/https) or exposed directly on its app_port (:app_port/http).
     """
     return (project_root / "roles" / "caddy").exists()
+
+
+def has_wg_manage_role(project_root: Path) -> bool:
+    """True if this project's generated Ansible project has a wg-manage-exposure role."""
+    return (project_root / "roles" / "wg-manage-exposure").exists()
