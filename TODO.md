@@ -70,6 +70,35 @@ and a hand-edit + redeploy surviving the post-deploy sync.
       route per service. Both translators already iterate entries, so
       it's a contained change — do it when the limit actually bites, not
       before.
+- [ ] Incremental wg-manage peer service growth — `ensure_peer()`/
+      `is_bootstrapped()` (`services/wg_peer.py`) treat a peer's assigned
+      ports as one all-or-nothing set: adding a *new* service to an
+      already-bootstrapped peer hits wg-manage's "peer already exists"
+      error instead of incrementally opening just the new port. Documented
+      as a known gap in `ensure_peer()`'s own docstring since the
+      multi-host-deploy spec shipped (2026-07-17); found live but not
+      fixed, since it needs `is_bootstrapped()` to check per-port state
+      instead of the full current set, and `ensure_peer()` to open only
+      the missing rule(s) rather than assuming a from-scratch bootstrap.
+- [ ] Host-identity collision detection — two independently-registered
+      slipp projects can silently point at the same physical host (same
+      `ansible_host`) under different `inventory_hostname` labels, with no
+      warning. `discover_across_hosts()`'s IP-based dedup
+      (`services/discovery/pipeline.py`) then arbitrarily picks one
+      project's name for `slipp ps` display — surfaced live when
+      `slipp provision`'s auto-registered project collided with a
+      `slipp hosts add`-registered peer for the same VPS (2026-07-17,
+      worked around by deregistering the redundant project, root cause
+      not fixed). Fix would need either provision-time detection (does
+      any registered project already claim this `ansible_host`?) or a
+      display-layer disambiguation so `ps` doesn't have to guess.
+- [ ] Same-language multi-service port collision — two services of the
+      same language/framework family on one host (e.g. two Python/Flask
+      services) both scanner-detect the same default port, with no
+      auto-allocation; needs a manual `app_port` edit today. Cross-host
+      isn't affected (confirmed live during multi-host-deploy testing —
+      same port on two different physical hosts is fine), only same-host
+      same-family collisions.
 
 ---
 
