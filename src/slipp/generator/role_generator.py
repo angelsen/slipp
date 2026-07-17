@@ -313,5 +313,3 @@ def extract_systemd_vars(
     extra = extract_template_variables(service)
     extra.pop("runtime", None)
     return extra
-
-

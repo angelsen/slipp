@@ -15,7 +15,9 @@ from slipp.services.config import ConfigResolver, LocalConfigService, load_proje
 from slipp.services.registry import ProjectRegistry
 
 
-def _resolve_local_config_or_exit(project_root: Path) -> tuple[ConfigResolver, LocalConfig]:
+def _resolve_local_config_or_exit(
+    project_root: Path,
+) -> tuple[ConfigResolver, LocalConfig]:
     """Resolve local config, reporting (in the active output format) and exiting if none exists."""
     resolver = ConfigResolver(project_root)
 
@@ -29,7 +31,9 @@ def _resolve_local_config_or_exit(project_root: Path) -> tuple[ConfigResolver, L
             )
         else:
             output.warning("No slipp.yaml found in current directory or any parent")
-            output.hint("Run 'slipp projects add <name> -i <inventory>' to create config")
+            output.hint(
+                "Run 'slipp projects add <name> -i <inventory>' to create config"
+            )
             output.hint(
                 "Or 'slipp deploy --name <name> -i <inventory>' to deploy and save config"
             )
