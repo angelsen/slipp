@@ -106,7 +106,7 @@ def build_wg_services(
     return entries
 
 
-def _ssh_exec(host: DeploymentHostConfig, cmd: str) -> SSHResult:
+def ssh_exec(host: DeploymentHostConfig, cmd: str) -> SSHResult:
     """Run `cmd` on `host` over SSH, converting connection failures to WgManageError.
 
     Single connect-execute-disconnect per call -- every wg-manage operation
@@ -134,7 +134,7 @@ def fetch_services(host: DeploymentHostConfig) -> list[dict[str, Any]]:
         WgManageError: On connection failure, non-zero exit, or unparsable
             JSON.
     """
-    result = _ssh_exec(host, "wg-manage service list --json")
+    result = ssh_exec(host, "wg-manage service list --json")
 
     if not result.ok:
         raise WgManageError(
@@ -174,7 +174,7 @@ def remove_service(host: DeploymentHostConfig, project_name: str, name: str) -> 
             f"(label: {match.get('label') or 'none'}, expected: {label}) -- refusing to remove"
         )
 
-    result = _ssh_exec(host, f"wg-manage service rm {shlex.quote(name)}")
+    result = ssh_exec(host, f"wg-manage service rm {shlex.quote(name)}")
     if not result.ok:
         raise WgManageError(
             f"Failed to remove '{name}': {result.stderr.strip() or result.stdout.strip()}"
@@ -276,7 +276,7 @@ def sync(
 
     for s in strays:
         name = s.get("name", "?")
-        rm_result = _ssh_exec(host, f"wg-manage service rm {shlex.quote(name)}")
+        rm_result = ssh_exec(host, f"wg-manage service rm {shlex.quote(name)}")
         if rm_result.ok:
             output.success(f"Removed stray wg-manage service: {name}")
         else:

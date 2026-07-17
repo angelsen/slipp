@@ -30,7 +30,7 @@ def resolve_runtime(context: ScanContext) -> Runtime | None:
     haven't loaded inventory yet. None if neither source is available.
     """
     if context.inventory_config is not None:
-        return context.inventory_config.first_host.runtime
+        return context.inventory_config.primary_host.runtime
     if isinstance(context, DockerfileContext):
         return context.container_runtime
     return None
@@ -87,6 +87,29 @@ def skip_if_dry_run(context: BaseContext, action: str) -> bool:
         output.info(f"Dry run: would {action} '{context.project_name}'")
         return True
     return False
+
+
+def load_declared_expose(context: FullContext) -> dict[str, ExposeEntry] | None:
+    """The expose: block exactly as hand-written in slipp.yaml, unresolved.
+
+    Unlike resolve_expose() (which seeds a default block when none exists
+    and memoizes the result on context.expose for Caddy/wg-manage domain
+    routing), this is a raw, side-effect-free read used by stages that need
+    a service's `host:` assignment before routing has been resolved --
+    InventoryValidationStage's fail-loud checks and ProvisionConfig's
+    per-host grouping both run before CaddyConfigStage/WgManageRoleStage
+    (the only two callers of resolve_expose()) in the pipeline, so
+    context.expose may still be None when they run, particularly for
+    --proxy wg-manage/none where CaddyConfigStage never resolves it at all.
+
+    Returns None if there's no slipp.yaml yet or no expose: block in it
+    (a first-time launch, before any host: assignment is possible -- see
+    design.md's data flow: assigning a service to a secondary host is
+    always a hand-edit-then-`--reconfigure` operation, never a first-launch
+    one).
+    """
+    local_config = LocalConfigService.load(context.output_dir)
+    return local_config.expose if local_config else None
 
 
 def resolve_expose(context: FullContext, domain: str) -> dict[str, ExposeEntry]:

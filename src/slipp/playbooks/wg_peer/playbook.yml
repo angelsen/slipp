@@ -1,0 +1,82 @@
+---
+# WireGuard peer bootstrap
+#
+# Installs WireGuard on a secondary deploy host and brings up a tunnel to
+# an already-existing wg-manage hub, then opens a firewall exception
+# scoped to just the hub's WireGuard IP and the one service port being
+# exposed through it -- nothing broader (no default policy changes, no
+# `ufw enable`, which could lock this host out of unrelated traffic it
+# already depends on).
+#
+# Mirrors, now automated, the manual steps done by hand this session:
+# peer add on the hub -> nmcli/wg-quick on the peer -> a scoped firewall
+# rule -> `wg-manage service add`.
+#
+# Extra vars (see services/wg_peer.py's ensure_peer()):
+#   peer_config_path: Local (control-node) path to a temp file holding the
+#                 full WireGuard client config text, as printed by
+#                 `wg-manage add <name>` on the hub (captured verbatim,
+#                 not reconstructed here). A *path*, not the config text
+#                 itself -- passed by reference and read via lookup('file',
+#                 ...) below so the private key inside it never appears in
+#                 `-e key=value` on the ansible-playbook command line
+#                 (visible to any local user via `ps`).
+#   iface_name:   Interface name for this tunnel on the peer -- named
+#                 after the hub's own inventory_hostname, so multiple
+#                 peer tunnels to different hubs never collide.
+#   hub_wg_ip:    The hub's WireGuard tunnel IP (parsed from peer_config's
+#                 own DNS= line by the caller) -- the only source address
+#                 the opened firewall rules trust.
+#   service_ports: List of service ports this bootstrap exposes (every
+#                 port currently assigned to this peer host, so one
+#                 bootstrap run opens all of them at once).
+#
+# Usage: ansible-playbook playbook.yml -i inventory --extra-vars @vars.json
+
+- name: Bootstrap WireGuard peer tunnel
+  hosts: all
+  become: true
+
+  tasks:
+    - name: Install WireGuard and ufw
+      ansible.builtin.apt:
+        name:
+          - wireguard-tools
+          - ufw
+        state: present
+        update_cache: true
+
+    - name: Write WireGuard peer config
+      ansible.builtin.copy:
+        content: "{{ lookup('file', peer_config_path) }}"
+        dest: "/etc/wireguard/{{ iface_name }}.conf"
+        mode: "0600"
+      no_log: true
+
+    # Restarted unconditionally (not notify-triggered) -- a config written
+    # to disk during a play that later fails elsewhere must still take
+    # effect this run, per this project's "fail loud, never corrupt
+    # silently" convention: a notify handler only flushes at the end of a
+    # *successful* play, and a retry with no further diff to the config
+    # file would never re-notify, silently leaving the tunnel down (or
+    # running stale keys) indefinitely.
+    - name: Enable and start the WireGuard tunnel
+      ansible.builtin.systemd:
+        name: "wg-quick@{{ iface_name }}"
+        state: restarted
+        enabled: true
+
+    # Scoped by both source IP and port -- not a blanket allow on the wg
+    # interface. route: false: this is an input rule for traffic
+    # terminating on this host's own service(s), not something routed/
+    # forwarded through it. One rule per port, all sourced from just the
+    # hub's WireGuard IP.
+    - name: Open firewall exception for the hub's traffic to each service
+      community.general.ufw:
+        rule: allow
+        from_ip: "{{ hub_wg_ip }}"
+        to_port: "{{ item }}"
+        proto: tcp
+        route: false
+        comment: "slipp wg-manage peer exposure"
+      loop: "{{ service_ports }}"

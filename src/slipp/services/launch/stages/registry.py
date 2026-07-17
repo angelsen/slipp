@@ -33,13 +33,13 @@ class RegistrationStage:
 
         inventory_config = require(context.inventory_config, "inventory config")
         inventory_filename = get_inventory_filename(context.environment)
-        first_host = inventory_config.first_host
+        primary_host = inventory_config.primary_host
         register_project(
             name=context.project_name,
             project_root=context.output_dir,
             inventory_path=inventory_filename,
             playbook_path="playbook.yml",
-            runtime=first_host.runtime.value,
+            runtime=primary_host.runtime.value,
             roles_path=["roles"],
             project_dirs=[
                 relative_or_absolute(d, context.output_dir)
@@ -66,7 +66,7 @@ class SummaryStage:
         """
         inventory_config = require(context.inventory_config, "inventory config")
 
-        first_host = inventory_config.first_host
+        primary_host = inventory_config.primary_host
 
         if context.dry_run:
             output.warning("Dry run complete (no files written)")
@@ -74,7 +74,7 @@ class SummaryStage:
                 "Would generate 20+ files including inventory, playbook, roles, and Dockerfiles"
             )
         else:
-            is_systemd = first_host.runtime == Runtime.SYSTEMD
+            is_systemd = primary_host.runtime == Runtime.SYSTEMD
 
             output.success("Launch complete!")
             output.blank()
@@ -115,12 +115,12 @@ class SummaryStage:
             next_steps.append("Deploy to VPS: slipp deploy")
             output.list_items(next_steps, numbered=True)
 
-            if first_host.app_domain:
+            if primary_host.app_domain:
                 output.blank()
                 output.stdout("Your app will be available at:")
                 url = format_app_url(
-                    first_host.app_domain,
+                    primary_host.app_domain,
                     has_caddy=not context.skip_caddy,
-                    port=first_host.app_port,
+                    port=primary_host.app_port,
                 )
                 output.stdout(f"  {url}")

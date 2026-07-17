@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field, field_validator
 from slipp.constants import DEFAULT_SSH_PORT, DEFAULT_SSH_USER, ProxyType
 from slipp.models.caddy import CaddyConfig
 from slipp.models.host import AnsibleHost
+from slipp.models.local_config import ExposeEntry, resolve_service_host
 from slipp.models.service import LenientRuntime, Runtime
 from slipp.models.types import PathStr
 from slipp.utils.errors import HostNotFoundError
@@ -68,6 +69,14 @@ class DeploymentHostConfig(AnsibleHost):
             probe ("caddy" or "wg-manage"; None if never resolved or
             proxy was set explicitly). Persisted so re-launches/deploys
             against the same host skip the SSH probe.
+        is_primary: Whether this host owns the project's public identity
+            (domain, proxy, DNS, admin email). Exactly one host in an
+            InventoryConfig must have this set -- validated by
+            InventoryConfig.primary_host, never inferred from dict/YAML
+            ordering. Defaults True so a single-host project (today's only
+            supported shape) needs no config change at all. `slipp hosts
+            add` sets this False explicitly on every secondary host it
+            creates.
     """
 
     app_domain: str | None = Field(default=None, description="Domain for app (Caddy)")
@@ -82,6 +91,10 @@ class DeploymentHostConfig(AnsibleHost):
     )
     proxy_owner: ProxyType | None = Field(
         default=None, description="Resolved --proxy auto owner: caddy or wg-manage"
+    )
+    is_primary: bool = Field(
+        default=True,
+        description="Owns the project's public identity (domain/proxy/DNS)",
     )
 
 
@@ -131,6 +144,14 @@ class InventoryConfig(BaseModel):
             ssh_user = config.pop("ansible_ssh_user", None)
             if ssh_user is not None:
                 config.setdefault("ansible_user", ssh_user)
+            # The dict key IS the host's identity -- an inventory_hostname
+            # entry inside the per-host vars (as to_ansible_format()'s own
+            # model_dump() writes, since it's a real DeploymentHostConfig
+            # field) must never override or duplicate it. Popped rather
+            # than asserted-equal: a hand-edited inventory.yml could
+            # plausibly carry a stale one from a copy-paste, and the dict
+            # key is authoritative regardless.
+            config.pop("inventory_hostname", None)
             hosts[name] = DeploymentHostConfig(inventory_hostname=name, **config)
         return cls(hosts=hosts)
 
@@ -220,18 +241,28 @@ class InventoryConfig(BaseModel):
         }
 
     @property
-    def first_host(self) -> DeploymentHostConfig:
-        """The first configured host, for single-host launch stages.
+    def primary_host(self) -> DeploymentHostConfig:
+        """The host that owns the project's public identity.
+
+        Replaces the old order-dependent `first_host` -- primary is
+        determined by an explicit `is_primary` flag, never by dict/YAML
+        ordering (which is silently fragile: hand-editing inventory.yml
+        and reordering hosts would previously flip which host is "first").
 
         Raises:
-            HostNotFoundError: If hosts is empty (launch stages only call
-                this after InventoryValidationStage has confirmed hosts
-                exist).
+            HostNotFoundError: If hosts is empty, or if the count of hosts
+                with is_primary=True isn't exactly one -- names the
+                offending host names and count so the fix is obvious.
         """
-        try:
-            return next(iter(self.hosts.values()))
-        except StopIteration:
-            raise HostNotFoundError("No hosts configured in inventory") from None
+        primaries = [h for h in self.hosts.values() if h.is_primary]
+        if len(primaries) == 1:
+            return primaries[0]
+        if not self.hosts:
+            raise HostNotFoundError("No hosts configured in inventory")
+        names = ", ".join(h.inventory_hostname for h in primaries) or "none"
+        raise HostNotFoundError(
+            f"expected exactly one primary host, found {len(primaries)}: {names}"
+        )
 
 
 class ProvisionConfig(BaseModel):
@@ -247,6 +278,11 @@ class ProvisionConfig(BaseModel):
         caddy_config: Caddy configuration
         skip_caddy: Skip Caddy role generation (for --proxy none/wg-manage)
         proxy: Reverse proxy mode (caddy, none, wg-manage)
+        expose: Declared service routing (service name -> domain/path/host),
+            as hand-written in slipp.yaml -- used only for its `.host`
+            field here (see hosts_with_services()); domain/path drive Caddy
+            /wg-manage site generation elsewhere. None for a first-time
+            launch with no expose: block yet.
     """
 
     services: list[DetectedService] = Field(description="Detected services")
@@ -256,6 +292,58 @@ class ProvisionConfig(BaseModel):
     caddy_config: CaddyConfig = Field(description="Caddy configuration")
     skip_caddy: bool = Field(default=False, description="Skip Caddy role generation")
     proxy: ProxyType = Field(default=ProxyType.caddy, description="Reverse proxy mode")
+    expose: dict[str, ExposeEntry] | None = Field(
+        default=None, description="Declared service routing (for .host resolution)"
+    )
+
+    def hosts_with_services(
+        self,
+    ) -> list[tuple[str, DeploymentHostConfig, list[DetectedService]]]:
+        """Partition services by their assigned host, in inventory order.
+
+        A service resolves to expose[service.name].host, or the primary
+        host when unset -- a single-host project's every service resolves
+        to the (sole) primary host, unchanged from today. Only hosts that
+        own >=1 service, or the primary host itself (which may still need
+        a play for the proxy role alone, even with zero services of its
+        own), are included -- a secondary host with zero services is
+        already rejected earlier, by InventoryValidationStage's orphaned-
+        host check, so it never reaches here.
+
+        Returns:
+            (host_name, host, services) tuples, one per host actually
+            referenced by the project -- playbook.yml.j2 renders one play
+            per entry.
+        """
+        primary_name = self.inventory.primary_host.inventory_hostname
+        declared_expose = self.expose or {}
+
+        by_host: dict[str, list[DetectedService]] = {}
+        for service in self.services:
+            host_name = resolve_service_host(
+                service.name, declared_expose, primary_name
+            )
+            by_host.setdefault(host_name, []).append(service)
+
+        return [
+            (name, host, by_host.get(name, []))
+            for name, host in self.inventory.hosts.items()
+            if name == primary_name or name in by_host
+        ]
+
+    def _infra_roles_for(self, host: "DeploymentHostConfig") -> list[dict]:
+        """Proxy/infra roles for one host's play -- only the primary host gets one.
+
+        Exactly one host owns Caddy/wg-manage, per design: a non-primary
+        host's play carries app roles only.
+        """
+        if not host.is_primary:
+            return []
+        if not self.skip_caddy:
+            return [{"name": "caddy", "tags": ["provision", "caddy"]}]
+        if self.proxy == ProxyType.wg_manage:
+            return [{"name": "wg-manage-exposure", "tags": ["provision", "wg-manage"]}]
+        return []
 
     def to_dict(self) -> dict:
         """Convert to dict for template rendering.
@@ -263,7 +351,7 @@ class ProvisionConfig(BaseModel):
         Returns:
             Dict with all fields formatted for Jinja2 templates
         """
-        first_host = self.inventory.first_host
+        primary_host = self.inventory.primary_host
 
         return {
             "services": [s.model_dump() for s in self.services],
@@ -273,6 +361,21 @@ class ProvisionConfig(BaseModel):
             "caddy_sites_dir": self.caddy_config.sites_dir,
             "skip_caddy": self.skip_caddy,
             "proxy": self.proxy,
-            "app_domain": first_host.app_domain or "",
-            "runtime": first_host.runtime,
+            "app_domain": primary_host.app_domain or "",
+            "runtime": primary_host.runtime,
+            # Fully resolved per-play role list, computed here rather than
+            # with proxy/skip_caddy conditionals in playbook.yml.j2 -- the
+            # template just loops.
+            "hosts_with_services": [
+                {
+                    "host_name": name,
+                    "runtime": host.runtime,
+                    "infra_roles": self._infra_roles_for(host),
+                    "app_roles": [
+                        {"name": f"app-{s.name}", "tags": ["deploy", s.name]}
+                        for s in services
+                    ],
+                }
+                for name, host, services in self.hosts_with_services()
+            ],
         }

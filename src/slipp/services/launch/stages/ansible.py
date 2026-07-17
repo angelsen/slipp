@@ -63,20 +63,29 @@ class AppRolesStage(FileGenerationStage[FullContext]):
         super().__init__("Generating app roles")
 
     def generate_content(self, context: FullContext) -> dict[Path, str]:
-        inventory_config = require(context.inventory_config, "inventory config")
+        provision_config = require(context.provision_config, "provision config")
+        # Each service's own assigned host determines its runtime -- a
+        # single global inventory_config.primary_host.runtime read (today's
+        # only case, still what a single-host project resolves to) would
+        # silently apply the wrong runtime to a service on a secondary host
+        # with a different runtime.
+        hosts_with_services = provision_config.hosts_with_services()
 
-        first_host = inventory_config.first_host
-        runtime = first_host.runtime
-
-        if context.health_check and runtime != Runtime.SYSTEMD:
+        any_systemd_with_services = any(
+            host.runtime == Runtime.SYSTEMD and services
+            for _, host, services in hosts_with_services
+        )
+        if context.health_check and not any_systemd_with_services:
             output.warning(
-                f"--health-check {context.health_check} has no effect on "
-                f"{runtime.value} deploys - health-check + rollback is only "
-                "implemented for systemd."
+                f"--health-check {context.health_check} has no effect - "
+                "health-check + rollback is only implemented for systemd, "
+                "and no host in this deploy runs systemd."
             )
 
-        any_python_systemd = runtime == Runtime.SYSTEMD and any(
-            service.framework in PYTHON_FRAMEWORKS for service in context.services
+        any_python_systemd = any(
+            host.runtime == Runtime.SYSTEMD and service.framework in PYTHON_FRAMEWORKS
+            for _, host, services in hosts_with_services
+            for service in services
         )
         for flag_name, flag_value in (
             ("exec-args", context.exec_args),
@@ -84,59 +93,65 @@ class AppRolesStage(FileGenerationStage[FullContext]):
         ):
             if flag_value and not any_python_systemd:
                 output.warning(
-                    f"--{flag_name} has no effect on {runtime.value} deploys - "
-                    "only used for Python systemd deploys."
+                    f"--{flag_name} has no effect - only used for Python "
+                    "systemd deploys, and none of this deploy's services "
+                    "are both."
                 )
 
         all_files = {}
-        for service in context.services:
-            is_python_systemd = (
-                runtime == Runtime.SYSTEMD and service.framework in PYTHON_FRAMEWORKS
-            )
-            if is_python_systemd and not (service.path / "uv.lock").exists():
-                output.warning(
-                    f"{service.name} has no uv.lock in its own directory - "
-                    "uv sync will run unfrozen (resolves fresh on every "
-                    "deploy). If this is a uv workspace member, its lockfile "
-                    "lives at the workspace root instead; commit a "
-                    "standalone uv.lock here for reproducible, frozen "
-                    "deploys."
+        for _host_name, host, services in hosts_with_services:
+            runtime = host.runtime
+            for service in services:
+                is_python_systemd = (
+                    runtime == Runtime.SYSTEMD
+                    and service.framework in PYTHON_FRAMEWORKS
                 )
-            # Computed once here (not left to generate_app_role's own
-            # internal call) so the missing-entrypoint check below and the
-            # role generation itself share a single extract_template_variables()
-            # call for this service.
-            systemd_vars = (
-                extract_systemd_vars(runtime, service) if is_python_systemd else None
-            )
-            if (
-                is_python_systemd
-                and not context.exec_args
-                and systemd_vars
-                and systemd_vars.get("execBinary") == "python"
-                and not systemd_vars.get("execScript")
-            ):
-                output.warning(
-                    f"{service.name} has no [project.scripts] entry and no "
-                    "recognized entrypoint file (server.py/main.py/app.py/"
-                    "run.py) - ExecStart would be a bare `python` with "
-                    "nothing to run, which will crash-loop. Pass "
-                    "--exec-args with the file/module to run, or add a "
-                    "[project.scripts] entry."
+                if is_python_systemd and not (service.path / "uv.lock").exists():
+                    output.warning(
+                        f"{service.name} has no uv.lock in its own directory - "
+                        "uv sync will run unfrozen (resolves fresh on every "
+                        "deploy). If this is a uv workspace member, its lockfile "
+                        "lives at the workspace root instead; commit a "
+                        "standalone uv.lock here for reproducible, frozen "
+                        "deploys."
+                    )
+                # Computed once here (not left to generate_app_role's own
+                # internal call) so the missing-entrypoint check below and
+                # the role generation itself share a single
+                # extract_template_variables() call for this service.
+                systemd_vars = (
+                    extract_systemd_vars(runtime, service)
+                    if is_python_systemd
+                    else None
                 )
-            role_files = generate_app_role(
-                service,
-                context.project_name,
-                runtime,
-                all_services=context.services,
-                project_root=context.output_dir,
-                uv_extra=context.python_extra,
-                exec_args=context.exec_args,
-                health_check=context.health_check,
-                systemd_vars=systemd_vars,
-            )
+                if (
+                    is_python_systemd
+                    and not context.exec_args
+                    and systemd_vars
+                    and systemd_vars.get("execBinary") == "python"
+                    and not systemd_vars.get("execScript")
+                ):
+                    output.warning(
+                        f"{service.name} has no [project.scripts] entry and no "
+                        "recognized entrypoint file (server.py/main.py/app.py/"
+                        "run.py) - ExecStart would be a bare `python` with "
+                        "nothing to run, which will crash-loop. Pass "
+                        "--exec-args with the file/module to run, or add a "
+                        "[project.scripts] entry."
+                    )
+                role_files = generate_app_role(
+                    service,
+                    context.project_name,
+                    runtime,
+                    all_services=context.services,
+                    project_root=context.output_dir,
+                    uv_extra=context.python_extra,
+                    exec_args=context.exec_args,
+                    health_check=context.health_check,
+                    systemd_vars=systemd_vars,
+                )
 
-            for path, content in role_files.items():
-                all_files[context.output_dir / path] = content
+                for path, content in role_files.items():
+                    all_files[context.output_dir / path] = content
 
         return all_files

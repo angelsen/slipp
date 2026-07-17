@@ -22,7 +22,7 @@ from slipp.services.config import (
     LocalConfigService,
     RuntimeDetector,
     is_wg_manage_host,
-    load_first_host,
+    load_primary_host,
 )
 from slipp.services.deploy import DeployOverrides, DeployResult, run_deploy
 from slipp.services.discovery import filter_services, find_service
@@ -236,7 +236,7 @@ def resolve_wg_manage_host(root: Path | None = None) -> DeploymentHostConfig | N
         root: Project root, if already resolved (avoids a second
             resolve_root() filesystem walk). Defaults to resolving from cwd.
     """
-    host = load_first_host(root or LocalConfigService.resolve_root())
+    host = load_primary_host(root or LocalConfigService.resolve_root())
     return host if is_wg_manage_host(host) else None
 
 

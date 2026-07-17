@@ -28,7 +28,7 @@ class RequirementsFileStage(FileGenerationStage[FullContext]):
         inventory_config = require(context.inventory_config, "inventory config")
 
         requirements_path = context.output_dir / "requirements.yml"
-        first_host = inventory_config.first_host
-        content = generate_requirements(first_host.runtime)
+        primary_host = inventory_config.primary_host
+        content = generate_requirements(primary_host.runtime)
 
         return {requirements_path: content}

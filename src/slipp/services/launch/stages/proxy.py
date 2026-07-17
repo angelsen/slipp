@@ -60,14 +60,14 @@ class ProxyResolutionStage:
                 probe it.
         """
         inventory_config = require(context.inventory_config, "inventory config")
-        first_host = inventory_config.first_host
+        primary_host = inventory_config.primary_host
 
         if context.proxy != ProxyType.auto:
             resolved = context.proxy
-        elif first_host.proxy_owner:
-            resolved = first_host.proxy_owner
+        elif primary_host.proxy_owner:
+            resolved = primary_host.proxy_owner
             output.info(
-                f"Using cached proxy owner for {first_host.ansible_host}: {resolved}"
+                f"Using cached proxy owner for {primary_host.ansible_host}: {resolved}"
             )
         elif context.dry_run:
             # InventoryLoadStage fills in a dummy, unreachable host for dry
@@ -75,15 +75,15 @@ class ProxyResolutionStage:
             output.info("Dry run: skipping wg-manage probe, assuming caddy")
             resolved = ProxyType.caddy
         else:
-            probed = self._probe(first_host)
+            probed = self._probe(primary_host)
             if probed is None:
                 raise LaunchError(
-                    f"Could not reach {first_host.ansible_host} to check for a "
+                    f"Could not reach {primary_host.ansible_host} to check for a "
                     "wg-manage hub. Retry once the host is reachable, or pass "
                     "an explicit --proxy caddy|wg-manage|none to skip the probe."
                 )
             resolved = probed
-            first_host.proxy_owner = resolved
+            primary_host.proxy_owner = resolved
 
         context.proxy = resolved
         context.skip_caddy = resolved != ProxyType.caddy

@@ -5,7 +5,7 @@ from typing import Annotated
 import typer
 
 from slipp import output
-from slipp.services.config import LocalConfigService, load_first_host_strict
+from slipp.services.config import LocalConfigService, load_primary_host_strict
 from slipp.services.providers import (
     DNSProvider,
     get_gigahost_client,
@@ -43,7 +43,7 @@ def dns_sync_command() -> None:
     """Converge DNS zone + A record from inventory to the configured provider."""
     project_root = LocalConfigService.resolve_root()
 
-    domain, host = load_first_host_strict(project_root)
+    domain, host = load_primary_host_strict(project_root)
     ip = host.ansible_host
 
     output.info(f"Syncing DNS for {domain} -> {ip}")

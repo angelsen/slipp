@@ -16,7 +16,11 @@ from slipp.models.deployment import DeploymentHostConfig, InventoryConfig
 from slipp.utils.network import is_ip_address
 from slipp.models.service import Runtime
 from slipp.services.launch.context import FullContext
-from slipp.services.launch.stages.common import FileGenerationStage, require
+from slipp.services.launch.stages.common import (
+    FileGenerationStage,
+    load_declared_expose,
+    require,
+)
 from slipp.utils.errors import LaunchError
 from slipp.services.launch.prompts import get_inventory_config
 
@@ -74,33 +78,33 @@ class InventoryLoadStage:
             )
             output.info(f"Dry run: Using dummy {context.environment} inventory config")
 
-        # first_host.app_port and context.services[0].port need to agree
+        # primary_host.app_port and context.services[0].port need to agree
         # before any downstream stage (Caddy, wg-manage, compose, app
         # roles, InventoryFileStage) reads either one. Only the primary
         # service (index 0, the one app_port maps to) is eligible for this
         # - applying it to every service would clobber a secondary
         # service's own distinct port.
-        first_host = context.inventory_config.first_host
+        primary_host = context.inventory_config.primary_host
         if not context.services:
             pass
-        elif first_host.app_port is None:
+        elif primary_host.app_port is None:
             # No app_port yet (e.g. freshly scanned project) - adopt the
             # scanner's port guess.
-            first_host.app_port = context.services[0].port
-        elif first_host.app_port != context.services[0].port:
+            primary_host.app_port = context.services[0].port
+        elif primary_host.app_port != context.services[0].port:
             # app_port is user-confirmed (or came from a hand-edited/
             # pre-existing inventory.yml) - it's authoritative.
             output.warning(
                 f"Detected {context.services[0].name} now listening on "
                 f"port {context.services[0].port}, but inventory.yml has "
-                f"app_port={first_host.app_port} - keeping the persisted port"
+                f"app_port={primary_host.app_port} - keeping the persisted port"
             )
             output.hint(
                 f"If the new port is correct, update app_port in inventory.yml "
                 f"to {context.services[0].port}"
             )
             context.services[0] = context.services[0].model_copy(
-                update={"port": first_host.app_port}
+                update={"port": primary_host.app_port}
             )
 
 
@@ -124,15 +128,15 @@ class InventoryValidationStage:
             context.inventory_config, "inventory config (before validation)"
         )
 
-        first_host = inventory_config.first_host
+        primary_host = inventory_config.primary_host
 
-        if not first_host.app_domain:
+        if not primary_host.app_domain:
             raise LaunchError(
                 "Launch command requires app_domain in inventory\n"
                 "For external projects, use 'slipp deploy -i/-p' instead"
             )
 
-        if not first_host.admin_email and not is_ip_address(first_host.app_domain):
+        if not primary_host.admin_email and not is_ip_address(primary_host.app_domain):
             raise LaunchError(
                 "Launch command requires admin_email in inventory\n"
                 "For external projects, use 'slipp deploy -i/-p' instead"
@@ -146,12 +150,49 @@ class InventoryValidationStage:
         # and failing mid-pipeline after inventory/playbook/group_vars
         # have already been written to disk.
         if context.proxy == ProxyType.wg_manage and is_ip_address(
-            first_host.app_domain
+            primary_host.app_domain
         ):
             raise LaunchError(
                 "wg-manage requires a real domain in app_domain -- "
                 "IP-only targets aren't supported (wg-manage routes "
                 "services via subdomains)"
+            )
+
+        # expose[*].host is read straight from slipp.yaml, not
+        # context.expose -- resolve_expose() hasn't run yet at this point
+        # in the pipeline (CaddyConfigStage/WgManageRoleStage run later),
+        # and this check must fail loud before any file-writing stage runs,
+        # not silently generate a play for a host that doesn't exist.
+        declared_expose = load_declared_expose(context) or {}
+        for service_name, entry in declared_expose.items():
+            if entry.host is not None and entry.host not in inventory_config.hosts:
+                known = ", ".join(sorted(inventory_config.hosts)) or "none"
+                raise LaunchError(
+                    f"expose.{service_name}.host references unknown host "
+                    f"'{entry.host}' (known hosts: {known}) -- "
+                    f"add it with 'slipp hosts add {entry.host} ...' or "
+                    f"fix the typo in slipp.yaml"
+                )
+
+        # The mirror-image mistake: a host declared in inventory.yml (e.g.
+        # via `slipp hosts add`) that no service's expose.host ever
+        # references. Silently generating a play with zero roles for it
+        # would be a no-op host nobody asked for -- fail loud instead,
+        # naming the orphan, matching the "unknown host" check above.
+        assigned_hosts = {
+            entry.host for entry in declared_expose.values() if entry.host is not None
+        }
+        orphaned = sorted(
+            name
+            for name in inventory_config.hosts
+            if name != primary_host.inventory_hostname and name not in assigned_hosts
+        )
+        if orphaned:
+            raise LaunchError(
+                f"Host(s) declared with no service assigned: {', '.join(orphaned)}\n"
+                f"Assign a service to it via slipp.yaml's "
+                f"expose: <service>: {{host: <name>}}, or remove the host with "
+                f"'slipp hosts remove <name>'"
             )
 
 

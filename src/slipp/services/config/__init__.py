@@ -5,11 +5,14 @@ This package provides services for managing configuration, inventory, and host r
 
 from slipp.services.config.hosts import HostResolver
 from slipp.services.config.inventory import (
+    add_secondary_host,
     is_wg_manage_host,
-    load_first_host,
-    load_first_host_strict,
+    load_full_inventory,
+    load_primary_host,
+    load_primary_host_strict,
     load_project_hosts,
     parse_inventory,
+    remove_secondary_host,
     write_minimal_inventory,
 )
 from slipp.services.config.local import LocalConfigService, collect_managed_roles
@@ -28,12 +31,15 @@ from slipp.services.config.runtime import RuntimeDetector
 
 __all__ = [
     "LocalConfigService",
+    "add_secondary_host",
     "collect_managed_roles",
     "is_wg_manage_host",
-    "load_first_host",
-    "load_first_host_strict",
+    "load_full_inventory",
+    "load_primary_host",
+    "load_primary_host_strict",
     "load_project_hosts",
     "parse_inventory",
+    "remove_secondary_host",
     "write_minimal_inventory",
     "ConfigResolver",
     "ResolvedConfig",

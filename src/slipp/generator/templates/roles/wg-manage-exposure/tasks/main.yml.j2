@@ -28,7 +28,7 @@
 - name: Expose {{ svc.name }} via wg-manage
   ansible.builtin.command:
     cmd: >-
-      wg-manage service add {{ svc.fqdn_quoted }} localhost:{{ svc.port }}
+      wg-manage service add {{ svc.fqdn_quoted }} {{ svc.target_host }}:{{ svc.port }}
       {{ '--public' if public else '--https' }}
       --label {{ label }}{{ ' ' + svc.route_flags if svc.route_flags else '' }}
   register: wg_manage_{{ loop.index }}_result

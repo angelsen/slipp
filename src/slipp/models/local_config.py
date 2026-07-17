@@ -21,6 +21,11 @@ class ExposeEntry(BaseModel):
 
     domain: str = Field(..., min_length=1, description="FQDN serving this service")
     path: str = Field(default="/", description="Path prefix on the domain")
+    host: str | None = Field(
+        default=None,
+        description="Inventory host name this service deploys to. "
+        "None resolves to the project's primary host.",
+    )
 
     @field_validator("path")
     @classmethod
@@ -33,6 +38,21 @@ class ExposeEntry(BaseModel):
         if not value.startswith("/"):
             raise ValueError(f"expose path must start with '/', got '{value}'")
         return value.rstrip("/") or "/"
+
+
+def resolve_service_host(
+    service_name: str, expose: dict[str, "ExposeEntry"] | None, primary_name: str
+) -> str:
+    """The inventory host name `service_name` deploys to.
+
+    `expose[service_name].host` when explicitly assigned, otherwise
+    `primary_name` -- the one fallback rule playbook generation
+    (ProvisionConfig.hosts_with_services), wg-manage target resolution
+    (WgManageRoleStage), and peer bootstrap (bootstrap_wg_manage_peers)
+    all defer to, so it can't drift between them.
+    """
+    entry = (expose or {}).get(service_name)
+    return entry.host if entry and entry.host else primary_name
 
 
 class LocalConfig(BaseModel):

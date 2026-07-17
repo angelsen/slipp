@@ -12,6 +12,7 @@ from slipp.scanner.routing import ip_expose, validate_expose
 from slipp.services.launch.context import FullContext
 from slipp.services.launch.stages.common import (
     FileGenerationStage,
+    load_declared_expose,
     require,
     resolve_expose,
 )
@@ -70,12 +71,12 @@ class CaddyConfigStage:
         """
         inventory_config = require(context.inventory_config, "inventory config")
 
-        first_host = inventory_config.first_host
+        primary_host = inventory_config.primary_host
 
         if not context.skip_caddy:
             output.info("Configuring Caddy reverse proxy...")
 
-            app_domain = require(first_host.app_domain, "app_domain")
+            app_domain = require(primary_host.app_domain, "app_domain")
             is_ip = is_ip_address(app_domain)
             caddy_domain = ":80" if is_ip else app_domain
 
@@ -124,6 +125,13 @@ class CaddyConfigStage:
             caddy_config=caddy_config,
             skip_caddy=context.skip_caddy,
             proxy=context.proxy,
+            # Raw slipp.yaml read, not context.expose -- for --proxy
+            # wg-manage/none, context.expose isn't resolved until
+            # WgManageRoleStage (which runs after PlaybookGenerationStage
+            # needs this for per-host grouping) or not at all. Only
+            # `.host` is read from this; domain/path resolution for
+            # routing happens separately, later, via resolve_expose().
+            expose=load_declared_expose(context),
         )
 
 
@@ -156,12 +164,12 @@ class CaddyRoleStage(FileGenerationStage[FullContext]):
         inventory_config = require(context.inventory_config, "inventory config")
         provision_config = require(context.provision_config, "provision config")
 
-        first_host = inventory_config.first_host
+        primary_host = inventory_config.primary_host
 
-        app_domain = require(first_host.app_domain, "app_domain")
-        admin_email = first_host.admin_email or ""
+        app_domain = require(primary_host.app_domain, "app_domain")
+        admin_email = primary_host.admin_email or ""
         if provision_config.caddy_config.auto_https:
-            admin_email = require(first_host.admin_email, "admin_email")
+            admin_email = require(primary_host.admin_email, "admin_email")
 
         caddy_files = generate_caddy_role(
             provision_config.caddy_config,

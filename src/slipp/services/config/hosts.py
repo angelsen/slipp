@@ -12,7 +12,10 @@ from pathlib import Path
 
 from slipp import output
 from slipp.models.host import AnsibleHost
-from slipp.services.config.inventory import load_project_ansible_hosts
+from slipp.services.config.inventory import (
+    load_full_inventory,
+    load_project_ansible_hosts,
+)
 from slipp.services.config.local import LocalConfigService
 from slipp.services.discovery import lookup_host_by_service
 from slipp.services.registry import ProjectRegistry
@@ -92,9 +95,11 @@ class HostResolver:
     def _first_host(self, hosts: list[AnsibleHost], context_label: str) -> AnsibleHost:
         """Return the first host, warning if others are being silently ignored.
 
-        Commands that resolve a single host (host, exec, ssh, logs, ...) have
-        no way to disambiguate between multiple hosts in one project's
-        inventory. Rather than silently picking one, surface the choice.
+        Fallback for inventories load_full_inventory() can't parse (external/
+        MDAD, non-YAML, or otherwise not a direct slipp-owned inventory.yml)
+        -- there's no is_primary concept to resolve there, so order-based
+        selection with a warning is the best available answer. Prefer
+        _resolve_primary() everywhere else.
         """
         if len(hosts) > 1:
             others = ", ".join(h.inventory_hostname for h in hosts[1:])
@@ -104,6 +109,34 @@ class HostResolver:
                 f"Others: {others}"
             )
         return hosts[0]
+
+    def _resolve_primary(
+        self, project_path: Path, hosts: list[AnsibleHost], context_label: str
+    ) -> AnsibleHost:
+        """Return the project's primary host, using is_primary when available.
+
+        Reads inventory.yml directly via load_full_inventory() (not
+        load_project_ansible_hosts()'s ansible-inventory JSON round-trip,
+        which strips slipp-specific fields including is_primary entirely)
+        so the same explicit primary-host concept InventoryConfig.primary_host
+        already enforces elsewhere governs single-host resolution here too --
+        a multi-host project's `exec`/`ssh`/`logs`/`status`/`host` no longer
+        silently picks whichever host happens to be first in inventory.yml's
+        dict order. Falls back to _first_host()'s order-based selection only
+        when the direct read is unavailable (external/MDAD inventories,
+        which never carry is_primary and have no primary concept to resolve).
+
+        Raises:
+            HostNotFoundError: Propagated from InventoryConfig.primary_host
+                if a directly-readable inventory has zero or more than one
+                is_primary=True host -- same hard-fail-on-ambiguity
+                convention as everywhere else this project resolves "the"
+                host, rather than silently guessing.
+        """
+        inventory = load_full_inventory(project_path)
+        if inventory is not None:
+            return inventory.primary_host
+        return self._first_host(hosts, context_label)
 
     def by_project(self, project: str) -> AnsibleHost:
         """Resolve project name to host.
@@ -126,13 +159,15 @@ class HostResolver:
             raise ProjectNotFoundError(f"Project '{project}' not found in registry")
 
         hosts = load_project_ansible_hosts(project_obj.project_path)
-        return self._first_host(hosts, f"Project '{project}'")
+        return self._resolve_primary(
+            project_obj.project_path, hosts, f"Project '{project}'"
+        )
 
     def _try_load_from(self, path: Path) -> AnsibleHost | None:
-        """Load the first host from `path`'s inventory, or None if not found."""
+        """Load the primary host from `path`'s inventory, or None if not found."""
         try:
             hosts = load_project_ansible_hosts(path)
-            return self._first_host(hosts, "Current project")
+            return self._resolve_primary(path, hosts, "Current project")
         except (ConfigError, HostNotFoundError):
             return None
 

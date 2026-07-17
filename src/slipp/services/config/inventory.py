@@ -8,9 +8,10 @@ from pathlib import Path
 
 import yaml
 
-from slipp.constants import DEFAULT_SERVICE_USER, DEFAULT_SSH_PORT
+from slipp.constants import DEFAULT_SERVICE_USER, DEFAULT_SSH_PORT, DEFAULT_SSH_USER
 from slipp.models.deployment import DeploymentHostConfig, InventoryConfig
 from slipp.models.host import AnsibleHost
+from slipp.models.service import LenientRuntime
 from slipp.services.ansible import run_inventory
 from slipp.services.config.local import LocalConfigService
 from slipp.utils.errors import ConfigError, HostNotFoundError, InventoryParseError
@@ -20,7 +21,7 @@ from slipp.utils.files import atomic_write_text
 def _resolve_inventory_path(project_root: Path) -> Path:
     """Resolve a project's configured inventory file path.
 
-    Shared validation core for _load_first_host_raw() and
+    Shared validation core for _load_primary_host_raw() and
     load_project_ansible_hosts() so both raise ConfigError consistently
     for the same three failure conditions (no config, no inventory field,
     missing inventory file).
@@ -39,13 +40,15 @@ def _resolve_inventory_path(project_root: Path) -> Path:
     return inventory_path
 
 
-def _load_first_host_raw(project_root: Path) -> DeploymentHostConfig:
-    """Load the first host from the raw inventory YAML.
+def _load_inventory_raw(project_root: Path) -> InventoryConfig:
+    """Load the full inventory (every host, every slipp-specific field) from raw YAML.
 
-    Reads the inventory file directly (not via ansible-inventory, which
-    drops slipp-specific fields like app_domain/app_port/proxy_owner).
-    Shared core for load_first_host() (which converts failures to None)
-    and load_first_host_strict() (which adds the app_domain requirement).
+    Reads the inventory file directly (not via ansible-inventory/
+    parse_inventory(), which only carries generic ansible_* connection
+    fields and drops slipp-specific ones like app_domain/is_primary/
+    proxy_owner entirely -- that path exists for external, non-slipp-owned
+    inventories). Shared core for _load_primary_host_raw() and
+    load_full_inventory().
 
     Raises:
         ConfigError: If no inventory/host is configured.
@@ -58,11 +61,24 @@ def _load_first_host_raw(project_root: Path) -> DeploymentHostConfig:
     if not inventory.hosts:
         raise ConfigError(f"No hosts found in inventory: {inventory_path}")
 
-    return inventory.first_host
+    return inventory
 
 
-def load_first_host(project_root: Path) -> DeploymentHostConfig | None:
-    """Best-effort load of the first host from the raw inventory YAML.
+def _load_primary_host_raw(project_root: Path) -> DeploymentHostConfig:
+    """Load the primary host from the raw inventory YAML.
+
+    Shared core for load_primary_host() (which converts failures to None)
+    and load_primary_host_strict() (which adds the app_domain requirement).
+
+    Raises:
+        ConfigError: If no inventory/host is configured.
+        HostNotFoundError: If there isn't exactly one is_primary=True host.
+    """
+    return _load_inventory_raw(project_root).primary_host
+
+
+def load_primary_host(project_root: Path) -> DeploymentHostConfig | None:
+    """Best-effort load of the primary host from the raw inventory YAML.
 
     Returns None if anything is missing or unparseable. Used by
     commands/resources.py and commands/deploy.py to peek at proxy_owner,
@@ -70,7 +86,7 @@ def load_first_host(project_root: Path) -> DeploymentHostConfig | None:
     without duplicating the from_ansible_format() plumbing.
     """
     try:
-        return _load_first_host_raw(project_root)
+        return _load_primary_host_raw(project_root)
     except Exception:
         # Deliberately broad: unlike load_project_ansible_hosts(), nothing
         # upstream funnels malformed-YAML/pydantic-validation failures into
@@ -79,15 +95,28 @@ def load_first_host(project_root: Path) -> DeploymentHostConfig | None:
         return None
 
 
+def load_full_inventory(project_root: Path) -> InventoryConfig | None:
+    """Best-effort load of the full raw inventory (every host, every field).
+
+    Returns None if anything is missing or unparseable -- same best-effort
+    contract as load_primary_host(), for callers (deploy runner's peer
+    bootstrap) that need every declared host, not just the primary one.
+    """
+    try:
+        return _load_inventory_raw(project_root)
+    except Exception:
+        return None
+
+
 def is_wg_manage_host(host: DeploymentHostConfig | None) -> bool:
     """Whether `host` is a wg-manage hub (proxy_owner == "wg-manage")."""
     return host is not None and host.proxy_owner == "wg-manage"
 
 
-def load_first_host_strict(project_root: Path) -> tuple[str, DeploymentHostConfig]:
-    """Load the first host from the raw inventory YAML, requiring app_domain.
+def load_primary_host_strict(project_root: Path) -> tuple[str, DeploymentHostConfig]:
+    """Load the primary host from the raw inventory YAML, requiring app_domain.
 
-    The strict counterpart to load_first_host() for commands that converge
+    The strict counterpart to load_primary_host() for commands that converge
     external routing (dns sync, resources sync) and need a definite
     domain + address rather than a best-effort peek. Returns the validated
     app_domain separately (as str, not str | None) alongside the host.
@@ -95,7 +124,7 @@ def load_first_host_strict(project_root: Path) -> tuple[str, DeploymentHostConfi
     Raises:
         ConfigError: If no inventory/host/app_domain is configured.
     """
-    host = _load_first_host_raw(project_root)
+    host = _load_primary_host_raw(project_root)
     if not host.app_domain:
         raise ConfigError(
             f"No app_domain configured on inventory host '{host.inventory_hostname}'"
@@ -119,6 +148,104 @@ def write_minimal_inventory(path: Path, environment: str, ip: str) -> None:
     inventory = InventoryConfig(hosts={environment: host_config})
     atomic_write_text(
         path, yaml.dump(inventory.to_ansible_format(), default_flow_style=False)
+    )
+
+
+def add_secondary_host(
+    project_root: Path,
+    name: str,
+    ansible_host: str,
+    ansible_user: str = DEFAULT_SSH_USER,
+    ansible_port: int = DEFAULT_SSH_PORT,
+    runtime: LenientRuntime | None = None,
+) -> DeploymentHostConfig:
+    """Add a secondary (is_primary=False) host to a project's inventory.yml.
+
+    Standing "fail loud on identity collision" precedent (see
+    services/registry/projects.py's ProjectRegistry.register()): an
+    already-existing host name is a hard error, never a silent overwrite.
+
+    Raises:
+        ConfigError: If no inventory is configured for this project, or
+            `name` already exists in it.
+    """
+    inventory_path = _resolve_inventory_path(project_root)
+    inventory = _load_inventory_raw(project_root)
+
+    if name in inventory.hosts:
+        raise ConfigError(
+            f"Host '{name}' already exists in inventory.yml. "
+            f"Run 'slipp hosts remove {name}' first to replace it."
+        )
+
+    host_kwargs: dict[str, object] = {
+        "inventory_hostname": name,
+        "ansible_host": ansible_host,
+        "ansible_user": ansible_user,
+        "ansible_port": ansible_port,
+        "is_primary": False,
+    }
+    if runtime is not None:
+        host_kwargs["runtime"] = runtime
+
+    new_host = DeploymentHostConfig.model_validate(host_kwargs)
+    inventory.hosts[name] = new_host
+
+    atomic_write_text(
+        inventory_path,
+        yaml.dump(inventory.to_ansible_format(), default_flow_style=False),
+    )
+    return new_host
+
+
+def remove_secondary_host(project_root: Path, name: str) -> None:
+    """Remove a secondary host from a project's inventory.yml.
+
+    Refuses (fail loud, not a silent orphan) if `name` is the primary
+    host, or if any slipp.yaml expose:*.host entry still assigns a
+    service to it -- removing the host out from under an active
+    assignment would silently break that service's next deploy.
+
+    Raises:
+        ConfigError: If no inventory is configured, `name` doesn't exist
+            in it, `name` is the primary host, or `name` is still
+            referenced by expose:*.host.
+    """
+    inventory_path = _resolve_inventory_path(project_root)
+    inventory = _load_inventory_raw(project_root)
+
+    host = inventory.hosts.get(name)
+    if host is None:
+        raise ConfigError(
+            f"Host '{name}' not found in inventory.yml "
+            f"(known hosts: {', '.join(sorted(inventory.hosts)) or 'none'})"
+        )
+
+    if host.is_primary:
+        raise ConfigError(
+            f"'{name}' is the primary host -- 'slipp hosts remove' only "
+            "manages secondary hosts (it owns the project's domain/proxy "
+            "identity, and removing it isn't supported here)."
+        )
+
+    local_config = LocalConfigService.load(project_root)
+    if local_config and local_config.expose:
+        assigned = sorted(
+            service_name
+            for service_name, entry in local_config.expose.items()
+            if entry.host == name
+        )
+        if assigned:
+            raise ConfigError(
+                f"Host '{name}' is still assigned to service(s): "
+                f"{', '.join(assigned)} (see slipp.yaml's expose: block). "
+                "Reassign or remove those entries first."
+            )
+
+    del inventory.hosts[name]
+    atomic_write_text(
+        inventory_path,
+        yaml.dump(inventory.to_ansible_format(), default_flow_style=False),
     )
 
 

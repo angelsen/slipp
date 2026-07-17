@@ -4,7 +4,12 @@ from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
 
+import yaml
+
 from slipp import output
+from slipp.models.deployment import DeploymentHostConfig
+from slipp.models.local_config import resolve_service_host
+from slipp.services import wg_peer
 from slipp.services.ansible import (
     AnsibleResult,
     ensure_requirements_installed,
@@ -14,7 +19,9 @@ from slipp.services.config import (
     ConfigResolver,
     LocalConfigService,
     ResolvedConfig,
-    load_first_host,
+    is_wg_manage_host,
+    load_full_inventory,
+    load_primary_host,
     parse_inventory,
 )
 from slipp.services.config.detection import has_caddy_role
@@ -26,7 +33,12 @@ from slipp.services.deploy.config import (
 from slipp.services.deploy.dev_proxy_guard import guard_against_dev_proxy_collision
 from slipp.services.vault import has_vault_content
 from slipp.services.vault import vault_password_file as get_vault_password_file
-from slipp.utils.errors import ConfigError, DeployError, InventoryParseError
+from slipp.utils.errors import (
+    ConfigError,
+    DeployError,
+    InventoryParseError,
+    WgManageError,
+)
 from slipp.utils.files import get_log_dir
 from slipp.utils.network import format_app_url
 
@@ -137,6 +149,96 @@ def install_galaxy_requirements(
     ensure_requirements_installed(
         str(reqs_file), galaxy_path, log_dir=log_dir, force=force
     )
+
+
+def _load_service_ports(inventory_file: str) -> dict[str, int]:
+    """Best-effort read of each service's own port from generated group_vars/all.yml.
+
+    group_vars/all.yml sits next to the inventory file (Ansible's own
+    resolution convention -- see validate_deploy_files()'s inventory_dir)
+    and is the only place a service's port survives past launch time;
+    DetectedService itself isn't persisted anywhere deploy-time code reads
+    from. Returns {} if the file is missing or unparseable (an external/
+    non-slipp-launched project) -- callers treat that as "nothing to
+    bootstrap" rather than failing the whole deploy over a best-effort read.
+    """
+    group_vars_path = Path(inventory_file).parent / "group_vars" / "all.yml"
+    try:
+        data = yaml.safe_load(group_vars_path.read_text()) or {}
+    except Exception:
+        return {}
+
+    services = data.get("services")
+    if not isinstance(services, list):
+        return {}
+
+    return {
+        s["name"]: s["port"]
+        for s in services
+        if isinstance(s, dict)
+        and isinstance(s.get("name"), str)
+        and isinstance(s.get("port"), int)
+    }
+
+
+def bootstrap_wg_manage_peers(
+    project_root: Path, inventory_file: str, host: DeploymentHostConfig | None
+) -> None:
+    """Bootstrap every secondary host with an assigned service as a WireGuard peer.
+
+    No-op for anything but a `--proxy wg-manage` project (host.proxy_owner
+    == "wg-manage") -- core multi-host under any other proxy mode has no
+    wg-manage dependency at all. Must run before execute_playbook(): the
+    generated playbook's `wg-manage service add <peer>:<port>` call
+    resolves the peer name eagerly, at add-time, so every referenced peer
+    must already exist on the hub by the time the playbook runs.
+
+    Args:
+        project_root: Project root (for slipp.yaml's expose: block).
+        inventory_file: Resolved inventory.yml path (for both the full
+            per-host inventory and, indirectly, group_vars/all.yml).
+        host: The project's primary host, if already loaded by the
+            caller (run_deploy() already loads one for the dev-proxy
+            collision guard) -- avoids a second raw inventory read.
+
+    Raises:
+        WgManageError: If any peer's bootstrap fails (see
+            wg_peer.ensure_peer()), or slipp.yaml's expose: block
+            references a host absent from inventory.yml (should already
+            have been caught at launch time -- this is a defensive
+            fail-loud check against drift since then, not the primary
+            enforcement point).
+    """
+    if not is_wg_manage_host(host):
+        return
+    assert host is not None  # is_wg_manage_host() already narrows this
+
+    inventory = load_full_inventory(project_root)
+    if inventory is None:
+        return
+
+    local_config = LocalConfigService.load(project_root)
+    declared_expose = (
+        local_config.expose if local_config and local_config.expose else {}
+    )
+
+    ports_by_host: dict[str, list[int]] = {}
+    for service_name, port in _load_service_ports(inventory_file).items():
+        host_name = resolve_service_host(
+            service_name, declared_expose, host.inventory_hostname
+        )
+        if host_name != host.inventory_hostname:
+            ports_by_host.setdefault(host_name, []).append(port)
+
+    for host_name, ports in ports_by_host.items():
+        peer = inventory.hosts.get(host_name)
+        if peer is None:
+            raise WgManageError(
+                f"expose[*].host references unknown host '{host_name}' "
+                f"(known hosts: {', '.join(sorted(inventory.hosts)) or 'none'}) "
+                "-- run 'slipp launch --reconfigure' or fix slipp.yaml"
+            )
+        wg_peer.ensure_peer(hub=host, peer=peer, ports=ports)
 
 
 def execute_playbook(
@@ -287,13 +389,26 @@ def run_deploy(
         config, resolver, overrides.inventory, overrides.playbook
     )
 
-    host = load_first_host(project_root)
+    host = load_primary_host(project_root)
     guard_against_dev_proxy_collision(project_root, host)
 
     log_dir = get_log_dir(project_root)
     install_galaxy_requirements(
         requirements, galaxy_path, force_requirements, log_dir, project_root
     )
+
+    # Must run before execute_playbook() -- the generated playbook's
+    # `wg-manage service add <peer>:<port>` call resolves the peer name
+    # eagerly, at add-time, so every secondary-host peer this project
+    # references must already exist on the hub first. Skipped under
+    # --dry-run: unlike execute_playbook()'s --check mode, ensure_peer()
+    # has no dry-run of its own -- it's a real SSH mutation against the
+    # hub (and the peer, on first bootstrap), not something ansible-playbook
+    # --check can safely preview.
+    if not dry_run:
+        bootstrap_wg_manage_peers(project_root, inventory_file, host)
+    elif is_wg_manage_host(host):
+        output.info("Dry run: skipping WireGuard peer bootstrap")
 
     result = execute_playbook(
         playbook_file,

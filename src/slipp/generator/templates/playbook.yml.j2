@@ -5,11 +5,12 @@
 # Usage: ansible-playbook playbook.yml -i inventory.yml
 #
 # Requirements installed automatically by `slipp deploy` from requirements.yml
+{% for host in hosts_with_services %}
 
-- name: Provision and deploy {{ project_name }}
-  hosts: all
+- name: Provision and deploy {{ project_name }}{{ '' if hosts_with_services|length == 1 else ' (' ~ host.host_name ~ ')' }}
+  hosts: {{ host.host_name }}
   become: true
-{% if runtime == 'docker' %}
+{% if host.runtime == 'docker' %}
 
   pre_tasks:
     - name: Install Docker
@@ -18,7 +19,7 @@
           - docker.io
           - python3-requests
         state: present
-{% elif runtime == 'podman' %}
+{% elif host.runtime == 'podman' %}
 
   pre_tasks:
     - name: Install Podman
@@ -26,19 +27,26 @@
         name: podman
         state: present
 {% endif %}
+{% if host.infra_roles or host.app_roles %}
 
   roles:
+{% if host.infra_roles %}
     # Infrastructure
-{% if not skip_caddy %}
-    - role: caddy
-      tags: [provision, caddy]
-{% elif proxy == 'wg-manage' %}
-    - role: wg-manage-exposure
-      tags: [provision, wg-manage]
+{% for role in host.infra_roles %}
+    - role: {{ role.name }}
+      tags: {{ role.tags | tojson }}
+{% endfor %}
 {% endif %}
+{% if host.app_roles %}
 
     # Application services
-{% for service in services %}
-    - role: app-{{ service.name }}
-      tags: [deploy, {{ service.name }}]
+{% for role in host.app_roles %}
+    - role: {{ role.name }}
+      tags: {{ role.tags | tojson }}
+{% endfor %}
+{% endif %}
+{% else %}
+
+  roles: []
+{% endif %}
 {% endfor %}

@@ -18,6 +18,7 @@ from slipp.commands.domains import domains_app
 from slipp.commands.exec import exec_command
 from slipp.commands.generate import generate_app
 from slipp.commands.host import host_command
+from slipp.commands.hosts import hosts_app
 from slipp.commands.image import image_app
 from slipp.commands.images import images_app
 from slipp.commands.launch import launch_command
@@ -74,6 +75,7 @@ app.add_typer(bootstrap_app, name="bootstrap")
 app.add_typer(dns_app, name="dns")
 app.add_typer(domains_app, name="domains")
 app.add_typer(generate_app, name="generate")
+app.add_typer(hosts_app, name="hosts")
 app.add_typer(image_app, name="image")
 app.add_typer(images_app, name="images")
 app.add_typer(logo_app, name="logo")

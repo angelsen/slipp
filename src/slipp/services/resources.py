@@ -10,7 +10,7 @@ commands = args -> service -> output layering.
 from pathlib import Path
 
 from slipp import output
-from slipp.services.config import load_first_host_strict
+from slipp.services.config import load_primary_host_strict
 from slipp.services.config.detection import has_caddy_role
 from slipp.services.providers.pangolin import (
     PangolinClient,
@@ -23,14 +23,14 @@ from slipp.utils.errors import ConfigError, ProviderError
 def resolve_public_target(project_root: Path) -> tuple[str, str, int, str]:
     """Resolve (app_domain, ip, port, method) for this project's public resource.
 
-    Reads the raw inventory file (via load_first_host_strict) so the custom
+    Reads the raw inventory file (via load_primary_host_strict) so the custom
     app_domain host var survives, extended with the same has-its-own-Caddy
     port/method logic deploy.py's post-deploy hint already uses.
 
     Raises:
         ConfigError: If no inventory/host/app_domain is configured.
     """
-    app_domain, host = load_first_host_strict(project_root)
+    app_domain, host = load_primary_host_strict(project_root)
 
     if has_caddy_role(project_root):
         port, method = 443, "https"
