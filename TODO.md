@@ -1,30 +1,20 @@
 # slipp TODO
 
-## Next: live-verify `--proxy auto` / wg-manage composition against Bulletins
+## Next: deploy the real Bulletins project through the now-verified wg-manage composition
 
-The full wg-manage/slipp composition is implemented on both sides (see
-Shipped) but never run against a real host — only unit-tested via direct
-rendering, `ansible-playbook --syntax-check`, and mocked-SSH
-reproductions. The primary acceptance flow per
-[`wg-deploy`](~/Projects/private/wg-deploy)'s `slipp-composition` spec is
-one command end-to-end:
-
-```
-slipp up <name> --hub --domain <domain>
-```
-
-— provisions a fresh VPS, hub-ifies it via `scripts/new-host.sh`
-(`slipp providers add wg-deploy` first), then `--proxy auto` probes and
-finds the hub, deploys through wg-manage-owned Caddy. For Bulletins
-specifically: deploy bulletins-admin with `--proxy none` first (already
-possible today), then bulletins-chat with `--proxy auto --public` (or
-explicit `--proxy wg-manage --public`) against the real VPS.
-
-Scope note: routing now goes through the `expose:` block (seeded into
-slipp.yaml at launch, consumed by both proxy stages and the sync pruner —
-not yet live-verified either), so this run also covers: the seeded block
-appearing in slipp.yaml, wg-manage entries/route-flags derived from it,
-and a hand-edit + redeploy surviving the post-deploy sync.
+The wg-manage/slipp composition mechanism itself is now fully live-verified
+(see Shipped: wg-manage single-node, multi-node, `--proxy auto` probe,
+per-service internal-only exposure, the `expose:` block feeding all of
+it) — all against the synthetic `wgtest-smoke` fixture, not yet the real
+Bulletins project. What's left is the actual cutover:
+[`wg-deploy`](~/Projects/private/wg-deploy)'s `slipp-composition` spec's
+target flow is one command end-to-end (`slipp up <name> --hub --domain
+<domain>`, provisioning + hub-ifying + `--proxy auto` composing through
+wg-manage-owned Caddy in one shot); for Bulletins specifically: deploy
+bulletins-admin with `--proxy none` (already possible today), then
+bulletins-chat with `--proxy auto --public` (or explicit `--proxy
+wg-manage --public`) against a real hub. Not urgent — bulletins-chat isn't
+live/serving users yet.
 
 ---
 
@@ -261,8 +251,8 @@ Open questions:
   interpolation sites: ingestion validation on project/service names (they
   become systemd units/paths/YAML — quoting can't save those), POSIX check
   on bootstrap `--user`, `shlex.quote` on image filter, container exec
-  identifiers, wg-manage fqdn/label/route-flags. Not yet live-verified
-  (see Next). Deploy-stamps → host-ledger design added (see design
+  identifiers, wg-manage fqdn/label/route-flags. Live-verified 2026-07-16
+  onward (see below). Deploy-stamps → host-ledger design added (see design
   questions).
 - **2026-07-11** — Full `slipp-composition` spec landed (spans this repo
   and `wg-deploy`): `--proxy` now defaults to `auto` and resolves via a
@@ -290,5 +280,89 @@ Open questions:
   `shlex.quote()` on service names interpolated into remote wg-manage
   commands, `WgManageError` so the post-deploy hook's "never raises"
   contract actually holds. Five rounds of external review, each verified
-  against the code (reproductions, not trust) before fixing. Not yet
-  live-verified (see Next).
+  against the code (reproductions, not trust) before fixing. Live-verified
+  2026-07-17 onward (see below).
+- **2026-07-15/16** — Live end-to-end smoke-testing established (new
+  `smoke-test` skill, `bulletins-dev` standing throwaway Gigahost VPS),
+  after a git history squash (113 → 48 commits, byte-identical tree,
+  verified via `git diff`). Eight real bugs found and fixed by actually
+  running the pipeline against real infrastructure, none of them visible
+  from static review: missing `curl`/`jq` prerequisites causing silent
+  pipe failures (`bootstrap/account.py`, `caddy_dev` playbook), a Gigahost
+  `create_zone()` response-shape crash, Caddy route-push corruption via an
+  unguarded `jq` pipe (`_push_route()`), a misplaced `containers.podman`
+  `force_rm` parameter, a dev-proxy iptables `PREROUTING` rule hijacking
+  *all* outbound `:443` traffic on the host (the real root cause behind a
+  costly podman-MTU red herring), a missing post-deploy health check on
+  the container role (ported the systemd role's block/rescue pattern,
+  which also made the `notify`/handler machinery it replaced dead code —
+  removed), and duplicate `slipp ps` rows when two projects share a host
+  (`discover_across_hosts()` now dedupes by `ansible_host`). Also fixed a
+  doubled-blank-line output bug. Commits `81ca7f7`, `fd5c096`, `6d698f8`,
+  `656df84`, `bc1360a`.
+- **2026-07-16** — Multi-service deploy path (N services per project,
+  Caddy path routing) validated live via a new `multiservice-smoke`
+  fixture. Found and fixed the Caddy config-reload `notify:`/handler bug
+  (handlers only flush at the end of a *successful* play -- a later-role
+  failure leaves a written-but-unapplied Caddyfile while `slipp deploy`
+  still reports success) and a silent Caddyfile collision between
+  `--proxy caddy` and the dev-proxy (both bind `:443`, no coordination
+  between them). Asked "where else does this bug class live?" and turned
+  that into an 8-fix audit: no collision detection on project
+  registration, the same response-shape bug on Gigahost's
+  `create_record()`, `sync_dns()` only checking the first duplicate `@`
+  record, wg-manage's `sync()` silently pruning an undetectable-service
+  directory as a stray, a Pangolin `has_target` type mismatch,
+  `slipp.yaml` silently dropping hand-added unrecognized keys
+  (`extra: "ignore"` → `"allow"`), and unguarded wg-manage JSON parsing.
+  Established **"Fail Loud, Never Corrupt Silently"** as this project's
+  standing precedent for identity/location conflicts (hard-fail, not
+  warn-and-proceed) -- written into `CLAUDE.local.md`. Commit `78413e4`
+  (all 8 fixes, one commit). Scoped (not yet built) `--proxy wg-manage`
+  multi-node support as its own design-sized feature, after confirming
+  the generator hardcoded `localhost` targeting with no per-host play
+  generation anywhere at the time.
+- **2026-07-17** — `--proxy wg-manage` single-node validated live for the
+  first time (hub-ified `bulletins-dev` via `slipp providers add
+  wg-deploy` + `slipp up --hub`), finding and fixing a dev-proxy/wg-manage
+  Caddy `:443` collision (same bug class as 2026-07-16's Caddy-collision
+  fix, extended to cover hub-ification too) and a missing `--public`
+  passthrough on `slipp up`. Then **multi-host-deploy** shipped and
+  live-verified end-to-end: a project can declare a secondary host
+  (`slipp hosts add`), assign a service to it
+  (`expose.<service>.host`), and `slipp deploy` generates one Ansible
+  play per host, auto-bootstrapping secondary hosts as WireGuard peers of
+  the hub (`services/wg_peer.py`). Provisioned a real second Gigahost VPS
+  (`peer1`, kept running as a standing fixture, 49 kr/month) and
+  live-verified the full two-host round trip, finding and fixing 6 more
+  real bugs (`--reconfigure` dropping secondary hosts, `wg-quick` failing
+  on a captured `DNS =` line, extra-vars list corruption, `ufw` never
+  enabled breaking idempotency, undefined `ansible_port`, `slipp ps -p`
+  omitting secondary-host services). Commits `2e43598`, `366bad8`,
+  `657493c`. Reacted to wg-deploy's `--https` → `--internal-tls` rename
+  (clean break, no alias): updated the generator with a version-gate,
+  upgraded `bulletins-dev` itself to wg-manage 1.1 live with zero
+  regression (`metria`/`ultraportalen` confirmed still on 1.0,
+  deliberately left alone). Commit `5c0ab96`.
+- **2026-07-18** — Per-service **internal-only exposure** shipped and
+  live-verified: `expose.<service>.internal: true` forces that one
+  service through `wg-manage --internal-tls` regardless of the project's
+  `--public` flag, mixed freely with public services, no public DNS
+  record needed. Rejected outside `--proxy wg-manage`. Verified against a
+  real mixed public+internal deployment on `wgtest-smoke`/`bulletins-dev`
+  (confirmed `[HTTPS]` vs `[PUBLIC]` exposure, internal-CA reachability
+  with zero public DNS resolution, idempotent redeploy). Commit
+  `6b30a70`. Also live-verified the `--proxy auto` SSH-probe path for the
+  first time (previously only ever exercised via explicit `--proxy
+  wg-manage`), finding and fixing a real bug: `add_secondary_host()`/
+  `remove_secondary_host()`/`write_minimal_inventory()` wrote
+  `inventory.yml` without the generation marker `InventoryFileStage`
+  checks before regenerating, so any project that ever used `slipp hosts
+  add` (every multi-host project) silently stopped receiving
+  `inventory.yml` updates from `slipp launch` forever after -- including
+  the `proxy_owner` cache, defeating `--proxy auto`'s offline-stable
+  re-launch design. Fixed by routing all inventory writers through the
+  same marked template, which now also round-trips `is_primary`/
+  `key_file` (previously omitted -- would have silently reset multi-host
+  inventories back to single-primary the first time one was actually
+  regenerated through it). Commit `db2f664`.
