@@ -39,6 +39,7 @@ def build_wg_services(
     services: list[DetectedService],
     domain: str,
     expose: dict[str, ExposeEntry] | None = None,
+    host_ports: dict[str, int] | None = None,
 ) -> list[dict]:
     """Build wg-manage service exposure entries from the expose: block.
 
@@ -53,6 +54,11 @@ def build_wg_services(
             no expose block is given.
         expose: Explicit routing (service name -> domain/path). Defaults
             to the frontend/backend convention via default_expose().
+        host_ports: Resolved host-facing port per service name
+            (PortResolutionStage) -- see FullContext.host_ports. Falls
+            back to each service's own .port when absent, so callers
+            outside the launch pipeline (e.g. sync(), which only reads
+            `fqdn` from the return value anyway) are unaffected.
 
     Returns:
         List of {name, fqdn, port, route_flags, internal} dicts. route_flags
@@ -80,7 +86,7 @@ def build_wg_services(
     except ValueError as e:
         raise WgManageError(str(e)) from e
 
-    ports = {s.name: s.port for s in services}
+    ports = {s.name: (host_ports or {}).get(s.name, s.port) for s in services}
     by_domain: dict[str, list[tuple[str, ExposeEntry]]] = {}
     for name, entry in expose.items():
         by_domain.setdefault(entry.domain, []).append((name, entry))

@@ -113,6 +113,7 @@ def generate_app_role(
     exec_args: str | None = None,
     health_check: str | None = None,
     systemd_vars: dict[str, Any] | None = None,
+    host_port: int | None = None,
 ) -> dict[Path, str]:
     """Generate role files for a service.
 
@@ -145,6 +146,10 @@ def generate_app_role(
             caller already needed it for its own purposes -- avoids a
             second extract_template_variables() call for this service.
             Computed internally when omitted.
+        host_port: Resolved host-facing port (PortResolutionStage), used
+            for the container template's `-p HOST:CONTAINER` publish --
+            defaults to service.port (today's byte-identical behavior)
+            when the caller doesn't have a resolved value.
 
     Returns:
         Dict mapping file paths to content
@@ -190,6 +195,7 @@ def generate_app_role(
         exec_args,
         template_dir,
         systemd_vars,
+        host_port if host_port is not None else service.port,
     )
     return files
 
@@ -257,6 +263,7 @@ def _render_systemd(
     exec_args: str | None,
     template_dir: str,
     systemd_vars: dict[str, Any] | None,
+    host_port: int,
 ) -> str:
     """Render systemd.service.j2 template.
 
@@ -270,12 +277,20 @@ def _render_systemd(
         template_dir: Source template set, from _template_dir()
         systemd_vars: Systemd-only template vars, from
             extract_systemd_vars() (None for non-systemd runtimes)
+        host_port: Resolved host-facing port -- only the container
+            template's `-p HOST:CONTAINER` line reads this; the systemd
+            templates' `Environment=PORT={{ service.port }}` is unrelated
+            to it (no container layer, no host/container split there).
 
     Returns:
         Rendered systemd unit content
     """
     context = _base_context(
-        service_data, project_name, runtime=runtime.value, exec_args=exec_args
+        service_data,
+        project_name,
+        runtime=runtime.value,
+        exec_args=exec_args,
+        host_port=host_port,
     )
     if systemd_vars:
         context.update(systemd_vars)

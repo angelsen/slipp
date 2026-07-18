@@ -15,11 +15,16 @@ class ComposeConfig(BaseModel):
         services: Detected services
         project_name: Project name
         project_root: Project root directory for path relativization
+        host_ports: Resolved host-facing port per service name
+            (PortResolutionStage) -- see FullContext.host_ports. Falls
+            back to the service's own .port when a name is missing
+            (today's byte-identical behavior).
     """
 
     services: list[DetectedService] = Field(description="Detected services")
     project_name: str = Field(description="Project name")
     project_root: PathStr = Field(description="Project root directory")
+    host_ports: dict[str, int] = Field(default_factory=dict)
 
     def to_dict(self) -> dict:
         """Convert to dict for Jinja2 template context."""
@@ -27,6 +32,7 @@ class ComposeConfig(BaseModel):
         services = []
         for s in self.services:
             data = s.model_dump()
+            data["host_port"] = self.host_ports.get(s.name, s.port)
             try:
                 rel = Path(data["path"]).relative_to(root)
                 data["build_context"] = "." if str(rel) == "." else f"./{rel}"

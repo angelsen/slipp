@@ -30,6 +30,15 @@ class ExposeEntry(BaseModel):
         description="Inventory host name this service deploys to. "
         "None resolves to the project's primary host.",
     )
+    port: int | None = Field(
+        default=None,
+        ge=1,
+        le=65535,
+        description="Override this service's container/host port. Only "
+        "needed to resolve a same-host port collision between two "
+        "services (the scanner assigns one fixed default per language, "
+        "e.g. 8080 for Python) -- None uses the scanner-detected default.",
+    )
     internal: bool = Field(
         default=False,
         description="Force wg-manage --internal-tls for this service, "

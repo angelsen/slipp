@@ -149,6 +149,7 @@ class AppRolesStage(FileGenerationStage[FullContext]):
                     exec_args=context.exec_args,
                     health_check=context.health_check,
                     systemd_vars=systemd_vars,
+                    host_port=context.host_ports.get(service.name, service.port),
                 )
 
                 for path, content in role_files.items():

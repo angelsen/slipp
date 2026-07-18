@@ -61,7 +61,9 @@ class WgManageRoleStage(FileGenerationStage[FullContext]):
         app_domain = require(inventory_config.primary_host.app_domain, "app_domain")
 
         expose = resolve_expose(context, app_domain)
-        wg_services = wg_manage.build_wg_services(context.services, app_domain, expose)
+        wg_services = wg_manage.build_wg_services(
+            context.services, app_domain, expose, context.host_ports
+        )
         # fqdn/label are shell-quoted only for the generated command line --
         # build_wg_services()'s raw fqdn is also used by sync() for exact-string
         # comparison against wg-manage's stored service names, so it must not

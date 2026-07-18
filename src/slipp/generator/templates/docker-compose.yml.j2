@@ -9,7 +9,7 @@ services:
       context: {{ service.build_context }}
       dockerfile: Dockerfile
     ports:
-      - "{{ service.port }}:{{ service.port }}"
+      - "{{ service.host_port }}:{{ service.port }}"
     environment:
-      PORT: "{{ service.port }}"
+      PORT: "{{ service.host_port }}"
 {% endfor %}

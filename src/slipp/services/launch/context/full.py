@@ -1,6 +1,6 @@
 """Full launch context for complete Ansible project generation."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from slipp.constants import DEFAULT_ENV, DEFAULT_SSH_PORT
@@ -34,6 +34,13 @@ class FullContext(ScanContext):
             the seeded default) -- set lazily by resolve_expose(), then
             persisted by RegistrationStage.
         skip_caddy: If True, exclude Caddy proxy setup.
+        host_ports: Resolved host-facing port per service name, set by
+            PortResolutionStage. For container runtimes this is distinct
+            from the service's own .port (its fixed internal listen port,
+            baked unparameterized into the fetched Dockerfile template) --
+            it's what the host-side `-p HOST:CONTAINER` publish, Caddy's
+            reverse_proxy target, and wg-manage's service target all read.
+            Empty until PortResolutionStage runs.
     """
 
     environment: str = DEFAULT_ENV
@@ -45,6 +52,7 @@ class FullContext(ScanContext):
     health_check: str | None = None
     public: bool = False
     skip_caddy: bool = False
+    host_ports: dict[str, int] = field(default_factory=dict)
 
 
 def build_context_for_provisioned_host(

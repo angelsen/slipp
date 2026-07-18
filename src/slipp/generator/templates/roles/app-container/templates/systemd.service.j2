@@ -12,7 +12,7 @@ ExecStartPre=-/usr/bin/{{ runtime }} rm {{ project_name }}-{{ service.name }}
 ExecStart=/usr/bin/{{ runtime }} run \
     --rm \
     --name {{ project_name }}-{{ service.name }} \
-    -p {{ service.port }}:{{ service.port }} \
+    -p {{ host_port }}:{{ service.port }} \
     {{ project_name }}-{{ service.name }}
 ExecStop=/usr/bin/{{ runtime }} stop -t 10 {{ project_name }}-{{ service.name }}
 Restart=always

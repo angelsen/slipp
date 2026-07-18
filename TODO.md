@@ -82,13 +82,6 @@ live/serving users yet.
       not fixed). Fix would need either provision-time detection (does
       any registered project already claim this `ansible_host`?) or a
       display-layer disambiguation so `ps` doesn't have to guess.
-- [ ] Same-language multi-service port collision — two services of the
-      same language/framework family on one host (e.g. two Python/Flask
-      services) both scanner-detect the same default port, with no
-      auto-allocation; needs a manual `app_port` edit today. Cross-host
-      isn't affected (confirmed live during multi-host-deploy testing —
-      same port on two different physical hosts is fine), only same-host
-      same-family collisions.
 
 ---
 
@@ -365,4 +358,30 @@ Open questions:
   same marked template, which now also round-trips `is_primary`/
   `key_file` (previously omitted -- would have silently reset multi-host
   inventories back to single-primary the first time one was actually
-  regenerated through it). Commit `db2f664`.
+  regenerated through it). Commit `db2f664`. Fixed the same-language
+  multi-service port collision backlog item too: `expose.<service>.port`
+  (mirroring `expose.<service>.host`) lets a service's port be overridden,
+  and `slipp launch` now fails loud -- naming both services and pointing
+  at the field -- if two services on the same host still collide after
+  overrides, instead of silently generating a config where the second one
+  can't bind. Live testing (not just reading the template) caught a real
+  correctness gap in the first version of this fix: a container's
+  Dockerfile `CMD` is fetched verbatim from the upstream flyctl template
+  and hardcodes its own listening port (Flask's `--port=8080` has no
+  template variable slot at all), so overriding `DetectedService.port`
+  directly would have mismatched the container's actual internal port
+  against the host-side publish port. Fixed properly by introducing a
+  distinct host-facing port (`context.host_ports`, new
+  `PortResolutionStage`) that only the host-side `-p HOST:CONTAINER`
+  mapping, Caddy's `reverse_proxy` target, and wg-manage's service target
+  read -- the container's own internal port is never touched. For systemd
+  (no container layer, no host/container split) the override applies
+  directly to `service.port` as before, since `Environment=PORT={{
+  service.port }}` already reads it. Verified live end to end against
+  `wgtest-smoke`/`bulletins-dev`: a third same-host service correctly
+  failed loud with no override, then deployed and was reachable through
+  the resolved host port (`docker ps` confirmed `8082->8080/tcp`, `curl`
+  through the actual wg-manage route succeeded) once
+  `expose.admin.port: 8082` was set, idempotent on redeploy, zero
+  regression on the two pre-existing services (byte-identical `-p
+  8080:8080`).

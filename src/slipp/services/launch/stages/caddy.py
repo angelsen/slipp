@@ -22,6 +22,7 @@ from slipp.utils.errors import LaunchError
 def build_caddy_sites(
     services: list[DetectedService],
     expose: dict[str, ExposeEntry],
+    host_ports: dict[str, int] | None = None,
 ) -> list[CaddySite]:
     """Build Caddy site configs from the expose: routing block.
 
@@ -29,6 +30,9 @@ def build_caddy_sites(
         services: Detected services (supply the ports).
         expose: Routing block (service name -> domain/path), resolved by
             the caller (resolve_expose or ip_expose).
+        host_ports: Resolved host-facing port per service name
+            (PortResolutionStage) -- see FullContext.host_ports. Falls
+            back to each service's own .port when absent.
 
     Returns:
         List of CaddySite configurations
@@ -41,7 +45,7 @@ def build_caddy_sites(
     except ValueError as e:
         raise LaunchError(str(e)) from e
 
-    ports = {s.name: s.port for s in services}
+    ports = {s.name: (host_ports or {}).get(s.name, s.port) for s in services}
     return [
         CaddySite(
             domain=entry.domain,
@@ -100,7 +104,9 @@ class CaddyConfigStage:
                     expose = resolve_expose(context, caddy_domain)
             except ValueError as e:
                 raise LaunchError(str(e)) from e
-            caddy_sites = build_caddy_sites(context.services, expose)
+            caddy_sites = build_caddy_sites(
+                context.services, expose, context.host_ports
+            )
             caddy_config = CaddyConfig(
                 sites=caddy_sites,
                 auto_https=not is_ip,

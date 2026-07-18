@@ -39,6 +39,7 @@ class ComposeGenerationStage(FileGenerationStage[FullContext]):
             services=context.services,
             project_name=context.project_name,
             project_root=context.output_dir,
+            host_ports=context.host_ports,
         )
         compose_content = generate_compose(compose_config)
         compose_path = context.output_dir / "docker-compose.yml"
