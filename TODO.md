@@ -1,6 +1,6 @@
 # slipp TODO
 
-## Next: deploy the real Bulletins project through the now-verified wg-manage composition
+## Next: work through the open backlog before the real Bulletins cutover
 
 The wg-manage/slipp composition mechanism itself is now fully live-verified
 (see Shipped: wg-manage single-node, multi-node, `--proxy auto` probe,
@@ -13,8 +13,12 @@ target flow is one command end-to-end (`slipp up <name> --hub --domain
 wg-manage-owned Caddy in one shot); for Bulletins specifically: deploy
 bulletins-admin with `--proxy none` (already possible today), then
 bulletins-chat with `--proxy auto --public` (or explicit `--proxy
-wg-manage --public`) against a real hub. Not urgent — bulletins-chat isn't
-live/serving users yet.
+wg-manage --public`) against a real hub.
+
+**Deliberately deferred** (2026-07-19): not urgent since bulletins-chat
+isn't live/serving users yet, and Fredrik prefers to work through the rest
+of the open backlog below first, then test against the two standing VPS
+fixtures (`bulletins-dev`, `peer1`) before the real cutover.
 
 ---
 
