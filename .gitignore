@@ -14,6 +14,7 @@ misc/
 *.local.*
 .env
 .claude/
+.mcp.json
 
 # slipp local runtime state (logs, personal run-profile overrides)
 .slipp/
