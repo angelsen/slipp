@@ -16,6 +16,12 @@ A complete guide from zero to deployed application, including VPS setup.
 
 ## VPS Setup
 
+:::tip[No VPS yet?]
+`slipp providers add gigahost` + `slipp provision myapp` (or the combined
+`slipp up myapp --domain ...`) orders and bootstraps a VPS for you,
+replacing this whole section. See [Provisioning a VPS with Gigahost](/getting-started/installation#provisioning-a-vps-with-gigahost).
+:::
+
 <Steps>
 
 1. **SSH to your VPS as root**
@@ -132,6 +138,14 @@ A complete guide from zero to deployed application, including VPS setup.
 
    Enter your vault password when prompted.
 
+   Every deploy restarts the service and verifies it's active
+   (`systemctl is-active`) before reporting success — a crash-looping
+   service fails the deploy instead of silently reporting "success" with
+   a dead process. For `runtime: systemd` deploys specifically, pass
+   `--health-check <path>` to `slipp launch` to poll an HTTP endpoint
+   after restart and automatically roll back to the previous
+   deployment + unit file if it never comes up healthy.
+
 2. **Verify deployment**
 
    ```bash
@@ -222,6 +236,16 @@ sudo systemctl enable --now docker
 1. Add A record pointing to your VPS IP
 2. Wait for DNS propagation (up to 48 hours)
 3. Test: `dig your-domain.com`
+
+If your provider is configured with `slipp providers add gigahost`,
+`slipp dns sync` converges the zone + A record for you automatically.
+:::
+
+:::caution[VPS is unrecoverable]
+For Gigahost-provisioned servers, `slipp server install <name_or_ip>`
+wipes and reinstalls the OS, then re-bootstraps the `slipp` account. A
+previous install/bootstrap that got interrupted resumes automatically on
+re-run instead of prompting to wipe again.
 :::
 
 ## What's Next?

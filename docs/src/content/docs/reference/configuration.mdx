@@ -46,6 +46,14 @@ vault: inventory/host_vars/myserver/vault.yml
 # Runtime (auto-detected if omitted)
 runtime: docker
 
+# Routing: service -> domain/path (seeded by slipp launch, hand-editable)
+expose:
+  frontend:
+    domain: app.example.com
+  backend:
+    domain: app.example.com
+    path: /api
+
 # Managed roles (for filtering in slipp ps)
 managed_roles:
   - myapp
@@ -160,6 +168,66 @@ container-specific Ansible collections). `systemd` generates a native app deploy
 Auto-detected from playbook if omitted (container runtimes only — `systemd` must be
 set explicitly).
 
+`runtime: systemd` works for both Node and Python projects. For a Python
+project it renders a distinct systemd role (a `uv`-managed venv, `uv sync
+--frozen`) rather than the Node role. Two `slipp launch` flags only apply
+to Python systemd deploys:
+
+```bash
+slipp launch --name myapp --python-extra prod --exec-args "--workers 4"
+```
+
+| Flag | Purpose |
+|------|---------|
+| `--python-extra` | Optional dependency group passed as `uv sync --extra <group>` |
+| `--exec-args` | Extra arguments appended to the systemd unit's `ExecStart` |
+
+### expose
+
+Routes services to public domains/paths. Each key is a detected service
+name; the value is where it's served.
+
+```yaml
+expose:
+  frontend:
+    domain: app.example.com
+    # path defaults to "/"
+  backend:
+    domain: app.example.com
+    path: /api
+  worker:
+    domain: worker.app.example.com
+    host: secondary-host    # deploy target other than the primary host
+    port: 8081               # override only to resolve a same-host port collision
+    internal: true            # force wg-manage --internal-tls, no public domain/DNS needed
+```
+
+| Field | Description |
+|-------|-------------|
+| `domain` | **Required.** FQDN serving this service |
+| `path` | Path prefix on the domain. Default: `/` |
+| `host` | Inventory host name to deploy this service to. Default: the project's primary host |
+| `port` | Override the service's container/host port — only needed to resolve a same-host port collision between two services |
+| `internal` | Force wg-manage `--internal-tls` for this service regardless of the project's `--public` launch flag (`--proxy wg-manage` only) |
+
+**Seeding.** `slipp launch` seeds this block automatically if it doesn't
+exist yet, following one convention: a single service gets the bare
+domain at `/`; a frontend+backend pair puts the frontend at `/` and the
+backend at `/api` on the same domain; every other service gets its own
+`{name}.{domain}` subdomain.
+
+**Editing.** A hand-edited block always wins — `slipp launch` never
+overwrites an existing `expose:` block, only fills one in when there
+isn't one yet. To change routing, edit the entries directly and redeploy.
+To remove a service from public exposure, delete its entry — that's the
+supported opt-out, not an oversight.
+
+**Domain changes.** If the project's `app_domain` changes but the
+`expose:` block still points at the old domain, `slipp launch` only
+warns (`expose: block doesn't reference <domain>`) — it never rewrites
+your routing for you. Delete the block to have it re-seed against the
+new domain.
+
 ### managed_roles
 
 List of Ansible role names this project manages. Used to filter `slipp ps` output.
@@ -236,16 +304,39 @@ all:
 
 ### Multiple hosts
 
-```yaml
-all:
-  hosts:
-    production:
-      ansible_host: prod.example.com
-      ansible_user: slipp
-    staging:
-      ansible_host: staging.example.com
-      ansible_user: slipp
+An inventory can have more than one host for the *same* project and
+environment — e.g. a frontend on one VPS and a worker service on
+another. Exactly one host is the **primary** (`is_primary: true`,
+auto-managed — `slipp launch` fails loud if the inventory ever ends up
+with zero or more than one). It owns the project's public identity
+(`app_domain`, DNS, primary Caddy/wg-manage routing); every other host is
+**secondary**.
+
+The interactive `slipp launch` prompt only ever creates the primary
+host. Add secondary hosts with the CLI, not by hand-editing the
+inventory file:
+
+```bash
+slipp hosts add worker --host 203.0.113.9 --runtime docker
+slipp hosts list
+slipp hosts remove worker
 ```
+
+Assigning a service to a secondary host is a separate step: set
+`expose: <service>: host: <name>` in `slipp.yaml`, then run `slipp
+launch --reconfigure` to regenerate the deployment. See
+[`expose:`](#expose) and [`slipp hosts`](/reference/cli#hosts).
+
+**IP-reuse rules.** Adding a host whose IP is already used by another
+host *within this same project's inventory* is a hard error — no
+legitimate reason for one project to deploy two names to the same box.
+An IP already used by a **different** registered project is allowed
+(that's real, deliberate host sharing, e.g. two projects on one VPS) —
+`slipp hosts add`/`slipp projects add` print an informational notice
+naming the other project(s), but never block it. On a shared host,
+unqualified `slipp logs`/`exec`/`ssh`/`status <service>` commands become
+ambiguous and must be qualified as `project:service` — see
+[Service lookup grammar](/reference/cli#service-lookup-grammar).
 
 ### Host variables
 

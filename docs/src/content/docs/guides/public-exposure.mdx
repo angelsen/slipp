@@ -1,0 +1,95 @@
+---
+title: Public Exposure
+description: Expose services publicly via wg-manage or Pangolin
+sidebar:
+  order: 5
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+Once a service is deployed, it needs a route from the outside world to
+reach it. slipp uses one of two backends, chosen automatically per host:
+
+- **wg-manage** — the host is a wg-manage hub (see [`--proxy
+  wg-manage`](/reference/cli#launch)). Routing is set at deploy time by
+  the wg-manage-exposure Ansible role, from the project's
+  [`expose:`](/reference/configuration#expose) block.
+- **Pangolin** — otherwise. A public Pangolin Resource+Target is managed
+  out-of-band via `slipp resources`/`slipp providers`, described below.
+
+Both are reached through the same `slipp resources` command surface —
+which backend runs is dispatched on the project's inventory
+`proxy_owner` host var, not something you choose per-command.
+
+## Pangolin
+
+[Pangolin](https://github.com/fosrl/pangolin) is a self-hosted tunnel/reverse-proxy
+dashboard. slipp can converge a public Resource+Target for a project's
+primary host without touching the Pangolin dashboard by hand.
+
+### Configure the provider
+
+```bash
+slipp providers add pangolin
+```
+
+Prompts for your Pangolin org slug, your instance's API base URL (e.g.
+`https://pangolin.example.com/api/v1`), and a dashboard session cookie
+(`p_session_token`) — a stopgap until Pangolin's Bearer-token Integration
+API has a route wired up on the target instance; authenticates the same
+way the dashboard itself does.
+
+### Sync a resource
+
+```bash
+slipp resources sync --site <site>
+```
+
+| Option | Description |
+|--------|-------------|
+| `--site` | Pangolin site name, niceId, or siteId (required) |
+| `--dry-run` | Show what would change without applying it |
+
+Resolves the project's `app_domain`/`ansible_host`/port from its
+inventory (the same values `slipp dns sync` uses), matches `app_domain`
+against the *longest* matching Pangolin domain suffix your org has
+configured, then find-or-creates a Resource on that domain and a Target
+pointing at `ip:port` on `--site`. Safe to re-run — it converges, it
+doesn't duplicate.
+
+<Tabs>
+<TabItem label="Example">
+```bash
+slipp resources sync --site production-vps
+```
+</TabItem>
+</Tabs>
+
+### List and remove
+
+```bash
+slipp resources list
+slipp resources remove <name> [--force]
+```
+
+`list` shows every resource's name, full domain, and targets. `remove`
+finds the resource by name and deletes it after confirmation (or
+immediately with `--force`).
+
+## wg-manage
+
+For projects launched with `--proxy wg-manage`, exposure is declarative
+(the `expose:` block) and applied at deploy time — `slipp resources` only
+comes in afterward to **prune strays** a rename or service removal left
+behind:
+
+```bash
+slipp resources sync    # no --site: dispatches to wg-manage automatically
+slipp resources list
+slipp resources remove <name> [--force]
+```
+
+Every entry the wg-manage-exposure role adds carries a `slipp:<project_name>`
+label — `sync`/`list`/`remove` only ever act on entries carrying this
+project's exact label, never unlabeled or foreign-labeled entries left by
+another project sharing the same hub.

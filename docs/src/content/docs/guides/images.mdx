@@ -86,6 +86,11 @@ slipp images list --filter "myapp*"
    slipp deploy
    ```
 
+   `slipp deploy` restarts the service and verifies it's active
+   (`systemctl is-active`) before reporting success — a crash-looping
+   container fails the deploy loudly instead of reporting success with a
+   dead container.
+
 </Steps>
 
 ## Runtime Detection

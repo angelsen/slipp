@@ -111,6 +111,40 @@ uv tool install ansible
 ```
 :::
 
+## Provisioning a VPS with Gigahost
+
+You don't need to bring your own VPS — slipp can order and bootstrap one
+for you via [Gigahost](https://gigahost.no):
+
+<Steps>
+
+1. **Add the provider**
+
+   ```bash
+   slipp providers add gigahost
+   ```
+
+   Prompts for a Gigahost API key and verifies it.
+
+2. **Provision and deploy in one command**
+
+   ```bash
+   slipp up myapp --domain myapp.example.com
+   ```
+
+   Orders a VPS, bootstraps the `slipp` service account, registers (or
+   registers-and-syncs) the domain, generates the deployment with `slipp
+   launch`, converges DNS, and runs `slipp deploy` — end to end.
+
+   Or do it in stages: `slipp provision myapp` (order + bootstrap only),
+   then `slipp launch`/`slipp deploy` as usual.
+
+</Steps>
+
+See [`slipp up`](/reference/cli#up), [`slipp provision`](/reference/cli#provision),
+and [`slipp server install`](/reference/cli#server) (OS reinstall + resumable
+bootstrap) for the full command set.
+
 ## Next Steps
 
 - [Quick Start](/getting-started/quickstart) - Deploy your first app in 5 minutes

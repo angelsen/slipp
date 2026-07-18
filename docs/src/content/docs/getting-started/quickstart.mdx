@@ -10,7 +10,8 @@ Deploy your first application to a VPS in 5 minutes.
 ## Prerequisites
 
 - slipp installed ([Installation](/getting-started/installation))
-- VPS with SSH access
+- VPS with SSH access — or let slipp provision one via
+  [Gigahost](/getting-started/installation#provisioning-a-vps-with-gigahost)
 - A project to deploy (any app with a `Dockerfile` or detectable framework)
 
 ## Deploy Your App
@@ -102,6 +103,13 @@ slipp ssh
 - Check that SSH is configured correctly
 - Verify the `slipp` user exists on the VPS
 - Run `slipp bootstrap account <host>` to create the service account
+:::
+
+:::tip[VPS in a bad state?]
+For Gigahost-provisioned servers, `slipp server install <name_or_ip>` wipes
+and reinstalls the OS, then re-bootstraps. If a previous install got
+interrupted, re-running the same command resumes instead of prompting to
+wipe again. See [`slipp server`](/reference/cli#server).
 :::
 
 :::tip[First time deploying?]
