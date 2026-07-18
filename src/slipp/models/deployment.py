@@ -222,24 +222,6 @@ class InventoryConfig(BaseModel):
 
         return cls(hosts=hosts)
 
-    def to_ansible_format(self) -> dict:
-        """Convert to standard Ansible inventory format.
-
-        Returns:
-            Dict in Ansible inventory format with all.hosts structure
-        """
-        return {
-            "all": {
-                "hosts": {
-                    # mode="json" so enum fields (e.g. runtime) dump as plain
-                    # strings -- yaml.dump() has no representer for enum
-                    # instances and would emit an unsafe !!python/object tag.
-                    name: host.model_dump(mode="json")
-                    for name, host in self.hosts.items()
-                }
-            }
-        }
-
     @property
     def primary_host(self) -> DeploymentHostConfig:
         """The host that owns the project's public identity.

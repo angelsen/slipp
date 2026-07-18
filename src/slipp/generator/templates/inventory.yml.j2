@@ -7,9 +7,11 @@ all:
       ansible_host: {{ host.ansible_host | tojson }}
       ansible_user: {{ host.ansible_user | tojson }}
       ansible_port: {{ host.ansible_port }}
+      key_file: {{ host.key_file | tojson }}
       app_domain: {{ host.app_domain | tojson }}
       admin_email: {{ host.admin_email | tojson }}
       runtime: {{ host.runtime | tojson }}
       app_port: {{ host.app_port | tojson }}
       proxy_owner: {{ host.proxy_owner | tojson }}
+      is_primary: {{ host.is_primary | tojson }}
 {% endfor %}
