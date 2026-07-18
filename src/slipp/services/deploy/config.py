@@ -10,10 +10,13 @@ from slipp.constants import PLAYBOOK_FILENAME
 from slipp.models.service import Runtime
 from slipp.services.config import LocalConfigService
 from slipp.services.config.detection import PLAYBOOK_PATTERNS, detect_path
+from slipp.services.config.inventory import load_project_ansible_hosts
 from slipp.services.registry import ProjectRegistry
+from slipp.services.registry.shared_hosts import describe_shared_hosts, find_shared_hosts
 from slipp.utils.errors import (
     ConfigError,
     ConfigParseError,
+    HostNotFoundError,
     RegistryCollisionError,
     SlippError,
 )
@@ -245,6 +248,13 @@ def ensure_project_registered(project_name: str, project_root: Path) -> None:
     """
     try:
         ProjectRegistry().register(name=project_name, project_path=project_root)
+
+        try:
+            own_ips = {h.ansible_host for h in load_project_ansible_hosts(project_root)}
+        except (ConfigError, HostNotFoundError):
+            own_ips = set()
+        for line in describe_shared_hosts(find_shared_hosts(project_root, own_ips)):
+            output.info(line)
     except RegistryCollisionError:
         raise
     except SlippError:

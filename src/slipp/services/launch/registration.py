@@ -7,8 +7,10 @@ from slipp import output
 from slipp.models.local_config import ExposeEntry, LocalConfig
 from slipp.models.service import Runtime
 from slipp.services.config import LocalConfigService
+from slipp.services.config.inventory import load_project_ansible_hosts
 from slipp.services.registry import ProjectRegistry
-from slipp.utils.errors import LaunchError
+from slipp.services.registry.shared_hosts import describe_shared_hosts, find_shared_hosts
+from slipp.utils.errors import ConfigError, HostNotFoundError, LaunchError
 
 
 def register_project(
@@ -98,6 +100,13 @@ def register_project(
     try:
         registry.register(name=name, project_path=project_root)
         output.info(f"Registered '{name}' in global registry")
+
+        try:
+            own_ips = {h.ansible_host for h in load_project_ansible_hosts(project_root)}
+        except (ConfigError, HostNotFoundError):
+            own_ips = set()
+        for line in describe_shared_hosts(find_shared_hosts(project_root, own_ips)):
+            output.info(line)
     except Exception as e:
         # Only clean up slipp.yaml if this call created it fresh -- if one
         # already existed, it was merge-updated in place and we have no

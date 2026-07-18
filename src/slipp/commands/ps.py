@@ -13,13 +13,24 @@ from slipp.services.discovery.pipeline import discover_across_hosts
 from slipp.services.ssh import hint_ssh_log
 
 
+def _host_column(service: Service) -> str:
+    """Render the host label(s) for a service -- every owning project's own
+    label when a host is shared, since there's no single true label for it.
+    """
+    if len(set(service.host_labels.values())) <= 1:
+        return service.inventory_hostname
+    return ", ".join(
+        f"{label} ({project})" for project, label in sorted(service.host_labels.items())
+    )
+
+
 def _display_services_table(services: list[Service]) -> None:
     """Render services as a table (or JSON), one row schema for both formats."""
     rows = [
         {
             "project": ", ".join(s.projects) if s.projects else "-",
             "service": s.name,
-            "host": s.inventory_hostname,
+            "host": _host_column(s),
             "ip": s.host,
             "runtime": s.runtime.value,
             "state": s.state.value,

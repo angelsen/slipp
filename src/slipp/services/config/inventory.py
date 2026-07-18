@@ -8,6 +8,7 @@ from pathlib import Path
 
 import yaml
 
+from slipp import output
 from slipp.constants import DEFAULT_SERVICE_USER, DEFAULT_SSH_PORT, DEFAULT_SSH_USER
 from slipp.generator.template_generators import generate_inventory
 from slipp.models.deployment import DeploymentHostConfig, InventoryConfig
@@ -175,11 +176,19 @@ def add_secondary_host(
 
     Standing "fail loud on identity collision" precedent (see
     services/registry/projects.py's ProjectRegistry.register()): an
-    already-existing host name is a hard error, never a silent overwrite.
+    already-existing host name, or the same ansible_host IP under a second
+    name *within this project's own inventory*, is a hard error, never a
+    silent overwrite -- there's no legitimate reason for one project's own
+    topology to double-count a physical box under two names. A different
+    *other* project already claiming this ansible_host is not an error --
+    slipp already treats deliberate host-sharing as a supported pattern
+    (see services/registry/shared_hosts.py) -- but is worth surfacing, so
+    it's reported as an informational notice rather than silently ignored.
 
     Raises:
-        ConfigError: If no inventory is configured for this project, or
-            `name` already exists in it.
+        ConfigError: If no inventory is configured for this project,
+            `name` already exists in it, or `ansible_host` is already
+            claimed by a different host in the same inventory.
     """
     inventory_path = _resolve_inventory_path(project_root)
     inventory = _load_inventory_raw(project_root)
@@ -189,6 +198,14 @@ def add_secondary_host(
             f"Host '{name}' already exists in inventory.yml. "
             f"Run 'slipp hosts remove {name}' first to replace it."
         )
+
+    for existing_name, existing_host in inventory.hosts.items():
+        if existing_host.ansible_host == ansible_host:
+            raise ConfigError(
+                f"Host IP '{ansible_host}' is already used by host "
+                f"'{existing_name}' in this inventory. Use a different IP, "
+                f"or run 'slipp hosts remove {existing_name}' first."
+            )
 
     host_kwargs: dict[str, object] = {
         "inventory_hostname": name,
@@ -204,6 +221,19 @@ def add_secondary_host(
     inventory.hosts[name] = new_host
 
     _write_inventory(inventory_path, inventory)
+
+    # Lazy import: shared_hosts.py imports load_project_ansible_hosts from
+    # this module, so a top-level import here would cycle.
+    from slipp.services.registry.shared_hosts import (
+        describe_shared_hosts,
+        find_shared_hosts,
+    )
+
+    for line in describe_shared_hosts(
+        find_shared_hosts(project_root, {ansible_host})
+    ):
+        output.info(line)
+
     return new_host
 
 

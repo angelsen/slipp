@@ -57,6 +57,12 @@ class Service(BaseModel):
         runtime: Service runtime (systemd, docker, podman)
         state: Runtime state (active, inactive, failed)
         projects: List of project names that own this service (can be multiple if host is shared)
+        host_labels: Each owning project's own inventory_hostname for this
+            host, keyed by project name -- a shared host has no single
+            true label (each project names it independently), so
+            `inventory_hostname` above is only one arbitrary project's
+            choice; display code that wants every project's own label
+            should use this instead. Populated by enrich_with_projects().
         uptime: Optional uptime string
     """
 
@@ -73,6 +79,10 @@ class Service(BaseModel):
 
     projects: list[str] = Field(
         default_factory=list, description="Project names that own this service"
+    )
+    host_labels: dict[str, str] = Field(
+        default_factory=dict,
+        description="Each owning project's own inventory_hostname label for this host",
     )
 
     uptime: str | None = None

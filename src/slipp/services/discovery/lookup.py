@@ -56,26 +56,22 @@ def lookup_host_by_service(
     # -- can't confirm the service runs there, so skip them, same as before.
     services, _errors = discover_across_hosts(candidates, include_system=True)
 
-    host_by_key = {
-        (ansible_host.ansible_host, ansible_host.inventory_hostname): (
-            project_name,
-            ansible_host,
+    # Keyed by ansible_host alone, not (ansible_host, inventory_hostname) --
+    # a shared host has no single true label (each project names it
+    # independently), so every candidate at this IP is a real owner and
+    # must all surface as matches, not just whichever label discovery
+    # happened to stamp on the service.
+    candidates_by_ip: dict[str, list[tuple[str, AnsibleHost]]] = {}
+    for project_name, ansible_host in candidates:
+        candidates_by_ip.setdefault(ansible_host.ansible_host, []).append(
+            (project_name, ansible_host)
         )
-        for project_name, ansible_host in candidates
-    }
 
     matches: list[tuple[str, AnsibleHost]] = []
-    seen: set[tuple[str, str]] = set()
     for svc in services:
         if svc.name != service_name:
             continue
-        key = (svc.host, svc.inventory_hostname)
-        if key in seen:
-            continue
-        match = host_by_key.get(key)
-        if match:
-            seen.add(key)
-            matches.append(match)
+        matches.extend(candidates_by_ip.get(svc.host, []))
 
     if not matches:
         return None

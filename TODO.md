@@ -64,18 +64,6 @@ fixtures (`bulletins-dev`, `peer1`) before the real cutover.
       route per service. Both translators already iterate entries, so
       it's a contained change — do it when the limit actually bites, not
       before.
-- [ ] Host-identity collision detection — two independently-registered
-      slipp projects can silently point at the same physical host (same
-      `ansible_host`) under different `inventory_hostname` labels, with no
-      warning. `discover_across_hosts()`'s IP-based dedup
-      (`services/discovery/pipeline.py`) then arbitrarily picks one
-      project's name for `slipp ps` display — surfaced live when
-      `slipp provision`'s auto-registered project collided with a
-      `slipp hosts add`-registered peer for the same VPS (2026-07-17,
-      worked around by deregistering the redundant project, root cause
-      not fixed). Fix would need either provision-time detection (does
-      any registered project already claim this `ansible_host`?) or a
-      display-layer disambiguation so `ps` doesn't have to guess.
 ---
 
 ## Open design questions
@@ -475,3 +463,52 @@ Open questions:
   needs the same fix. Verified against the real fetched template
   end-to-end (both the lockfile and no-lockfile paths) rather than just
   reasoning about it.
+- **2026-07-19** — Fixed the host-identity collision gap logged 2026-07-17,
+  after an initial hard-fail design was caught and reverted before
+  shipping: checking the *real* registry showed `lanpad`/`partbridge`
+  deliberately share `mym-dev`, and the four smoke-test fixtures
+  deliberately share the standing `bulletins-dev` VPS (even connection
+  users differ there without it being a problem) -- slipp already treats
+  host-sharing as a first-class supported pattern, so a registration-time
+  block on IP reuse was the wrong invariant entirely, not a false-positive
+  edge case. Re-reading the original incident: it was an *accidental*
+  double-registration (a `slipp provision`-created project colliding with
+  a `slipp hosts add`-registered peer for the same box), not deliberate
+  sharing, fixed by hand with zero visibility at the time. Landed instead:
+  (1) new `find_shared_hosts()`/`describe_shared_hosts()`
+  (`services/registry/shared_hosts.py`) print a non-blocking `output.info`
+  notice naming every other project already claiming a host, wired into
+  `register_project()`, `ensure_project_registered()`, and
+  `add_secondary_host()` -- visible, never blocking, so the 2026-07-17
+  scenario would have been noticed immediately instead of days later. (2)
+  `add_secondary_host()`'s existing *within-project* hard-fail (two hosts
+  in one project's own inventory sharing an IP) is kept unchanged -- that
+  one's never legitimate, unlike cross-project sharing. (3) Fixed a real,
+  separate bug this surfaced while researching: `discover_across_hosts()`
+  picked one arbitrary owning project's `inventory_hostname` label for
+  every service on a shared host, and `lookup_host_by_service()` keyed its
+  match dict by `(ip, that arbitrary label)`, so a service on a shared host
+  always silently resolved to one project instead of correctly raising the
+  already-existing `AmbiguousServiceError`. Fixed by keying purely on
+  `ansible_host` and carrying every owning project's own label
+  (`Service.host_labels`, new dict field) through `enrich_with_projects()`;
+  `slipp ps` now shows every distinct label (`production (alpha), staging
+  (beta)`) instead of one arbitrary one. Explicit, deliberate consequence
+  (confirmed, not assumed): since `enrich_with_projects()` already
+  attributes *every* service on a shared host to *all* its owning projects
+  (pre-existing, how `ps` already displays shared boxes) and there's no
+  per-unit ownership record to do better without a larger feature, this
+  makes a bare unqualified `slipp logs`/`exec`/`ssh`/`status <service>` for
+  *any* service on a shared host -- not just literal name collisions --
+  now require `project:service` qualification going forward, verified live
+  with synthetic shared-host data (mocking discovery/`HostResolver` rather
+  than live SSH). Chose to apply this fully rather than only fix the
+  cosmetic `ps` display, since day-to-day `lanpad`/`partbridge` usage
+  matters more than avoiding a one-time adjustment to those commands.
+  Live-verified end to end against the real registry (backed up/restored
+  around testing): a project registering onto `lanpad`'s shared IP got the
+  notice and was NOT blocked; `hosts add` onto a cross-project-shared IP
+  got the same notice and succeeded, while an IP collision within one
+  project's own inventory still hard-failed unchanged; a broken/
+  unregistered peer inventory was silently skipped rather than blocking a
+  healthy registration.
