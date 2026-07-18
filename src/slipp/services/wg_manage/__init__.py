@@ -55,15 +55,16 @@ def build_wg_services(
             to the frontend/backend convention via default_expose().
 
     Returns:
-        List of {name, fqdn, port, route_flags} dicts. route_flags is a
-        pre-joined string of `--route` flags (empty when there are none) --
-        the two consumers (sync(), which only reads fqdn, and the Ansible
-        role template, which needs the flag string verbatim) have no use
-        for anything more structured.
+        List of {name, fqdn, port, route_flags, internal} dicts. route_flags
+        is a pre-joined string of `--route` flags (empty when there are
+        none) -- the two consumers (sync(), which only reads fqdn, and the
+        Ansible role template, which needs the flag string verbatim) have
+        no use for anything more structured.
 
     Raises:
-        WgManageError: If the domain is an IP address or the expose block
-            is invalid (see validate_expose).
+        WgManageError: If the domain is an IP address, the expose block is
+            invalid (see validate_expose), or entries sharing one domain
+            disagree on `internal`.
     """
     if is_ip_address(domain):
         raise WgManageError(
@@ -94,12 +95,20 @@ def build_wg_services(
             for n, e in items
             if e.path != "/"
         )
+        internal_values = {e.internal for _, e in items}
+        if len(internal_values) > 1:
+            raise WgManageError(
+                f"expose entries sharing domain '{fqdn}' disagree on "
+                "internal (must all be true or all false): "
+                + ", ".join(sorted(n for n, _ in items))
+            )
         entries.append(
             {
                 "name": root,
                 "fqdn": fqdn,
                 "port": ports[root],
                 "route_flags": route_flags,
+                "internal": items[0][1].internal,  # uniform, checked above
             }
         )
 

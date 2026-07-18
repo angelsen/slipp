@@ -4,10 +4,14 @@ This module provides the Pydantic model for the local project configuration
 stored in slipp.yaml at the project root. This file is git-tracked.
 """
 
-from pydantic import BaseModel, Field, field_validator
+import re
+
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from slipp.models.service import LenientRuntime
 from slipp.utils.identifiers import validate_config_name
+
+_LABEL_RE = re.compile(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$")
 
 
 class ExposeEntry(BaseModel):
@@ -26,6 +30,13 @@ class ExposeEntry(BaseModel):
         description="Inventory host name this service deploys to. "
         "None resolves to the project's primary host.",
     )
+    internal: bool = Field(
+        default=False,
+        description="Force wg-manage --internal-tls for this service, "
+        "regardless of the project's --public launch flag. No public "
+        "domain or DNS record needed -- wg-manage resolves it via its "
+        "own internal CA + dnsmasq. --proxy wg-manage only.",
+    )
 
     @field_validator("path")
     @classmethod
@@ -38,6 +49,27 @@ class ExposeEntry(BaseModel):
         if not value.startswith("/"):
             raise ValueError(f"expose path must start with '/', got '{value}'")
         return value.rstrip("/") or "/"
+
+    @model_validator(mode="after")
+    def _validate_internal_domain(self) -> "ExposeEntry":
+        """An internal service's domain is wg-manage's own DNS-safe label.
+
+        Mirrors wg-deploy's validate_name()/LABEL_RE exactly (confirmed
+        via wg-deploy/templates/wg-manage.py.j2:122 -- each dot-separated
+        label: lowercase letters, digits, hyphens, can't start/end with a
+        hyphen) -- catching a bad name here, at generation time, beats an
+        opaque wg-manage CLI rejection mid-deploy.
+        """
+        if self.internal and not all(
+            _LABEL_RE.match(label) for label in self.domain.split(".")
+        ):
+            raise ValueError(
+                f"expose domain '{self.domain}' isn't a valid wg-manage "
+                "service name (each dot-separated label: lowercase "
+                "letters, digits, hyphens only, no leading/trailing "
+                "hyphen) -- required when internal: true"
+            )
+        return self
 
 
 def resolve_service_host(

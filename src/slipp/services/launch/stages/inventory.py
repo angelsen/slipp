@@ -200,6 +200,21 @@ class InventoryValidationStage:
                     f"fix the typo in slipp.yaml"
                 )
 
+        # internal: true has no meaning outside wg-manage -- confirmed no
+        # internal-CA mechanism exists anywhere in CaddyConfigStage/
+        # CaddyRoleStage. Fail loud rather than silently ignore a flag
+        # the proxy can't honor.
+        if context.proxy != ProxyType.wg_manage:
+            internal_services = sorted(
+                name for name, entry in declared_expose.items() if entry.internal
+            )
+            if internal_services:
+                raise LaunchError(
+                    "expose.*.internal is only valid with --proxy wg-manage "
+                    f"(set on: {', '.join(internal_services)}) -- Caddy has "
+                    "no internal-CA exposure mechanism"
+                )
+
         # The mirror-image mistake: a host declared in inventory.yml (e.g.
         # via `slipp hosts add`) that no service's expose.host ever
         # references. Silently generating a play with zero roles for it

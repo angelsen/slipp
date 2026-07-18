@@ -82,12 +82,21 @@ class WgManageRoleStage(FileGenerationStage[FullContext]):
             for svc in wg_services
         ]
 
+        # Fires whenever ANY service ends up on --internal-tls -- either
+        # the whole project defaults to internal (not public), or a
+        # per-service `internal: true` forces it on an otherwise-public
+        # project. Computed once here, not re-derived in Jinja.
+        any_internal_tls = any(
+            svc["internal"] or not context.public for svc in services_ctx
+        )
+
         content = render_template(
             "roles/wg-manage-exposure/tasks/main.yml.j2",
             {
                 "project_name": context.project_name,
                 "wg_services": services_ctx,
                 "public": context.public,
+                "any_internal_tls": any_internal_tls,
                 "label": shlex.quote(wg_manage.service_label(context.project_name)),
             },
             label="wg-manage-exposure role",
