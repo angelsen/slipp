@@ -41,6 +41,15 @@ class FullContext(ScanContext):
             it's what the host-side `-p HOST:CONTAINER` publish, Caddy's
             reverse_proxy target, and wg-manage's service target all read.
             Empty until PortResolutionStage runs.
+        bind_ips: Resolved bind address per service name, set by
+            PortResolutionStage -- the host-side IP a container's
+            published port should actually listen on ("0.0.0.0" for
+            --proxy none, "127.0.0.1" on the primary host behind a
+            proxy, or an Ansible-resolved expression for a wg-manage
+            secondary host's own tunnel IP). Never 0.0.0.0 when a proxy
+            fronts the service -- see PortResolutionStage's docstring for
+            why a container's default publish bypasses ufw entirely.
+            Empty until PortResolutionStage runs.
     """
 
     environment: str = DEFAULT_ENV
@@ -53,6 +62,7 @@ class FullContext(ScanContext):
     public: bool = False
     skip_caddy: bool = False
     host_ports: dict[str, int] = field(default_factory=dict)
+    bind_ips: dict[str, str] = field(default_factory=dict)
 
 
 def build_context_for_provisioned_host(

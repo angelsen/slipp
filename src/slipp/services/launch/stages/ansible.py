@@ -14,6 +14,7 @@ from slipp.models.service import Runtime
 from slipp.scanner.models import PYTHON_FRAMEWORKS
 from slipp.services.launch.context import FullContext
 from slipp.services.launch.stages.common import FileGenerationStage, require
+from slipp.services.launch.stages.ports import LIVE_WG_BIND_IP
 
 
 class PlaybookGenerationStage(FileGenerationStage[FullContext]):
@@ -98,10 +99,19 @@ class AppRolesStage(FileGenerationStage[FullContext]):
                     "are both."
                 )
 
+        primary_name = require(
+            context.inventory_config, "inventory config"
+        ).primary_host.inventory_hostname
+
         all_files = {}
         for _host_name, host, services in hosts_with_services:
             runtime = host.runtime
             for service in services:
+                bind_ip = require(
+                    context.bind_ips.get(service.name),
+                    f"bind_ips[{service.name}]",
+                )
+                wg_iface_name = primary_name if bind_ip == LIVE_WG_BIND_IP else None
                 is_python_systemd = (
                     runtime == Runtime.SYSTEMD
                     and service.framework in PYTHON_FRAMEWORKS
@@ -150,6 +160,8 @@ class AppRolesStage(FileGenerationStage[FullContext]):
                     health_check=context.health_check,
                     systemd_vars=systemd_vars,
                     host_port=context.host_ports.get(service.name, service.port),
+                    bind_ip=bind_ip,
+                    wg_iface_name=wg_iface_name,
                 )
 
                 for path, content in role_files.items():

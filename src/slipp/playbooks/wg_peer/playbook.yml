@@ -22,18 +22,38 @@
 #                 itself -- passed by reference and read via lookup('file',
 #                 ...) below so the private key inside it never appears in
 #                 `-e key=value` on the ansible-playbook command line
-#                 (visible to any local user via `ps`).
+#                 (visible to any local user via `ps`). Only needed for
+#                 the `tunnel` tag -- omit for a `firewall`-only run
+#                 against an already-bootstrapped peer.
 #   iface_name:   Interface name for this tunnel on the peer -- named
 #                 after the hub's own inventory_hostname, so multiple
-#                 peer tunnels to different hubs never collide.
-#   hub_wg_ip:    The hub's WireGuard tunnel IP (parsed from peer_config's
-#                 own DNS= line by the caller) -- the only source address
-#                 the opened firewall rules trust.
+#                 peer tunnels to different hubs never collide. Only
+#                 needed for the `tunnel` tag.
+#   hub_wg_ip:    The hub's WireGuard tunnel IP -- the only source address
+#                 the opened firewall rules trust. Parsed from
+#                 peer_config's own DNS= line on first bootstrap, or read
+#                 directly off the hub's wg0 interface for a `firewall`-
+#                 only incremental run (see wg_peer.py's _hub_wg_ip()) --
+#                 wg-manage's `add` can't be safely re-run against an
+#                 already-registered peer just to re-derive this.
 #   service_ports: List of service ports this bootstrap exposes (every
 #                 port currently assigned to this peer host, so one
-#                 bootstrap run opens all of them at once).
+#                 bootstrap run opens all of them at once). Safe to pass
+#                 the same full list on a `firewall`-only incremental run
+#                 too -- the ufw task below is idempotent per port.
 #
-# Usage: ansible-playbook playbook.yml -i inventory --extra-vars @vars.json
+# Tags:
+#   tunnel:   Install WireGuard, write the peer config, bring up the
+#             tunnel. Run once, at first bootstrap -- wg-manage's `add`
+#             (which produces peer_config) has no update semantics, so
+#             this can't be safely re-run against an already-registered
+#             peer.
+#   firewall: Open the ufw exception(s) + preserve SSH + enable ufw.
+#             Idempotent, safe to re-run any time a peer's assigned port
+#             set grows -- ensure_peer() runs `--tags firewall` alone when
+#             the tunnel already exists but a new port needs opening.
+#
+# Usage: ansible-playbook playbook.yml -i inventory --extra-vars @vars.json [--tags firewall]
 
 - name: Bootstrap WireGuard peer tunnel
   hosts: all
@@ -47,6 +67,7 @@
           - ufw
         state: present
         update_cache: true
+      tags: [tunnel]
 
     - name: Write WireGuard peer config
       ansible.builtin.copy:
@@ -54,6 +75,7 @@
         dest: "/etc/wireguard/{{ iface_name }}.conf"
         mode: "0600"
       no_log: true
+      tags: [tunnel]
 
     # Restarted unconditionally (not notify-triggered) -- a config written
     # to disk during a play that later fails elsewhere must still take
@@ -67,6 +89,7 @@
         name: "wg-quick@{{ iface_name }}"
         state: restarted
         enabled: true
+      tags: [tunnel]
 
     # Scoped by both source IP and port -- not a blanket allow on the wg
     # interface. route: false: this is an input rule for traffic
@@ -82,6 +105,7 @@
         route: false
         comment: "slipp wg-manage peer exposure"
       loop: "{{ service_ports }}"
+      tags: [firewall]
 
     # Allowed before enabling, in the same task list, unconditionally --
     # ufw's default policy on enable is deny-incoming, so an enable with
@@ -96,6 +120,7 @@
         port: "{{ ansible_port | default(22) }}"
         proto: tcp
         comment: "slipp wg-manage peer bootstrap: preserve SSH access"
+      tags: [firewall]
 
     # An inactive ufw enforces nothing (the rules above exist but aren't
     # applied) and, worse, `ufw status` prints no rule lines at all while
@@ -106,3 +131,4 @@
     - name: Enable ufw
       community.general.ufw:
         state: enabled
+      tags: [firewall]

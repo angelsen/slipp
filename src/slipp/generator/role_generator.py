@@ -114,6 +114,8 @@ def generate_app_role(
     health_check: str | None = None,
     systemd_vars: dict[str, Any] | None = None,
     host_port: int | None = None,
+    bind_ip: str | None = None,
+    wg_iface_name: str | None = None,
 ) -> dict[Path, str]:
     """Generate role files for a service.
 
@@ -150,6 +152,17 @@ def generate_app_role(
             for the container template's `-p HOST:CONTAINER` publish --
             defaults to service.port (today's byte-identical behavior)
             when the caller doesn't have a resolved value.
+        bind_ip: Resolved bind address (PortResolutionStage) for the
+            container template's `-p BIND_IP:HOST:CONTAINER` publish --
+            defaults to "0.0.0.0" (today's behavior) when the caller
+            doesn't have a resolved value. May be a literal IP or an
+            Ansible-resolved expression string (see PortResolutionStage);
+            either way it's passed straight through as text.
+        wg_iface_name: When `bind_ip` is the live-discovery expression
+            (a wg-manage secondary host), the hub's inventory_hostname --
+            the WireGuard interface name on *this* host to read the bind
+            IP from at deploy time (see roles/app-container/tasks/
+            main.yml.j2's discovery task). None when bind_ip is a literal.
 
     Returns:
         Dict mapping file paths to content
@@ -186,6 +199,7 @@ def generate_app_role(
         health_check,
         template_dir,
         systemd_vars,
+        wg_iface_name,
     )
     files[Path(f"roles/{role_name}/templates/systemd.service.j2")] = _render_systemd(
         service,
@@ -196,6 +210,7 @@ def generate_app_role(
         template_dir,
         systemd_vars,
         host_port if host_port is not None else service.port,
+        bind_ip if bind_ip is not None else "0.0.0.0",
     )
     return files
 
@@ -217,6 +232,7 @@ def _render_tasks(
     health_check: str | None,
     template_dir: str,
     systemd_vars: dict[str, Any] | None,
+    wg_iface_name: str | None,
 ) -> str:
     """Render tasks/main.yml template.
 
@@ -234,6 +250,9 @@ def _render_tasks(
         template_dir: Source template set, from _template_dir()
         systemd_vars: Systemd-only template vars, from
             extract_systemd_vars() (None for non-systemd runtimes)
+        wg_iface_name: See generate_app_role() -- when set, the container
+            template emits a task discovering this host's own WireGuard
+            tunnel IP live, before deploying the container.
 
     Returns:
         Rendered tasks YAML content
@@ -245,6 +264,7 @@ def _render_tasks(
         runtime=runtime.value,
         sync_excludes=sync_excludes,
         uv_extra=uv_extra,
+        wg_iface_name=wg_iface_name,
     )
     if systemd_vars:
         context.update(systemd_vars)
@@ -264,6 +284,7 @@ def _render_systemd(
     template_dir: str,
     systemd_vars: dict[str, Any] | None,
     host_port: int,
+    bind_ip: str,
 ) -> str:
     """Render systemd.service.j2 template.
 
@@ -281,6 +302,10 @@ def _render_systemd(
             template's `-p HOST:CONTAINER` line reads this; the systemd
             templates' `Environment=PORT={{ service.port }}` is unrelated
             to it (no container layer, no host/container split there).
+        bind_ip: Resolved bind address -- only the container template's
+            `-p BIND_IP:HOST:CONTAINER` line reads this. May be a literal
+            IP or an Ansible-resolved expression string, passed straight
+            through as text either way (see generate_app_role()).
 
     Returns:
         Rendered systemd unit content
@@ -291,6 +316,7 @@ def _render_systemd(
         runtime=runtime.value,
         exec_args=exec_args,
         host_port=host_port,
+        bind_ip=bind_ip,
     )
     if systemd_vars:
         context.update(systemd_vars)

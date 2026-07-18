@@ -60,16 +60,6 @@ live/serving users yet.
       route per service. Both translators already iterate entries, so
       it's a contained change — do it when the limit actually bites, not
       before.
-- [ ] Incremental wg-manage peer service growth — `ensure_peer()`/
-      `is_bootstrapped()` (`services/wg_peer.py`) treat a peer's assigned
-      ports as one all-or-nothing set: adding a *new* service to an
-      already-bootstrapped peer hits wg-manage's "peer already exists"
-      error instead of incrementally opening just the new port. Documented
-      as a known gap in `ensure_peer()`'s own docstring since the
-      multi-host-deploy spec shipped (2026-07-17); found live but not
-      fixed, since it needs `is_bootstrapped()` to check per-port state
-      instead of the full current set, and `ensure_peer()` to open only
-      the missing rule(s) rather than assuming a from-scratch bootstrap.
 - [ ] Host-identity collision detection — two independently-registered
       slipp projects can silently point at the same physical host (same
       `ansible_host`) under different `inventory_hostname` labels, with no
@@ -82,6 +72,19 @@ live/serving users yet.
       not fixed). Fix would need either provision-time detection (does
       any registered project already claim this `ansible_host`?) or a
       display-layer disambiguation so `ps` doesn't have to guess.
+- [ ] Generic Node Dockerfile template fails to build — the fetched
+      flyctl template (`scanner/templates/node/Dockerfile`, same
+      fetch-verbatim mechanism as the Python one) has `COPY --link
+      package.json package-lock.json .`; Docker rejects a multi-source
+      `COPY` whose destination doesn't end in `/`, so any real generic
+      Node project fails at the image-build step on container runtime.
+      Found live (2026-07-18) while building a throwaway two-file Node
+      fixture for an unrelated test -- not investigated further, switched
+      to a Flask fixture to keep that test isolated. Reproduced against
+      real Docker on `bulletins-dev`'s `peer1`, not a local-only quirk.
+      Fix is presumably a one-line template patch (destination `./` or
+      splitting into two `COPY` lines) but needs verifying against
+      flyctl's actual template intent before changing it.
 
 ---
 
@@ -384,4 +387,79 @@ Open questions:
   through the actual wg-manage route succeeded) once
   `expose.admin.port: 8082` was set, idempotent on redeploy, zero
   regression on the two pre-existing services (byte-identical `-p
-  8080:8080`).
+  8080:8080`). Fixed incremental wg-manage peer service growth too:
+  `is_bootstrapped()`'s all-or-nothing port check couldn't tell "peer
+  never bootstrapped" apart from "tunnel's fine, a newly assigned port
+  just needs its own firewall rule," so `ensure_peer()` always retried
+  the one-shot `wg-manage add` (which fails "already exists" on a peer
+  that's already registered) instead of just opening the new port. Split
+  the check into a new tunnel-only `_tunnel_active()` and a `firewall`-
+  tagged subset of the bundled `wg_peer` playbook (idempotent per port);
+  `ensure_peer()` now runs only that tag when the tunnel's already up,
+  skipping `wg-manage add`/key work entirely. Needed a second fix to make
+  that possible: the peer's hub-facing WireGuard IP (`hub_wg_ip`, scopes
+  the firewall rule's source) was previously only ever captured as a
+  side effect of `wg-manage add`'s one-time output -- no wg-manage CLI
+  command exposes it afterward (confirmed live: `list --json`/`status
+  --json` omit it) -- so it's now read directly off the hub's `wg0`
+  interface instead (`ip -4 -o addr show wg0`; "wg0" is wg-manage's own
+  fixed interface name, confirmed in wg-deploy's own template). Entirely
+  a slipp-side fix -- wg-manage's own contract (peer `add` is one-shot,
+  correctly non-reissuable key material) is unchanged. Verified live
+  against the standing `peer1` fixture: added a second service to an
+  already-bootstrapped peer, confirmed the deploy succeeded via the
+  incremental path alone (peer's public key unchanged throughout -- a
+  full re-bootstrap attempt would have failed loudly), `ufw status`
+  showed both ports' rules, the new service was reachable over the
+  tunnel, and a second deploy was idempotent (`Service unchanged` on all
+  three wg-manage entries).
+- **2026-07-18 (later same day)** — Fixed a real security exposure found
+  while re-verifying the peer-growth fix above: every container-runtime
+  service fronted by a proxy (Caddy or wg-manage, primary host or
+  secondary) was reachable directly from the raw public internet,
+  completely bypassing the reverse proxy *and* the `ufw` rule meant to
+  scope a secondary host's traffic to just the hub. Confirmed live:
+  `worker` (on `peer1`, a wg-manage secondary host) had been reachable
+  on `193.200.238.188:8080` from a machine with zero VPN/mesh access at
+  all since the original multi-host-deploy session two days earlier --
+  nobody had tested reachability from outside the mesh until now. Root
+  cause, confirmed against official docs (Red Hat's own solutions
+  article, not guessed): Docker and rootful Podman both manage their own
+  iptables NAT rules for a published container port (`-p PORT:PORT`,
+  implicitly `0.0.0.0`) *ahead of* `ufw`'s INPUT filter chain -- this is
+  documented, intended behavior in both runtimes (tracked as
+  [RHEL-27842](https://issues.redhat.com/browse/RHEL-27842) for a
+  possible future opt-in change), not a slipp bug or something a
+  correctly-written `ufw` rule could ever have prevented. Fixed by
+  binding every published port to a specific interface instead of
+  `0.0.0.0` -- the established pattern (confirmed via research, not just
+  reasoned about) for exactly this "only the reverse proxy should reach
+  this" and "only the VPN tunnel should reach this" shape: `127.0.0.1`
+  for a service on the primary host (Caddy/wg-manage's own Caddy is
+  always the same machine), the peer's own WireGuard tunnel IP for a
+  secondary host. The peer IP isn't knowable at `slipp launch` time (the
+  peer may not even be bootstrapped yet, and baking a tunnel IP into a
+  static file is fragile regardless) -- new `context.bind_ips`
+  (`PortResolutionStage`) emits a live discovery task
+  (`roles/app-container/tasks/main.yml.j2`, `ip -4 -o addr show
+  <iface>`) for that case only, using the same slipp-renders-once/
+  Ansible-renders-again two-pass template trick the `wg-manage`
+  version-gate already established (a Python-side variable whose value
+  is literal Ansible `{{ }}` expression text, left untouched by slipp's
+  own Jinja pass since it doesn't recursively re-render a rendered
+  variable's string content -- verified directly against Jinja2's actual
+  behavior before relying on it). `docker-compose.yml` (local dev) now
+  binds `127.0.0.1` unconditionally too, for free, no UX cost (`docker
+  compose`'s own `localhost` access is unaffected). `--proxy none` stays
+  on `0.0.0.0` -- public reachability is the actual intent there.
+  Verified live against `wgtest-smoke`/`bulletins-dev`/`peer1`: `docker
+  ps` confirmed the exact bind addresses (`127.0.0.1:8080->8080/tcp` on
+  the hub, `10.1.0.2:8080->8080/tcp` on the peer, live-discovered
+  correctly), every previously-exposed port now silently unreachable
+  from a machine outside the mesh entirely, the real proxy paths
+  (`https://wgtest.getrekt.no`, `https://worker.getrekt.no`) fully
+  unaffected, second deploy idempotent. Not yet applied to the native
+  systemd (non-container) runtime -- there, the app process's own bind
+  address is up to its own code, which slipp doesn't control the way it
+  controls a container's `-p` mapping; worth checking separately if it
+  becomes a concern, not scoped into this fix.

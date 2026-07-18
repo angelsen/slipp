@@ -9,7 +9,11 @@ services:
       context: {{ service.build_context }}
       dockerfile: Dockerfile
     ports:
-      - "{{ service.host_port }}:{{ service.port }}"
+      # Loopback-only -- local dev already reaches this via localhost,
+      # and this keeps it off the LAN/any other interface for free (see
+      # PortResolutionStage's docstring for why 0.0.0.0 is never safe by
+      # default on a container-published port).
+      - "127.0.0.1:{{ service.host_port }}:{{ service.port }}"
     environment:
       PORT: "{{ service.host_port }}"
 {% endfor %}
