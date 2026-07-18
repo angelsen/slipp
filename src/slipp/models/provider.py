@@ -30,13 +30,19 @@ class PangolinConfig(BaseModel):
         session_cookie: Value of the p_session_token dashboard session
             cookie. Stopgap until Pangolin's Integration API (Bearer-token
             auth) is reachable -- see services/providers/pangolin.py.
-        org: Pangolin org slug.
-        base_url: Pangolin REST API base URL.
+        org: Pangolin org slug. No default -- there's no universal
+            Pangolin instance, this is always the caller's own.
+        base_url: Pangolin REST API base URL for the caller's own
+            instance. No default, same reasoning as org.
     """
 
     session_cookie: str = Field(..., min_length=1, description="p_session_token value")
-    org: str = "mym"
-    base_url: str = "https://pangolin.mymechanic.no/api/v1"
+    org: str = Field(..., min_length=1, description="Pangolin org slug")
+    base_url: str = Field(
+        ...,
+        min_length=1,
+        description="Pangolin API base URL, e.g. https://pangolin.example.com/api/v1",
+    )
 
 
 class WgDeployConfig(BaseModel):

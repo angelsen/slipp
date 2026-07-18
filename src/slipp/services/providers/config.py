@@ -20,6 +20,7 @@ from slipp.utils.config_store import (
     save_model,
     slipp_config_dir,
 )
+from slipp.utils.errors import ConfigError
 
 CONFIG_FILENAME = "providers.yaml"
 
@@ -85,19 +86,31 @@ class ProviderConfigService:
 
     @staticmethod
     def get_pangolin() -> PangolinConfig | None:
-        """Get Pangolin config, with PANGOLIN_SESSION_COOKIE env var taking precedence.
+        """Get Pangolin config, with PANGOLIN_SESSION_COOKIE env var
+        taking precedence over the cached secret only.
 
-        The env var override lets CI/automation supply a cookie without ever
-        writing providers.yaml.
+        org/base_url always come from providers.yaml -- matches
+        wg_deploy.repo_path having no env override at all: identity/
+        location config isn't meant to be env-overridable, only secrets
+        are (same reasoning as GIGAHOST_API_KEY). Run 'slipp providers
+        add pangolin' once, even in CI, before relying on the env var to
+        rotate just the cookie.
+
+        Raises:
+            ConfigError: PANGOLIN_SESSION_COOKIE is set but no cached
+                config exists to source org/base_url from.
         """
+        cached = ProviderConfigService.load().pangolin
         env_cookie = os.getenv("PANGOLIN_SESSION_COOKIE")
-        if env_cookie:
-            cached = ProviderConfigService.load().pangolin
-            if cached:
-                return cached.model_copy(update={"session_cookie": env_cookie})
-            return PangolinConfig(session_cookie=env_cookie)
 
-        return ProviderConfigService.load().pangolin
+        if not env_cookie:
+            return cached
+        if not cached:
+            raise ConfigError(
+                "PANGOLIN_SESSION_COOKIE is set but org/base_url aren't "
+                "configured -- run 'slipp providers add pangolin' once"
+            )
+        return cached.model_copy(update={"session_cookie": env_cookie})
 
     @staticmethod
     def set_pangolin(pangolin: PangolinConfig) -> None:

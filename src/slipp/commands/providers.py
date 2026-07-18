@@ -65,17 +65,20 @@ def _add_gigahost() -> None:
 
 
 def _add_pangolin() -> None:
-    """Prompt for, verify, and save a Pangolin session cookie.
+    """Prompt for, verify, and save Pangolin instance config and a session cookie.
 
-    Stopgap auth until Pangolin's Integration API is reachable -- see
+    org/base_url identify the caller's own Pangolin instance -- there's no
+    universal default, so both are always prompted for. Auth is a stopgap
+    until Pangolin's Integration API is reachable -- see
     services/providers/pangolin.py.
     """
+    org = output.prompt("Pangolin org slug")
+    base_url = output.prompt(
+        "Pangolin API base URL (e.g. https://pangolin.example.com/api/v1)"
+    )
     cookie = output.prompt_password("Pangolin session cookie (p_session_token value)")
 
-    # Build the config first so org/base_url come from PangolinConfig's own
-    # field defaults (the single source of truth), not a second hardcoded
-    # copy in the client.
-    config = PangolinConfig(session_cookie=cookie)
+    config = PangolinConfig(session_cookie=cookie, org=org, base_url=base_url)
     with PangolinClient(cookie, org=config.org, base_url=config.base_url) as client:
         try:
             sites = client.list_sites()
@@ -85,6 +88,7 @@ def _add_pangolin() -> None:
     ProviderConfigService.set_pangolin(config)
 
     output.success("Pangolin configured")
+    output.kv("org", config.org, indent=1)
     output.kv("sites", len(sites), indent=1)
 
 
