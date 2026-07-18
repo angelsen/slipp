@@ -72,20 +72,6 @@ live/serving users yet.
       not fixed). Fix would need either provision-time detection (does
       any registered project already claim this `ansible_host`?) or a
       display-layer disambiguation so `ps` doesn't have to guess.
-- [ ] Generic Node Dockerfile template fails to build — the fetched
-      flyctl template (`scanner/templates/node/Dockerfile`, same
-      fetch-verbatim mechanism as the Python one) has `COPY --link
-      package.json package-lock.json .`; Docker rejects a multi-source
-      `COPY` whose destination doesn't end in `/`, so any real generic
-      Node project fails at the image-build step on container runtime.
-      Found live (2026-07-18) while building a throwaway two-file Node
-      fixture for an unrelated test -- not investigated further, switched
-      to a Flask fixture to keep that test isolated. Reproduced against
-      real Docker on `bulletins-dev`'s `peer1`, not a local-only quirk.
-      Fix is presumably a one-line template patch (destination `./` or
-      splitting into two `COPY` lines) but needs verifying against
-      flyctl's actual template intent before changing it.
-
 ---
 
 ## Open design questions
@@ -463,3 +449,25 @@ Open questions:
   address is up to its own code, which slipp doesn't control the way it
   controls a container's `-p` mapping; worth checking separately if it
   becomes a concern, not scoped into this fix.
+- **2026-07-19** — Fixed the generic Node Dockerfile build failure logged
+  the day before. Two distinct bugs, not one: (1) `detect_package_manager()`
+  (`utils/nodejs.py`) always named `package-lock.json` as a second COPY
+  source even when no lock file existed at all -- diverging from flyctl's
+  own `node.go`, which only appends a lockfile after an `os.Stat` confirms
+  it's actually there (confirmed by fetching flyctl's real source, not
+  guessed); fixed to match, so a lockfile-less project now COPYs a real
+  single source. (2) Separately, and still live for the (far more common)
+  case where a real lockfile exists: flyctl's own Node template renders
+  `COPY --link package.json package-lock.json .` -- two sources with a
+  bare `.` destination, which Docker's own docs confirm is invalid
+  ("the destination must be a directory and must end with a slash /");
+  flyctl's Python template already uses `./` for the equivalent line, so
+  this is an inconsistency in the upstream template, not intentional.
+  Fixed with a new `_fix_copy_dest()` in `generator.py`: a regex
+  normalizing every `COPY ... .` instruction to end in `./`, run
+  unconditionally (not gated behind the existing Podman-only fix path) --
+  `./` is valid Dockerfile syntax for single-source COPY too, and the bug
+  is a Dockerfile-syntax-level defect, not Docker-specific, so Podman
+  needs the same fix. Verified against the real fetched template
+  end-to-end (both the lockfile and no-lockfile paths) rather than just
+  reasoning about it.

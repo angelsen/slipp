@@ -3,6 +3,7 @@
 Ties together fetcher, renderer, and extractors to generate deployment files.
 """
 
+import re
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
@@ -51,6 +52,8 @@ class TemplateGenerator:
 
         if container_runtime == Runtime.PODMAN:
             rendered_content = self._apply_podman_fixes(rendered_content)
+
+        rendered_content = self._fix_copy_dest(rendered_content)
 
         preamble = self._generate_preamble(template_path)
         final_content = preamble + rendered_content
@@ -135,3 +138,33 @@ class TemplateGenerator:
         # Docker BuildKit's --link flag not supported in Podman
         content = content.replace("COPY --link", "COPY")
         return content
+
+    # Bare "." (no trailing slash) as a COPY destination is only valid
+    # Dockerfile syntax when there's exactly one <src> -- with two or more
+    # (e.g. `COPY package.json package-lock.json .`), both Docker and
+    # Podman/buildah reject it: "the destination must be a directory and
+    # must end with a slash". Confirmed live 2026-07-18: flyctl's own Node
+    # template renders exactly this multi-source shape whenever a lock
+    # file exists, while its Python template already uses "./" for the
+    # equivalent line -- an inconsistency in the upstream template, not
+    # something intentional to preserve. "./" is valid for single-source
+    # COPY too, so this runs unconditionally rather than only when
+    # multi-source is detected.
+    _COPY_DEST_RE = re.compile(r"^(COPY\b.*)\s\.$", re.MULTILINE)
+
+    def _fix_copy_dest(self, content: str) -> str:
+        """Rewrite every `COPY ... .` instruction's dest to `./`.
+
+        Args:
+            content: Dockerfile content (after any podman fixes)
+
+        Returns:
+            Content with COPY destinations normalized to end in "/"
+
+        Example:
+            >>> generator = TemplateGenerator()
+            >>> content = "COPY --link package.json package-lock.json ."
+            >>> generator._fix_copy_dest(content)
+            'COPY --link package.json package-lock.json ./'
+        """
+        return self._COPY_DEST_RE.sub(r"\1 ./", content)
